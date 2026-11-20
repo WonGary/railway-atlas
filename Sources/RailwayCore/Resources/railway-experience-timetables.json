@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "timetables": [
+    {
+      "id": "12306.G6580.2026-11-08",
+      "train": "G6580",
+      "serviceDate": "2026-11-08",
+      "timeZone": "Asia/Shanghai",
+      "source": {
+        "title": "中国铁路 12306 · 车次经停查询",
+        "url": "https://kyfw.12306.cn/otn/czxx/queryByTrainNo?train_no=6x000G65800A&from_station_telecode=XJA&to_station_telecode=ZFC&depart_date=2026-11-08",
+        "retrievedOn": "2026-11-08",
+        "note": "按 2026-11-08 乘车日期查询的一次性样例快照；不是持续同步接口或实时列车位置服务。"
+      },
+      "stops": [
+        { "station": "香港西九龙", "arrival": null, "departure": 964 },
+        { "station": "福田", "arrival": 978, "departure": 980 },
+        { "station": "深圳北", "arrival": 988, "departure": 991 },
+        { "station": "光明城", "arrival": 1000, "departure": 1005 },
+        { "station": "虎门", "arrival": 1019, "departure": 1021 },
+        { "station": "广州南", "arrival": 1039, "departure": 1044 },
+        { "station": "佛山西", "arrival": 1062, "departure": 1067 },
+        { "station": "三水南", "arrival": 1078, "departure": 1080 },
+        { "station": "肇庆东", "arrival": 1093, "departure": 1093 }
+      ]
+    },
+    {
+      "id":"12306.G337.2026-11-20","train":"G337","serviceDate":"2026-11-20","timeZone":"Asia/Shanghai",
+      "source":{"title":"中国铁路 12306 · G337 经停","url":"https://kyfw.12306.cn/otn/czxx/queryByTrainNo?train_no=240000G33720&from_station_telecode=BXP&to_station_telecode=NXG&depart_date=2026-11-20","retrievedOn":"2026-11-20","note":"按当天时刻回放。"},
+      "stops":[
+        {"station":"北京西","departure":1015},
+        {"station":"石家庄","arrival":1076,"departure":1078},
+        {"station":"郑州东","arrival":1154,"departure":1157},
+        {"station":"武汉","arrival":1251,"departure":1254},
+        {"station":"黄石北","arrival":1285,"departure":1287},
+        {"station":"庐山","arrival":1328,"departure":1330},
+        {"station":"南昌西","arrival":1373}
+      ]
+    }
+  ]
+}

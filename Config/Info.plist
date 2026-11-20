@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>Railway Atlas</string>
+    <key>CFBundleDisplayName</key><string>铁道图鉴</string>
+    <key>CFBundleIdentifier</key><string>app.railwayatlas.mac</string>
+    <key>CFBundleExecutable</key><string>RailwayAtlas</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.6.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>NSAppTransportSecurity</key><dict>
+        <key>NSExceptionDomains</key><dict>
+            <key>cnrail.geogv.org</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>down.lltskb.com</key><dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+            </dict>
+        </dict>
+    </dict>
+    <key>CFBundleIconFile</key><string>RailwayAtlas</string>
+    <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+    <key>CFBundleLocalizations</key><array><string>zh_CN</string><string>en</string></array>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.travel</string>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>Railway Atlas Map</string>
+        <key>CFBundleURLSchemes</key><array><string>railwayatlas</string></array>
+    </dict></array>
+    <key>UTExportedTypeDeclarations</key><array><dict>
+        <key>UTTypeIdentifier</key><string>app.railwayatlas.cache</string>
+        <key>UTTypeConformsTo</key><array><string>public.database</string><string>public.data</string></array>
+        <key>UTTypeDescription</key><string>Railway Atlas 缓存数据库</string>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>railcache</string></array>
+        </dict>
+    </dict></array>
+</dict>
+</plist>

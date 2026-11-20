@@ -1,0 +1,6 @@
+[out:json][timeout:45];
+(
+  rel["type"="route"]["route"~"^(subway|light_rail|tram|monorail)$"](31.14,121.25,31.34,121.55);
+  rel["type"="route_master"](31.14,121.25,31.34,121.55);
+);
+out body;

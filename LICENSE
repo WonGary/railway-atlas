@@ -1,0 +1,11 @@
+Copyright (c) 2026 Gary Won
+
+The source code in this repository is provided for personal use, study, and
+non-commercial testing. Redistribution of the source code or binaries should
+retain this notice and the third-party notices in the repository.
+
+Bundled data and third-party components keep their own licenses. In particular,
+OpenStreetMap-derived data is subject to the Open Database License (ODbL 1.0),
+the bundled metro palette is GPL-3.0 data, and Leaflet is distributed under
+the BSD 2-Clause License. See the notices beside each resource before
+redistributing a modified package.

@@ -1,0 +1,73 @@
+{
+  "tokyo": {
+    "latitude": 35.6812,
+    "longitude": 139.7671,
+    "aliases": ["Tokyo Metro", "東京メトロ", "Toei Subway", "都営地下鉄", "東京都交通局"],
+    "lines": {
+      "g": ["G", "東京メトロ銀座線"],
+      "m": ["M", "Mb", "丸ノ内支線", "Marunouchi Branch Line"],
+      "h": ["H"], "t": ["T"], "c": ["C"], "y": ["Y"],
+      "z": ["Z"], "n": ["N", "Nanboku Line"], "f": ["F"],
+      "a": ["A"], "i": ["I"], "s": ["S"], "e": ["E"]
+    }
+  },
+  "jinan": {
+    "lines": { "jnr01": ["R1"], "jnr02": ["R2"], "jnr03": ["R3"], "jny01": ["云巴线"] }
+  },
+  "qingdao": {
+    "lines": { "qd8": ["8快速", "8号线快速"], "qd11": ["蓝谷快线"], "qd13": ["西海岸快线"] }
+  },
+  "seoul": {
+    "latitude": 37.5665,
+    "longitude": 126.978,
+    "aliases": ["Seoul", "서울", "수도권 전철", "首尔", "首爾", "韓國首都圈電鐵", "Incheon Metro", "인천교통공사"],
+    "lines": {
+      "s1": ["Seoul Subway Line 1"],
+      "s2": ["Seoul Subway Line 2"],
+      "s3": ["Seoul Subway Line 3"],
+      "s4": ["Seoul Subway Line 4"],
+      "s5": ["Seoul Subway Line 5"],
+      "s6": ["Seoul Subway Line 6"],
+      "s7": ["Seoul Subway Line 7"],
+      "s8": ["Seoul Subway Line 8"],
+      "s9": ["Seoul Subway Line 9"],
+      "i1": ["인천 도시철도 1호선", "인천 지하철 1호선", "Incheon Subway Line 1", "I1"],
+      "i2": ["인천 도시철도 2호선", "인천 지하철 2호선", "Incheon Subway Line 2", "I2"],
+      "a": ["AREX", "공항철도"],
+      "ui": ["W", "Ui LRT"],
+      "y": ["EverLine", "에버라인"],
+      "gim": ["Gimpo Gold Line", "김포 도시철도"],
+      "sb": ["수인분당선"],
+      "gj": ["경의중앙선"],
+      "gtxa": ["GTX-A"]
+    }
+  },
+  "hongkong": {
+    "lines": {
+      "ktl": ["KTL"], "twl": ["TWL"], "isl": ["ISL"],
+      "tkl": ["TKL"], "tcl": ["TCL"], "ael": ["AEL", "機場快綫", "机场快线"],
+      "eal": ["EAL"], "mol": ["TML"], "drl": ["DRL"], "sile": ["SIL"],
+      "lr505": ["505"], "lr507": ["507"], "lr610": ["610"],
+      "lr614": ["614"], "lr614p": ["614P"], "lr615": ["615"],
+      "lr615p": ["615P"], "lr705": ["705"], "lr706": ["706"],
+      "lr751": ["751"], "lr761p": ["761P"]
+    }
+  },
+  "macao": {
+    "lines": {
+      "taipa": ["氹仔線", "凼仔线", "Taipa"],
+      "seacpaivan": ["Seac Pai Van"],
+      "hengqin": ["Hengqin"],
+      "leste": ["East Line"]
+    }
+  },
+  "taipei": {
+    "lines": {
+      "br": ["BR"], "r": ["R"], "g": ["G"], "o": ["O"],
+      "bl": ["BL"], "y": ["Y"], "rb": ["R22A"], "gb": ["G03A"]
+    }
+  },
+  "guangzhou": { "lines": { "gz14": ["14号线知识城支线", "知识城线"], "apm": ["APM"] } },
+  "xian": { "lines": { "xa14": ["14号线", "Line 14", "机场城际"] } },
+  "changsha": { "lines": { "cs3": ["3号线西环段", "3号线西环线"] } }
+}

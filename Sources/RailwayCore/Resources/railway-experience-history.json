@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "events": [
+    {
+      "id": "chengyu.1952",
+      "date": "1952-07-01",
+      "title": "成渝铁路建成通车",
+      "detail": "成都与重庆由铁路连接起来。这里记录原成渝铁路的通车节点，不把它与后来的成渝高铁混为一条线路。",
+      "places": [
+        { "name": "成都", "latitude": 30.572, "longitude": 104.067 },
+        { "name": "重庆", "latitude": 29.563, "longitude": 106.551 }
+      ],
+      "source": {
+        "title": "四川人大网 · 中华人民共和国成立70年四川要事辑录",
+        "url": "https://www.scspc.gov.cn/gq70_hh70n/201909/168064.html",
+        "retrievedOn": "2026-11-08",
+        "note": "历史日期据官方文章；位置为城市中心的编辑示意，不是轨道测绘。"
+      }
+    },
+    {
+      "id": "chengkun.1970",
+      "date": "1970-07-01",
+      "title": "成昆铁路全线建成通车",
+      "detail": "铁路跨越西南山地，串起成都与昆明。原线、后来的扩能工程与列车径路需要分别保存，不能共用一条今天的几何线。",
+      "places": [
+        { "name": "成都", "latitude": 30.572, "longitude": 104.067 },
+        { "name": "昆明", "latitude": 25.039, "longitude": 102.718 }
+      ],
+      "source": {
+        "title": "四川人大网 · 中华人民共和国成立70年四川要事辑录",
+        "url": "https://www.scspc.gov.cn/gq70_hh70n/201909/168064.html",
+        "retrievedOn": "2026-11-08",
+        "note": "只录入原线的全线通车节点，未复原历史轨道走向。"
+      }
+    },
+    {
+      "id": "qingzang.golmud-lhasa.2006",
+      "date": "2006-07-01",
+      "title": "青藏铁路格尔木至拉萨段通车",
+      "detail": "青藏铁路实现全线通车，西藏迎来铁路。西宁至格尔木段在此前已经运营，因此本节点只新增格尔木至拉萨的关系。",
+      "places": [
+        { "name": "格尔木", "latitude": 36.406, "longitude": 94.904 },
+        { "name": "拉萨", "latitude": 29.653, "longitude": 91.172 }
+      ],
+      "source": {
+        "title": "国家铁路局 · 天路十年",
+        "url": "https://source.nra.gov.cn/tlfc/tpsy/202204/t20220405_292987.shtml",
+        "retrievedOn": "2026-11-08",
+        "note": "来源明确区分西宁—格尔木与格尔木—拉萨两个建设阶段。"
+      }
+    },
+    {
+      "id": "jingjin.2008",
+      "date": "2008-08-01",
+      "title": "京津城际通车运营",
+      "detail": "北京和天津之间新增高速城际联系。后续延伸与提速应作为各自的时间节点记录。",
+      "places": [
+        { "name": "北京", "latitude": 39.904, "longitude": 116.407 },
+        { "name": "天津", "latitude": 39.084, "longitude": 117.201 }
+      ],
+      "source": {
+        "title": "国家发展改革委 · 中国共产党一百年大事记（2002—2021）",
+        "url": "https://www.ndrc.gov.cn/fggz/fgjh/djzc/202107/t20210702_1285250.html",
+        "retrievedOn": "2026-11-08",
+        "note": "2008 年条目明确记载 8 月 1 日通车运营。"
+      }
+    },
+    {
+      "id": "jinghu.2011",
+      "date": "2011-06-30",
+      "title": "京沪高速铁路建成通车",
+      "detail": "北京与上海之间的高速铁路建成通车。图中只显示城市关系，不把两城间直线当作列车的真实运行径路。",
+      "places": [
+        { "name": "北京", "latitude": 39.904, "longitude": 116.407 },
+        { "name": "上海", "latitude": 31.230, "longitude": 121.474 }
+      ],
+      "source": {
+        "title": "国家铁路局 · 世界高速铁路发展方兴未艾",
+        "url": "https://source.nra.gov.cn/xwzx/xwxx/xwlb/202204/t20220405_279408.shtml",
+        "retrievedOn": "2026-11-08",
+        "note": "采用建成通车日期，不据此推断所有车次的首次运行日期。"
+      }
+    },
+    {
+      "id": "hada.2012",
+      "date": "2012-12-01",
+      "title": "哈大高速铁路开通运营",
+      "detail": "哈尔滨至大连的高速铁路开通。高寒地区的季节运行安排和历次调图，需要另外保存带生效日期的时刻表。",
+      "places": [
+        { "name": "哈尔滨", "latitude": 45.804, "longitude": 126.535 },
+        { "name": "大连", "latitude": 38.914, "longitude": 121.614 }
+      ],
+      "source": {
+        "title": "国家铁路局 · 世界高速铁路发展方兴未艾",
+        "url": "https://source.nra.gov.cn/xwzx/xwxx/xwlb/202204/t20220405_279408.shtml",
+        "retrievedOn": "2026-11-08",
+        "note": "开通节点与时刻表分开记录。"
+      }
+    },
+    {
+      "id": "jingguang.2012",
+      "date": "2012-12-26",
+      "title": "京广高速铁路全线贯通运营",
+      "detail": "京广高铁全线连通。这是全线贯通节点，不表示此前已运营的南段也在同一天开通。",
+      "places": [
+        { "name": "北京", "latitude": 39.904, "longitude": 116.407 },
+        { "name": "广州", "latitude": 23.129, "longitude": 113.264 }
+      ],
+      "source": {
+        "title": "国家发展改革委 · 京广高铁京武段高标运营拉通试验",
+        "url": "https://www.ndrc.gov.cn/fggz/zcssfz/dffz/202207/t20220729_1332238_ext.html",
+        "retrievedOn": "2026-11-08",
+        "note": "只表达全线贯通；未将全线日期赋给各分段。"
+      }
+    },
+    {
+      "id": "mtr-high-speed-rail",
+      "date": "2018-09",
+      "title": "广深港高铁香港段开始营运",
+      "detail": "香港接入全国高铁网络。此处采用港铁公司沿革中的月份精度；来源未给出日子时，不自动补为当月第一天。",
+      "places": [{ "name": "香港", "latitude": 22.3193, "longitude": 114.1694 }],
+      "source": {
+        "title": "MTR · 公司業務及發展沿革",
+        "url": "https://www.mtr.com.hk/en/corporate/overview/profile_index.html",
+        "retrievedOn": "2026-11-08",
+        "note": "來源只確認 2018 年 9 月；此條刻意使用月份精度。"
+      }
+    },
+    {
+      "id": "lalin.2021",
+      "date": "2021-06-25",
+      "title": "拉林铁路正式开通运营",
+      "detail": "拉萨至林芝铁路投入运营，山南和林芝迎来新的铁路联系。通车事件可核对，但本图没有提供该时期的轨道级几何。",
+      "places": [
+        { "name": "拉萨", "latitude": 29.653, "longitude": 91.172 },
+        { "name": "林芝", "latitude": 29.654, "longitude": 94.362 }
+      ],
+      "source": {
+        "title": "波密县人民政府 · 拉林铁路正式开通运营",
+        "url": "https://www.bomi.gov.cn/bmx/xwzx/202106/a320365e780047a6a07eba587fb4215a.shtml",
+        "retrievedOn": "2026-11-08",
+        "note": "报道发表于 2021-06-29，事件发生在 2021-06-25；时间轴采用事件日期。"
+      }
+    }
+  ]
+}

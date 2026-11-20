@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101820">
+  <meta name="description" content="铁道图鉴跨平台试用版：查看铁路、地铁和 G337 沿线旅行。">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>铁道图鉴 · 跨平台试用版</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./touch.png">
+  <link rel="stylesheet" href="./vendor/leaflet.css">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">R</div>
+      <div>
+        <h1>铁道图鉴</h1>
+        <p>跨平台试用版 <span id="versionBadge">0.6.0</span></p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="fitG337" class="icon-button" title="定位 G337" aria-label="定位 G337">⌖</button>
+      <button id="toggleAssistant" class="text-button">地图问答</button>
+      <button id="toggleInfo" class="text-button">要素信息</button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="left-rail" aria-label="线路与车次">
+      <section class="section-heading">
+        <div>
+          <span class="eyebrow">路线</span>
+          <h2>沿线旅行</h2>
+        </div>
+        <button id="refreshData" class="icon-button small" title="重新读取本地资料" aria-label="重新读取本地资料">↻</button>
+      </section>
+      <button id="g337Card" class="route-card selected">
+        <span class="route-code">G337</span>
+        <span class="route-name">北京西 → 南昌西</span>
+        <span class="route-meta">16:55 · 22:53 · 2026-11-20</span>
+      </button>
+      <div class="subsection">
+        <div class="subsection-title">经停站</div>
+        <div id="stationList" class="station-list"></div>
+      </div>
+      <div class="left-note">
+        <p>地图线路会随比例尺渐变，缩放时保留已加载线路，避免整段消失。</p>
+        <p>在建城市轨道使用灰白虚线，运营线路保留各自颜色。</p>
+      </div>
+    </aside>
+
+    <section class="map-stage">
+      <div id="map" role="application" aria-label="铁道图鉴地图"></div>
+      <div class="playback-bar">
+        <button id="playJourney" class="play-button" title="播放沿线旅行" aria-label="播放沿线旅行">▶</button>
+        <div class="playback-main">
+          <div class="playback-title"><strong>G337</strong><span id="playbackClock">16:55</span><span id="playbackPhase">准备出发</span></div>
+          <input id="journeyProgress" type="range" min="60900" max="82380" step="15" value="60900" aria-label="G337 沿线旅行进度">
+        </div>
+        <select id="playbackSpeed" class="speed-select" aria-label="播放速度">
+          <option value="10">10×</option>
+          <option value="60" selected>60×</option>
+          <option value="120">120×</option>
+        </select>
+      </div>
+      <div class="map-status">
+        <span id="dataStatus">正在读取本地路线资料…</span>
+        <span id="zoomStatus">比例尺</span>
+      </div>
+      <div class="map-legend" aria-label="地图图例">
+        <span><i class="legend-line route-line"></i>铁路</span>
+        <span><i class="legend-line metro-line"></i>地铁</span>
+        <span><i class="legend-line construction-line"></i>在建</span>
+      </div>
+    </section>
+
+    <aside id="infoPanel" class="right-panel info-panel" aria-label="要素信息">
+      <div class="panel-header">
+        <div>
+          <span class="eyebrow">要素信息</span>
+          <h2 id="infoTitle">北京西</h2>
+        </div>
+        <div class="header-actions">
+          <button id="openStationDialog" class="text-button">车次表</button>
+          <button id="closeInfo" class="icon-button" title="关闭要素信息" aria-label="关闭要素信息">×</button>
+        </div>
+      </div>
+      <div id="infoContent" class="panel-content"></div>
+    </aside>
+
+    <aside id="assistantPanel" class="right-panel assistant-panel" aria-label="地图问答">
+      <div class="panel-header">
+        <div>
+          <span class="eyebrow">地图问答</span>
+          <h2>选择服务</h2>
+        </div>
+        <div class="header-actions">
+          <button id="assistantMode" class="icon-button" title="切换侧栏与浮窗" aria-label="切换侧栏与浮窗">◫</button>
+          <button id="closeAssistant" class="icon-button" title="关闭地图问答" aria-label="关闭地图问答">×</button>
+        </div>
+      </div>
+      <div class="assistant-config">
+        <label>
+          服务
+          <select id="providerSelect">
+            <option value="gpt">GPT</option>
+            <option value="claude">Claude</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="doubao">豆包</option>
+            <option value="custom">自定义 Chat Completions</option>
+          </select>
+        </label>
+        <label>
+          API 地址
+          <input id="endpointInput" type="url" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="two-fields">
+          <label>
+            模型 ID
+            <input id="modelInput" type="text" autocomplete="off" spellcheck="false">
+          </label>
+          <label>
+            GPT 协议
+            <select id="protocolSelect">
+              <option value="chat">Chat Completions</option>
+              <option value="responses">Responses</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          API Key
+          <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="只保存在当前页面">
+        </label>
+        <div class="two-fields">
+          <label>
+            附带材料
+            <select id="contextSelect">
+              <option value="summary">少量信息</option>
+              <option value="full">完整信息</option>
+              <option value="none">不附带信息</option>
+            </select>
+          </label>
+          <label class="checkbox-label">
+            <input id="rememberSettings" type="checkbox">
+            记住地址和模型
+          </label>
+        </div>
+        <p class="form-note">Key 只在当前页面内存中使用，不写入浏览器存储。朋友应填自己的 API Key。</p>
+      </div>
+      <div id="conversation" class="conversation" aria-live="polite">
+        <div class="empty-conversation">可以问：G337 经停哪些站？北京西有哪些途经线路？</div>
+      </div>
+      <form id="assistantForm" class="composer">
+        <textarea id="questionInput" rows="3" placeholder="输入问题，按 ⌘/Ctrl + Enter 发送"></textarea>
+        <div class="composer-footer">
+          <span id="assistantStatus" class="assistant-status">未连接</span>
+          <button id="sendQuestion" class="primary-button" type="submit">发送</button>
+        </div>
+      </form>
+    </aside>
+  </main>
+
+  <dialog id="stationDialog" class="station-dialog">
+    <div class="dialog-header">
+      <div>
+        <span class="eyebrow">车站与线路</span>
+        <h2 id="dialogTitle">北京西</h2>
+      </div>
+      <button id="closeDialog" class="icon-button" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div id="dialogContent" class="dialog-content"></div>
+  </dialog>
+
+  <script src="./vendor/leaflet.js"></script>
+  <script src="./app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator && location.protocol !== "file:") {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>

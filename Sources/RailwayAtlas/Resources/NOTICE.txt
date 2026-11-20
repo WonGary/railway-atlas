@@ -1,0 +1,80 @@
+Railway Atlas / 铁道图鉴 0.2.0 (testing build)
+© OpenStreetMap contributors. Open Database License (ODbL) 1.0.
+https://www.openstreetmap.org/copyright
+
+Rail geometry and station tags are community-contributed OpenStreetMap data.
+They may be incomplete or out of date. A missing attribute means unknown.
+Apple basemap tiles are not bundled or exported.
+
+mainland-osm-mask.json: WGS84 display-coordinate mask derived from OpenStreetMap
+relations 270056 (China), 913110 (Hong Kong), and 1867188 (Macao), downloaded
+2026-11-04 from https://polygons.openstreetmap.fr/ (params=0, full precision).
+The file retains separate Hong Kong/Macao polygons in the legacy "exclude"
+field. The default China-region Apple-basemap policy unions these polygons;
+the optional mainland-only policy subtracts them. Taiwan is outside this mask.
+These are display-transform policies, not legal boundary interpretations.
+OSM contributors, ODbL 1.0; the derived mask is distributed with the source.
+The Hong Kong source was generated on 2026-10-31.
+
+china-overview.railcache: 12 Z4 OpenRailwayMap tiles from the national viewport
+viewed on 2026-11-03, with original source URLs and timestamps. OSM ODbL 1.0.
+This small startup baseline does not include nationwide high-zoom detail.
+
+Primary railway vector tiles: OpenRailwayMap
+https://openrailwaymap.app/
+https://github.com/hiddewie/OpenRailwayMap-vector/blob/master/USAGE.md
+
+Independent fallback tiles:
+VersaTiles (Shortbread / OpenStreetMap): https://versatiles.org/
+OpenFreeMap / © OpenMapTiles / © OpenStreetMap contributors:
+https://openfreemap.org/  https://openmaptiles.org/
+
+Fallback tiles omit detailed railway attributes and low-zoom rail coverage.
+No speed or ownership is inferred when absent. Cache exports preserve source
+URLs, timestamps and OSM-derived raw vector data. They are ODbL databases, not
+an Apple basemap export or a complete nationwide offline dataset.
+
+Metro route relations: OpenStreetMap through VK Maps Overpass,
+Private.coffee Overpass, or overpass-api.de.
+
+Optional online colour metadata:
+Wikidata P465 (CC0 structured data), https://www.wikidata.org/
+Wikipedia explicit infobox colour fields, https://www.wikipedia.org/
+Individual entity/article source links are retained with the cached colour.
+Wikipedia content is subject to its applicable CC BY-SA terms; no articles or
+images are redistributed by this app. Wiki colours are not labelled official.
+
+Shanghai Metro line colours in the bundled Shanghai package use the published
+official line marker palette from:
+https://service.shmetro.com/shMetro2/metro.jsp
+Other metro colours use the OSM route relation colour tag when present.
+
+Bundled metro-palette.json: RMG Palette community colour data, 229 city/region
+catalogues and 2784 entries, from railmapgen/rmg-palette revision
+402c272b090c1548c5ffc867bb5d84469427278f:
+https://github.com/railmapgen/rmg-palette
+The original palette fields and names are retained. This data is independently
+licensed under GPL-3.0; see METRO-PALETTE-LICENCE.txt included beside this notice.
+Reproduce it with Scripts/build-metro-palette.mjs; the script records the pinned
+source URLs and adds the local alias catalogue in Scripts/metro-palette-aliases.json.
+No upstream application code is incorporated. Community colours are labelled
+as community data, not verified operator standards. Entries may describe
+planned or historical lines; the palette supplies no geometry or operating status.
+
+Bundled metro-snapshot-{qingdao,jinan,tokyo,beijing,hongkong,macao}.json: OSM route relations,
+urban tracks and separate station objects, downloaded 2026-11-05.
+© OpenStreetMap contributors, Open Database License 1.0 (ODbL).
+https://www.openstreetmap.org/copyright
+https://opendatacommons.org/licenses/odbl/1-0/
+Qingdao/Jinan input:
+https://download.openstreetmap.fr/extracts/asia/china/shandong.osm.pbf
+Tokyo input (limited to the extract's stated central-city boundary):
+https://download.bbbike.org/osm/bbbike/Tokyo/Tokyo.osm.pbf
+Beijing/Hong Kong/Macao inputs:
+https://download.openstreetmap.fr/extracts/asia/china/beijing.osm.pbf
+https://download.openstreetmap.fr/extracts/asia/china/hong_kong.osm.pbf
+https://download.openstreetmap.fr/extracts/asia/china/macau.osm.pbf
+Each JSON preserves its bounding box, input SHA256, source URL and newest
+included OSM object timestamp. Reproduce with Scripts/build-metro-snapshots.py
+and pyosmium. These are fallback snapshots, not live coverage guarantees.
+An online relation response replaces the corresponding snapshot tile.

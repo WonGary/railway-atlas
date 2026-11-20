@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "rendering": {
+    "metroWidthScale": 1,
+    "railwayWidthScale": 1,
+    "stationRadiusMultiplier": 1.25,
+    "depotBrightness": 0.5,
+    "viewportBuffer": 0.2,
+    "railwayPattern": true
+  },
+  "map": {
+    "mode": "apple",
+    "basemapStyle": "standard",
+    "basemapDarkness": 0,
+    "alignment": "mainlandGCJ",
+    "tileSource": "https://openrailwaymap.app"
+  },
+  "layers": {
+    "automaticDetail": true,
+    "prioritizesUrbanTransit": false,
+    "showsNationalMetroOverview": true,
+    "showsStations": true,
+    "showsLabels": true,
+    "showsMetroColors": true,
+    "enrichWikiColours": true,
+    "categories": ["speed350", "speed300", "speed250", "speed200", "speed160", "below160", "unknown", "urban", "freight", "branch", "service", "construction", "disused", "abandoned"],
+    "networks": ["railway", "metro", "lightRail", "tram", "industrial", "narrowGauge", "other"],
+    "hiddenRoutes": [],
+    "forcedCategories": [],
+    "forcedNetworks": []
+  },
+  "interface": {
+    "uiScale": 1,
+    "panelWidth": 320,
+    "panelVisible": true,
+    "panelSize": "medium",
+    "panelLayout": "floating",
+    "panelBackgroundOpacity": 1,
+    "inspectorVisible": false,
+    "inspectorWidth": 380,
+    "inspectorTab": "feature",
+    "inspectorLayout": "docked",
+    "inspectorBackgroundOpacity": 1,
+    "statusVisible": true,
+    "statusX": 0,
+    "statusY": 0
+  },
+  "assistant": {
+    "endpoint": "https://api.openai.com/v1/responses",
+    "apiProtocol": "responses",
+    "model": "gpt-6-astra",
+    "maxOutputTokens": 3000,
+    "webSearch": false,
+    "provider": "gpt",
+    "presentation": "window",
+    "claude": {
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "model": "claude-opus-5-5",
+      "maxOutputTokens": 3000,
+      "authentication": "apiKey",
+      "apiVersion": "2023-06-01",
+      "webSearch": false,
+      "webFetch": false
+    },
+    "models": [
+      {"id":"00000000-0000-0000-0000-000000000001","provider":"gpt","name":"gpt-6-astra","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000002","provider":"gpt","name":"gpt-5.6-sol","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000003","provider":"gpt","name":"gpt-6.1-sol","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000004","provider":"claude","name":"claude-opus-5-5","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000005","provider":"claude","name":"claude-sonnet-5-5","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000006","provider":"claude","name":"claude-fable-5-1","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000007","provider":"deepseek","name":"deepseek-flash","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000008","provider":"deepseek","name":"deepseek-v4-pro","label":"","note":""},
+      {"id":"00000000-0000-0000-0000-000000000009","provider":"doubao","name":"doubao-seed-2-1-pro-260915","label":"豆包 Seed 2.1 Pro","note":"可替换为火山方舟控制台的 Model ID 或 ep- 接入点 ID"}
+    ],
+    "compatible": {
+      "deepseek": {
+        "endpoint": "https://api.deepseek.com/chat/completions",
+        "model": "deepseek-flash",
+        "maxOutputTokens": 3000
+      },
+      "doubao": {
+        "endpoint": "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        "model": "doubao-seed-2-1-pro-260915",
+        "maxOutputTokens": 3000
+      },
+      "custom": {
+        "endpoint": "",
+        "model": "",
+        "maxOutputTokens": 3000
+      }
+    }
+  }
+}
