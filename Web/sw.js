@@ -1,4 +1,4 @@
-const CACHE = "railway-atlas-web-0.6.0";
+const CACHE = "railway-atlas-web-0.6.3";
 const SHELL = [
   "./",
   "./index.html",
@@ -11,7 +11,8 @@ const SHELL = [
   "./data/railway-experience-corridors.json",
   "./data/railway-experience-routes.json",
   "./data/railway-experience-timetables.json",
-  "./data/china-metro-overview.json"
+  "./data/china-metro-overview.json",
+  "./data/railway-experience-history.json"
 ];
 
 self.addEventListener("install", event => {
@@ -20,7 +21,8 @@ self.addEventListener("install", event => {
 
 self.addEventListener("activate", event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
-    keys.filter(key => key !== CACHE).map(key => caches.delete(key))
+    keys.filter(key => key.startsWith("railway-atlas-web-") && key !== CACHE)
+      .map(key => caches.delete(key))
   )).then(() => self.clients.claim()));
 });
 

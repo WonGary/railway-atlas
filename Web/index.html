@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101820">
-  <meta name="description" content="铁道图鉴跨平台试用版：查看铁路、地铁和 G337 沿线旅行。">
+  <meta name="description" content="铁道图鉴网页应用：铁路与地铁地图、沿线旅行、车站资料和个人铁路记录。">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>铁道图鉴 · 跨平台试用版</title>
+  <title>铁道图鉴</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./touch.png">
   <link rel="stylesheet" href="./vendor/leaflet.css">
@@ -19,53 +19,150 @@
       <div class="brand-mark" aria-hidden="true">R</div>
       <div>
         <h1>铁道图鉴</h1>
-        <p>跨平台试用版 <span id="versionBadge">0.6.0</span></p>
+      <p>网页应用 <span id="versionBadge">0.6.3</span></p>
       </div>
     </div>
     <div class="top-actions">
+      <button id="toggleWorkspace" class="icon-button" title="打开工作区" aria-label="打开工作区">☰</button>
       <button id="fitG337" class="icon-button" title="定位 G337" aria-label="定位 G337">⌖</button>
+      <button id="toggleJourney" class="text-button">沿线旅行</button>
       <button id="toggleAssistant" class="text-button">地图问答</button>
       <button id="toggleInfo" class="text-button">要素信息</button>
     </div>
   </header>
 
   <main class="app-shell">
-    <aside class="left-rail" aria-label="线路与车次">
-      <section class="section-heading">
-        <div>
-          <span class="eyebrow">路线</span>
-          <h2>沿线旅行</h2>
-        </div>
-        <button id="refreshData" class="icon-button small" title="重新读取本地资料" aria-label="重新读取本地资料">↻</button>
-      </section>
-      <button id="g337Card" class="route-card selected">
-        <span class="route-code">G337</span>
-        <span class="route-name">北京西 → 南昌西</span>
-        <span class="route-meta">16:55 · 22:53 · 2026-11-20</span>
-      </button>
-      <div class="subsection">
-        <div class="subsection-title">经停站</div>
-        <div id="stationList" class="station-list"></div>
+    <aside id="workspacePanel" class="left-rail" aria-label="铁道图鉴工作区">
+      <div class="workspace-heading">
+        <div><span class="eyebrow">工作区</span><h2 id="workspaceTitle">沿线旅行</h2></div>
+        <button id="closeWorkspace" class="icon-button" title="关闭工作区" aria-label="关闭工作区">×</button>
       </div>
-      <div class="left-note">
-        <p>地图线路会随比例尺渐变，缩放时保留已加载线路，避免整段消失。</p>
-        <p>在建城市轨道使用灰白虚线，运营线路保留各自颜色。</p>
+      <nav class="workspace-nav" aria-label="工作区页面">
+        <button class="workspace-tab selected" data-view="route">线路</button>
+        <button class="workspace-tab" data-view="stations">车站</button>
+        <button class="workspace-tab" data-view="favorites">收藏</button>
+        <button class="workspace-tab" data-view="experiences">漫游</button>
+        <button class="workspace-tab" data-view="layers">图层</button>
+      </nav>
+      <div class="workspace-content">
+        <section class="workspace-page" data-page="route">
+          <label>选择车次
+            <select id="routeSelect"></select>
+          </label>
+          <div id="routeSummary" class="route-card selected"></div>
+          <label class="file-button">导入时刻/径路 JSON<input id="importTimetable" type="file" accept=".json,application/json"></label>
+          <p class="panel-note">路线几何来自随包快照。导入文件只有时刻而没有轨道几何时，可以查看经停表，不能绘制真实径路。</p>
+          <div class="subsection">
+            <div class="subsection-heading"><span class="subsection-title">经停站</span><button id="refreshData" class="icon-button small" title="重新读取本地资料" aria-label="重新读取本地资料">↻</button></div>
+            <div id="stationList" class="station-list"></div>
+          </div>
+          <button id="openStationDialog" class="text-button wide-button">查看完整经停表</button>
+        </section>
+        <section class="workspace-page" data-page="stations" hidden>
+          <label>搜索车站
+            <input id="stationSearch" type="search" placeholder="输入车站名称">
+          </label>
+          <div id="directoryList" class="directory-list"></div>
+          <p class="panel-note">网页内列出随包路线的经停站。查询全网途经线路和本站车次时，可打开中国铁路地图原站。</p>
+        </section>
+        <section class="workspace-page" data-page="favorites" hidden>
+          <div class="section-heading"><div><span class="eyebrow">本机保存</span><h2>我的收藏</h2></div></div>
+          <div id="favoriteList" class="record-list"></div>
+          <p class="panel-note">收藏只保存在当前浏览器；清除网站数据会一并移除。</p>
+        </section>
+        <section class="workspace-page" data-page="experiences" hidden>
+          <div class="experience-tabs" role="tablist" aria-label="铁路漫游">
+            <button class="experience-tab selected" data-experience="passport">护照</button>
+            <button class="experience-tab" data-experience="postcard">明信片</button>
+            <button class="experience-tab" data-experience="history">时光机</button>
+            <button class="experience-tab" data-experience="quiz">猜城市</button>
+          </div>
+          <section class="experience-page" data-experience-page="passport">
+            <form id="journeyForm" class="local-form">
+              <h3>记录旅程</h3>
+              <label>乘车日期<input name="date" type="date" required></label>
+              <div class="two-fields">
+                <label>车次<input name="train" type="text" placeholder="可留空"></label>
+                <label>状态<select name="status"><option value="needsReview">待核对</option><option value="travelled">已乘坐</option><option value="cancelled">未乘坐</option></select></label>
+              </div>
+              <div class="two-fields">
+                <label>出发站<input name="from" required></label>
+                <label>到达站<input name="to" required></label>
+              </div>
+              <label>发车时间<input name="departure" type="time"></label>
+              <label>备注<textarea name="note" rows="2"></textarea></label>
+              <button class="primary-button" type="submit">保存记录</button>
+            </form>
+            <div class="record-actions">
+              <button id="exportPassport" class="text-button">导出 JSON</button>
+              <button id="exportPassportCSV" class="text-button">导出 CSV</button>
+              <label class="file-button">导入记录<input id="importPassport" type="file" accept=".json,.csv,application/json,text/csv"></label>
+            </div>
+            <div id="passportSummary" class="passport-summary"></div>
+            <div id="passportList" class="record-list"></div>
+          </section>
+          <section class="experience-page" data-experience-page="postcard" hidden>
+            <h3>制作旅程明信片</h3>
+            <label>出发站<input id="postcardFrom" type="text"></label>
+            <label>到达站<input id="postcardTo" type="text"></label>
+            <label>车次<input id="postcardTrain" type="text"></label>
+            <label>寄语<textarea id="postcardCaption" rows="3">山川迢迢，来日方长。</textarea></label>
+            <label>样式
+              <select id="postcardStyle">
+                <option value="red">暖红</option>
+                <option value="blue">铁路蓝</option>
+                <option value="map">地图绿</option>
+              </select>
+            </label>
+            <canvas id="postcardPreview" class="postcard-preview" width="640" height="360"></canvas>
+            <button id="downloadPostcard" class="primary-button wide-button">导出 PNG 明信片</button>
+          </section>
+          <section class="experience-page" data-experience-page="history" hidden>
+            <label>时间范围 <span id="historyDateLabel"></span>
+              <input id="historyDate" type="range" min="0" max="0" value="0">
+            </label>
+            <div id="historyEvent" class="history-event"></div>
+            <p class="panel-note">历史节点显示城市关系，不代表当时的轨道精确走向。</p>
+          </section>
+          <section class="experience-page" data-experience-page="quiz" hidden>
+            <p class="panel-note">根据城市轨道线形猜城市。题目来自随包的地铁概览数据。</p>
+            <canvas id="quizCanvas" class="quiz-canvas" width="520" height="300"></canvas>
+            <div id="quizChoices" class="quiz-choices"></div>
+            <div class="quiz-footer"><span id="quizScore">0 / 0</span><button id="nextQuiz" class="text-button">换一题</button></div>
+          </section>
+        </section>
+        <section class="workspace-page" data-page="layers" hidden>
+          <div class="section-heading"><div><span class="eyebrow">地图显示</span><h2>图层与外观</h2></div></div>
+          <label class="toggle-row"><input id="showMetro" type="checkbox" checked>城市轨道线路</label>
+          <label class="toggle-row"><input id="showConstruction" type="checkbox" checked>在建线路</label>
+          <label>地图底图
+            <select id="baseLayer">
+              <option value="osm">OpenStreetMap</option>
+              <option value="railway">OpenRailwayMap</option>
+            </select>
+          </label>
+          <p class="panel-note">地铁概览随包提供；铁路底图和地图瓦片需要联网。完整离线铁路数据库暂未放入网页包。</p>
+        </section>
       </div>
     </aside>
 
+    <button id="workspaceScrim" class="workspace-scrim" aria-label="关闭工作区" hidden></button>
+
     <section class="map-stage">
       <div id="map" role="application" aria-label="铁道图鉴地图"></div>
-      <div class="playback-bar">
+      <div id="playbackBar" class="playback-bar">
         <button id="playJourney" class="play-button" title="播放沿线旅行" aria-label="播放沿线旅行">▶</button>
         <div class="playback-main">
-          <div class="playback-title"><strong>G337</strong><span id="playbackClock">16:55</span><span id="playbackPhase">准备出发</span></div>
-          <input id="journeyProgress" type="range" min="60900" max="82380" step="15" value="60900" aria-label="G337 沿线旅行进度">
+          <div class="playback-title"><strong id="playbackTrain">G337</strong><span id="playbackClock">16:55</span><span id="playbackPhase">准备出发</span></div>
+          <input id="journeyProgress" type="range" min="0" max="1" step="1" value="0" aria-label="沿线旅行进度">
         </div>
         <select id="playbackSpeed" class="speed-select" aria-label="播放速度">
+          <option value="1">1×</option>
           <option value="10">10×</option>
           <option value="60" selected>60×</option>
           <option value="120">120×</option>
         </select>
+        <button id="closePlayback" class="icon-button small" title="关闭沿线旅行" aria-label="关闭沿线旅行">×</button>
       </div>
       <div class="map-status">
         <span id="dataStatus">正在读取本地路线资料…</span>
@@ -85,7 +182,7 @@
           <h2 id="infoTitle">北京西</h2>
         </div>
         <div class="header-actions">
-          <button id="openStationDialog" class="text-button">车次表</button>
+          <button id="favoriteStation" class="icon-button" title="收藏车站" aria-label="收藏车站">☆</button>
           <button id="closeInfo" class="icon-button" title="关闭要素信息" aria-label="关闭要素信息">×</button>
         </div>
       </div>
@@ -99,7 +196,9 @@
           <h2>选择服务</h2>
         </div>
         <div class="header-actions">
+          <button id="openAssistantHistory" class="icon-button" title="问答历史" aria-label="问答历史">↺</button>
           <button id="assistantMode" class="icon-button" title="切换侧栏与浮窗" aria-label="切换侧栏与浮窗">◫</button>
+          <button id="popoutAssistant" class="icon-button" title="在独立窗口打开" aria-label="在独立窗口打开">↗</button>
           <button id="closeAssistant" class="icon-button" title="关闭地图问答" aria-label="关闭地图问答">×</button>
         </div>
       </div>
@@ -121,13 +220,15 @@
         <div class="two-fields">
           <label>
             模型 ID
-            <input id="modelInput" type="text" autocomplete="off" spellcheck="false">
+            <input id="modelInput" type="text" list="modelSuggestions" autocomplete="off" spellcheck="false">
+            <datalist id="modelSuggestions"></datalist>
           </label>
           <label>
-            GPT 协议
+            接口协议
             <select id="protocolSelect">
               <option value="chat">Chat Completions</option>
               <option value="responses">Responses</option>
+              <option value="messages">Anthropic Messages</option>
             </select>
           </label>
         </div>
@@ -149,6 +250,10 @@
             记住地址和模型
           </label>
         </div>
+        <div id="claudeTools" class="tool-toggles" hidden>
+          <label class="toggle-row"><input id="webSearchToggle" type="checkbox">允许联网搜索</label>
+          <label class="toggle-row"><input id="webFetchToggle" type="checkbox">允许读取网页</label>
+        </div>
         <p class="form-note">Key 只在当前页面内存中使用，不写入浏览器存储。朋友应填自己的 API Key。</p>
       </div>
       <div id="conversation" class="conversation" aria-live="polite">
@@ -164,6 +269,17 @@
     </aside>
   </main>
 
+  <dialog id="assistantHistoryDialog" class="station-dialog">
+    <div class="dialog-header">
+      <div><span class="eyebrow">本机保存</span><h2>问答历史</h2></div>
+      <div class="header-actions">
+        <button id="clearAssistantHistory" class="text-button">清空</button>
+        <button id="closeAssistantHistory" class="icon-button" title="关闭" aria-label="关闭">×</button>
+      </div>
+    </div>
+    <div id="assistantHistoryList" class="dialog-content"></div>
+  </dialog>
+
   <dialog id="stationDialog" class="station-dialog">
     <div class="dialog-header">
       <div>
@@ -174,6 +290,7 @@
     </div>
     <div id="dialogContent" class="dialog-content"></div>
   </dialog>
+  <div id="appToast" class="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script src="./vendor/leaflet.js"></script>
   <script src="./app.js"></script>
