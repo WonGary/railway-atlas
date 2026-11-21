@@ -1,0 +1,17 @@
+铁道漫游 0.7.0
+
+在线入口　https://wongary.github.io/railway-atlas/
+
+Windows　解压整个 ZIP，双击 Railway-Atlas.exe。多数电脑选 x64，使用 ARM 处理器的电脑选 arm64。
+Mac　解压后双击「打开铁道漫游.command」。同一个包支持 Apple 芯片和 Intel。启动器使用临时签名，未做 Apple 公证。系统限制运行时可以直接使用在线入口。
+桌面启动器会用默认浏览器打开 http://127.0.0.1:18763/ 。保持终端窗口打开，退出时按 Ctrl+C。本地时刻库和收藏跟随浏览器与站点地址保存。
+iPhone、iPad　在 Safari 打开在线入口，点「分享」→「添加到主屏幕」。
+Android　在 Chrome 的菜单里选择「安装应用」或「添加到主屏幕」。
+Web-PWA.zip 供自行部署。将 Web 目录中的文件放到同一个 HTTPS 路径下即可。也可以解压后运行 python3 -m http.server 8080 --directory Web，再打开 http://127.0.0.1:8080/ 。
+
+打开工作区的「线路」可以播放 G337 或 G6580，也可选上车站和下车站。点播放条的 × 退出。
+要查更多车次，打开「线路 → 本机时刻库」，选择路路通官方 APK、lulutong.json 或 library.json，也可在桌面包内点「从路路通同步时刻库」。选始发日期，再输入车次。「车站」可查本站排图和途经线路。桌面便携包还可查询中国铁路地图，站表会显示原站更新日期。
+要在图上回放其他有经由资料的车次，在「图层」导入 .railcache，再到「线路」点「用本机瓦片匹配径路」。覆盖不足时可改选较短区间。
+「图层」可导入 .railmap 或 .railcache。大型瓦片库需要浏览器有足够的本地空间。API Key 在「地图问答」中填写，关闭页面即清除。
+
+资源来源及许可见 Web/licenses/ 和 Web/vendor/LICENSE。

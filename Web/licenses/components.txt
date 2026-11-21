@@ -1,0 +1,6 @@
+铁路与地铁地理资料：© OpenStreetMap contributors，ODbL 1.0。六城详情按线路关系和站点对象计数，站台、方向和支线可能单独计数。
+在线基础轨道使用 OpenFreeMap / OpenMapTiles / OpenStreetMap，数据范围取决于视野和来源。参见 NOTICE.txt、NATIONAL-METRO-LICENCE.txt、METRO-PALETTE-LICENCE.txt。
+Leaflet 1.9.4 — BSD-2-Clause，见 ../vendor/LICENSE。
+@mapbox/vector-tile 3.0.0、pbf 5.2.0、@mapbox/point-geometry 1.1.0 — 许可见同目录 vector-tile.txt、pbf.txt、point-geometry.txt。
+@sqlite.org/sqlite-wasm 3.54.1-build1 — JavaScript 发布包的许可见 Apache-2.0.txt；SQLite 核心属于 public domain。上游源码 https://github.com/sqlite/sqlite-wasm 和 https://sqlite.org/wasm/ 。
+Web/data/regions 中的 .railmap 和 Web/data/rail 中的 Z4 瓦片与原生包使用同一份公开快照。SQLite 和矢量解码器在设备上运行。

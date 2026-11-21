@@ -1,0 +1,90 @@
+name: Check published desktop packages
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    if: startsWith(github.event.release.tag_name, 'web-v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            package: Windows-x64
+            command: Railway-Atlas.exe
+          - os: windows-11-arm
+            package: Windows-arm64
+            command: Railway-Atlas.exe
+          - os: macos-latest
+            package: macOS-universal
+            command: Railway-Atlas
+          - os: macos-15-intel
+            package: macOS-universal
+            command: Railway-Atlas
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - name: Download the release archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          TARGET: ${{ matrix.package }}
+        shell: bash
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*-$TARGET.zip" --pattern SHA256SUMS.txt
+      - name: Verify checksum and launch the extracted app
+        shell: python
+        env:
+          LAUNCHER: ${{ matrix.command }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          import hashlib, os, pathlib, subprocess, time, urllib.request, zipfile
+          root = pathlib.Path.cwd()
+          archive, = root.glob("*.zip")
+          sums = dict(line.split("  ")[::-1] for line in pathlib.Path("SHA256SUMS.txt").read_text().splitlines())
+          assert hashlib.sha256(archive.read_bytes()).hexdigest() == sums[archive.name]
+          with zipfile.ZipFile(archive) as src:
+              src.extractall("test-distribution")
+          app = root / "test-distribution" / os.environ["LAUNCHER"]
+          app.chmod(0o755)
+          process = subprocess.Popen([str(app), "-no-open"])
+          try:
+              for attempt in range(40):
+                  try:
+                      with urllib.request.urlopen("http://127.0.0.1:18763/") as page:
+                          version = os.environ["TAG"].removeprefix("web-v")
+                          assert f'id="versionBadge">{version}<'.encode() in page.read()
+                      break
+                  except OSError:
+                      if process.poll() is not None or attempt == 39: raise
+                      time.sleep(0.25)
+          finally:
+              process.terminate()
+              process.wait(timeout=5)
+  mobile-web:
+    if: startsWith(github.event.release.tag_name, 'web-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [webkit, chromium]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the released web archive with a mobile browser profile
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          ENGINE: ${{ matrix.engine }}
+        shell: bash
+        run: |
+          work="$RUNNER_TEMP/railway-release"
+          mkdir -p "$work"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$work" --pattern '*-Web-PWA.zip' --pattern SHA256SUMS.txt
+          cd "$work"
+          sha256sum --check --ignore-missing SHA256SUMS.txt
+          unzip -q ./*-Web-PWA.zip
+          npm install --no-audit --no-fund --prefix "$work" playwright-core@1.65.1
+          "$work/node_modules/.bin/playwright-core" install --with-deps "$ENGINE"
+          NODE_PATH="$work/node_modules" node "$GITHUB_WORKSPACE/Portable/check-mobile.cjs" "$ENGINE"

@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101820">
-  <meta name="description" content="铁道图鉴网页应用：铁路与地铁地图、沿线旅行、车站资料和个人铁路记录。">
+  <meta name="description" content="用铁道漫游查铁路与地铁线路、查看车站时刻、回放列车旅程。">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>铁道图鉴</title>
+  <title>铁道漫游</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./touch.png">
   <link rel="stylesheet" href="./vendor/leaflet.css">
@@ -18,8 +18,8 @@
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">R</div>
       <div>
-        <h1>铁道图鉴</h1>
-      <p>网页应用 <span id="versionBadge">0.6.3</span></p>
+        <h1>铁道漫游</h1>
+      <p>网页应用 <span id="versionBadge">0.7.0</span></p>
       </div>
     </div>
     <div class="top-actions">
@@ -32,7 +32,7 @@
   </header>
 
   <main class="app-shell">
-    <aside id="workspacePanel" class="left-rail" aria-label="铁道图鉴工作区">
+    <aside id="workspacePanel" class="left-rail" aria-label="铁道漫游工作区">
       <div class="workspace-heading">
         <div><span class="eyebrow">工作区</span><h2 id="workspaceTitle">沿线旅行</h2></div>
         <button id="closeWorkspace" class="icon-button" title="关闭工作区" aria-label="关闭工作区">×</button>
@@ -50,8 +50,24 @@
             <select id="routeSelect"></select>
           </label>
           <div id="routeSummary" class="route-card selected"></div>
+          <div class="journey-range" aria-label="乘车区间">
+            <label>上车站<select id="routeFrom"></select></label>
+            <label>下车站<select id="routeTo"></select></label>
+          </div>
+          <button id="fullJourney" class="text-button" hidden>恢复全程</button>
+          <button id="matchTracks" class="text-button" hidden>用本机瓦片匹配径路</button>
+          <p id="matchStatus" class="panel-note" role="status" hidden></p>
           <label class="file-button">导入时刻/径路 JSON<input id="importTimetable" type="file" accept=".json,application/json"></label>
-          <p class="panel-note">路线几何来自随包快照。导入文件只有时刻而没有轨道几何时，可以查看经停表，不能绘制真实径路。</p>
+          <p class="panel-note">有轨道资料的车次可以回放。仅含时刻的车次可查经停表；有经由和里程时，还可用本机瓦片匹配径路。</p>
+          <details><summary>本机时刻库</summary>
+            <label class="file-button">导入时刻库或路路通 APK<input id="libraryFile" type="file" accept=".json,.apk,application/json,application/vnd.android.package-archive"></label>
+            <button id="syncTimetable" class="text-button" hidden>从路路通同步时刻库</button>
+            <p class="panel-note">可选择原生版导出的 JSON，或从<a href="http://www.lltskb.com/" target="_blank" rel="noopener noreferrer">路路通官网</a>取得 Android 安装包，在这里选取文件即可。</p>
+            <p id="libraryStatus" class="panel-note" role="status">时刻资料保存在本浏览器。</p>
+            <label>始发日期<input id="libraryDate" type="date"></label>
+            <label>查车次<input id="libraryTrain" type="search" placeholder="例如 G337"></label>
+            <div id="libraryResults" class="directory-list"></div>
+          </details>
           <div class="subsection">
             <div class="subsection-heading"><span class="subsection-title">经停站</span><button id="refreshData" class="icon-button small" title="重新读取本地资料" aria-label="重新读取本地资料">↻</button></div>
             <div id="stationList" class="station-list"></div>
@@ -62,8 +78,24 @@
           <label>搜索车站
             <input id="stationSearch" type="search" placeholder="输入车站名称">
           </label>
+          <div class="directory-tools">
+            <label>城市轨道资料
+              <select id="metroCitySelect"></select>
+            </label>
+            <div class="record-actions">
+              <button id="loadMetroCity" class="text-button">加载所选城市</button>
+              <button id="focusMetroCity" class="text-button">定位所选城市</button>
+            </div>
+            <p id="directoryStatus" class="panel-note"></p>
+          </div>
           <div id="directoryList" class="directory-list"></div>
-          <p class="panel-note">网页内列出随包路线的经停站。查询全网途经线路和本站车次时，可打开中国铁路地图原站。</p>
+          <button id="stationBoard" class="text-button">按站名查线路与本站车次</button>
+          <details id="discovery"><summary>发现城市与车站</summary>
+            <label>目的地<input type="search" id="discoverySearch" placeholder="站名、城市或国家"></label>
+            <button id="shuffleDiscovery" class="text-button">换一批</button>
+            <div id="discoveryList" class="directory-list"></div>
+          </details>
+          <p class="panel-note">铁路目录列出网页随包路线的经停站；城市轨道目录按城市加载详细线路和站点。查询全网途经线路和本站车次时，可打开中国铁路地图原站。</p>
         </section>
         <section class="workspace-page" data-page="favorites" hidden>
           <div class="section-heading"><div><span class="eyebrow">本机保存</span><h2>我的收藏</h2></div></div>
@@ -135,13 +167,21 @@
           <div class="section-heading"><div><span class="eyebrow">地图显示</span><h2>图层与外观</h2></div></div>
           <label class="toggle-row"><input id="showMetro" type="checkbox" checked>城市轨道线路</label>
           <label class="toggle-row"><input id="showConstruction" type="checkbox" checked>在建线路</label>
+          <label class="toggle-row"><input id="showRail" type="checkbox" checked>铁路轨道与车站</label>
+          <label>区域地图
+            <select id="regionSelect"><option value="">选择区域</option><option value="shanghai">上海 · 虹桥与中心城区</option><option value="nanchang-preview">南昌 · 地铁整线</option></select>
+          </label>
+          <label class="file-button">打开自己的 .railmap 文件<input id="regionFile" type="file" accept=".railmap,.json"></label>
+          <p id="regionStatus" class="panel-note" role="status"></p>
+          <label class="file-button">导入原生 .railcache 瓦片库<input id="railCacheFile" type="file" accept=".railcache"></label>
+          <p id="cacheStatus" class="panel-note" role="status">只读取你选择的文件，瓦片副本占用本机浏览器空间。</p>
           <label>地图底图
             <select id="baseLayer">
               <option value="osm">OpenStreetMap</option>
               <option value="railway">OpenRailwayMap</option>
             </select>
           </label>
-          <p class="panel-note">地铁概览随包提供；铁路底图和地图瓦片需要联网。完整离线铁路数据库暂未放入网页包。</p>
+          <p class="panel-note">铁路概览随包提供。放大后从 OpenFreeMap 读取当前视野的轨道与车站。区域地图首次打开后可离线查看。</p>
         </section>
       </div>
     </aside>
@@ -149,7 +189,7 @@
     <button id="workspaceScrim" class="workspace-scrim" aria-label="关闭工作区" hidden></button>
 
     <section class="map-stage">
-      <div id="map" role="application" aria-label="铁道图鉴地图"></div>
+      <div id="map" role="application" aria-label="铁道漫游地图"></div>
       <div id="playbackBar" class="playback-bar">
         <button id="playJourney" class="play-button" title="播放沿线旅行" aria-label="播放沿线旅行">▶</button>
         <div class="playback-main">
@@ -293,6 +333,11 @@
   <div id="appToast" class="app-toast" role="status" aria-live="polite" hidden></div>
 
   <script src="./vendor/leaflet.js"></script>
+  <script src="./vendor/vector.js"></script>
+  <script src="./library.js"></script>
+  <script src="./cache-client.js"></script>
+  <script src="./rail-layers.js"></script>
+  <script src="./station-board.js"></script>
   <script src="./app.js"></script>
   <script>
     if ("serviceWorker" in navigator && location.protocol !== "file:") {

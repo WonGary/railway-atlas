@@ -1,0 +1,25 @@
+全国城市轨道概览
+
+© OpenStreetMap contributors
+Open Database License (ODbL) 1.0:
+https://opendatacommons.org/licenses/odbl/1-0/
+https://www.openstreetmap.org/copyright
+
+全国地理线路数据（含大陆、港澳台）：
+https://maps.mail.ru/osm/tools/overpass/api/interpreter
+OSM 数据快照：2026-11-05T19:42:50Z
+查询四类 route relation: subway, light_rail, tram, monorail；
+保留明确的 route_master、OSM 原始标签及颜色来源。
+Scripts/build-national-metro.mjs 为独立实现的可复现转换工具。
+
+大陆与港澳的城市分组参考：
+https://github.com/WannaSlackOffAtWork/metro/blob/master/data/china_metro.geojson
+上游标注采集日期：2026-09-14
+原始 Git blob: 88bfd45b41c126cf4a60d9d2458fda8a0265b57b
+参考文件 SHA-256: 97e03fdddfd520a4492fc948e9eb69419157ad0598ca79324d3fcb41e341f8cb
+
+本应用独立实现解析和几何简化，未复制上游仓库的提取代码。
+简化保留每个原始几何分段及其端点；不连接不连续的轨道。
+概览不包含站点及完整 OSM 标签，不据此推定线路当前运营状态。
+线路色补充使用随应用附带的色库，其来源见 METRO-PALETTE-LICENCE.txt。
+派生概览数据库随源代码及应用资源提供，继续适用 ODbL 1.0。
