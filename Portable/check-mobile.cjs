@@ -17,13 +17,32 @@ async function run() {
     browser = await playwright[engine].launch({executablePath:process.env.RAILWAY_BROWSER});
     const phone = engine==="webkit" ? "iPhone 13" : "Pixel 7";
     const context = await browser.newContext({...playwright.devices[phone]});
+    await context.addInitScript(()=>{if(!localStorage.getItem("old-version-tested")){
+      localStorage.setItem("railway-atlas-journey-open","true");
+      localStorage.setItem("railway-atlas-favorites",'["北京西"]');
+      localStorage.setItem("old-version-tested","1");
+    }});
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", error=>errors.push(error.message));
     await page.goto(site, {waitUntil:"domcontentloaded"});
-    await page.waitForFunction(()=>state.route?.train==="G337");
-    assert.equal(await page.locator("#versionBadge").textContent(),"0.7.0");
+    await page.waitForFunction(()=>state.routes.length>0 && state.metroPolylines.length>0);
+    assert.equal(await page.locator("#versionBadge").textContent(),"0.8.0");
+    assert.equal(await page.locator("#playbackBar").isVisible(),false);
+    assert.deepEqual(await page.evaluate(()=>[state.route,state.map.hasLayer(state.routeLayer),state.map.hasLayer(state.historyLayer),state.workspaceView]),[null,false,false,"layers"]);
+    await page.tap("#toggleWorkspace");
+    await page.tap('[data-view="settings"]');
+    await page.selectOption("#pref-mode","cached");
+    await page.tap('[data-view="layers"]');
+    await page.uncheck("#pref-showsStations");
+    await page.uncheck("#pref-showsNationalMetroOverview");
+    assert.equal(await page.evaluate(()=>state.metroLayer.getLayers().length),0);
+    await page.check("#pref-showsNationalMetroOverview");
+    assert.ok(await page.evaluate(()=>state.metroLayer.getLayers().length>0));
+    await page.tap('[data-view="experiences"]');
     await page.tap("#toggleJourney");
+    const routeID=await page.evaluate(()=>state.routes.find(route=>route.train==="G337").id);
+    await page.selectOption("#routeSelect",routeID);
     assert.equal(await page.locator("#stationList button").count(),7);
     await page.selectOption("#routeFrom","2");
     await page.selectOption("#routeTo","4");
@@ -32,6 +51,7 @@ async function run() {
     assert.equal(await page.evaluate(()=>state.route.legs.length),6);
     await page.tap("#closeWorkspace");
     assert.equal(await page.locator("#playbackBar").isVisible(),false);
+    assert.equal(await page.evaluate(()=>state.map.hasLayer(state.routeLayer)),false);
     await page.tap("#toggleWorkspace");
     await page.tap('[data-view="stations"]');
     await page.selectOption("#metroCitySelect","macao");
@@ -42,10 +62,12 @@ async function run() {
     await page.evaluate(()=>fetch("./data/metro/macao.json").then(r=>r.json()));
     await context.setOffline(true);
     await page.reload({waitUntil:"domcontentloaded"});
-    await page.waitForFunction(()=>state.route?.stops?.length===7);
+    await page.waitForFunction(()=>state.routes.length && state.metroPolylines.length);
+    assert.equal(await page.evaluate(()=>state.route),null);
+    assert.deepEqual(await page.evaluate(()=>[AtlasPrefs.value.showsStations,AtlasPrefs.value.mode,state.favorites.has("北京西")]),[false,"cached",true]);
     assert.equal(await page.evaluate(async()=>(await (await fetch("./data/metro/macao.json")).json()).stations.length),32);
     assert.deepEqual(errors,[]);
-    console.log(`${engine} / ${phone}: G337, station range, closing journey, city directory and offline reopening passed.`);
+    console.log(`${engine} / ${phone}: map-first upgrade, map settings, G337, city directory and offline reopening passed.`);
   } finally {
     await browser?.close();
     server?.kill();

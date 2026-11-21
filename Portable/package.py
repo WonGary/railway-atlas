@@ -11,7 +11,7 @@ root = Path(__file__).resolve().parents[1]
 web = root / "Web"
 out = Path(sys.argv[1]).absolute()
 out.mkdir(parents=True, exist_ok=True)
-version = "0.7.0"
+version = (root / "Mobile/VERSION").read_text().strip()
 
 
 def build(stage, system, arch):

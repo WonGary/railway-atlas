@@ -31,6 +31,17 @@ for (const city of index.cities) {
   for (const route of detail.routes) assert.ok(route.stops.every(s=>stations.has(s.id)));
 }
 const tiles = json("data/rail/index.json").tiles;
+const policy={};vm.createContext(policy);vm.runInContext(text("map-preferences.js"),policy);
+for (const [tags,expected] of [
+  [{railway:"construction","construction:railway":"subway"},["metro","construction"]],
+  [{railway:"subway",construction:"yes",maxspeed:80},["metro","construction"]],
+  [{railway:"construction",construction:"rail"},["railway","construction"]],
+  [{feature:"rail",maxspeed:"350"},["railway","speed350"]],
+  [{railway:"rail",usage:"industrial",maxspeed:160},["industrial","freight"]]
+]) {
+  policy.tags=tags;
+  assert.equal(vm.runInContext("JSON.stringify([AtlasPrefs.classify(tags).network,AtlasPrefs.classify(tags).category])",policy),JSON.stringify(expected));
+}
 assert.equal(tiles.length,12);for (const tile of tiles) assert.ok(fs.existsSync(join(root,"data/rail",tile.file)));
 assert.equal(json("data/discovery.json").length,325);
 assert.equal(json("data/railway-experience-timetables.json").timetables.find(t=>t.train==="G337").stops.length,7);

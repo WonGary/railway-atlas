@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101820">
-  <meta name="description" content="用铁道漫游查铁路与地铁线路、查看车站时刻、回放列车旅程。">
+  <meta name="description" content="查看铁路与地铁地图，按速度、用途和建设状态筛选线路，查询车站和换乘。">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>铁道漫游</title>
@@ -19,33 +19,32 @@
       <div class="brand-mark" aria-hidden="true">R</div>
       <div>
         <h1>铁道漫游</h1>
-      <p>网页应用 <span id="versionBadge">0.7.0</span></p>
+      <p>铁路地图 <span id="versionBadge">0.8.0</span></p>
       </div>
     </div>
     <div class="top-actions">
       <button id="toggleWorkspace" class="icon-button" title="打开工作区" aria-label="打开工作区">☰</button>
-      <button id="fitG337" class="icon-button" title="定位 G337" aria-label="定位 G337">⌖</button>
-      <button id="toggleJourney" class="text-button">沿线旅行</button>
-      <button id="toggleAssistant" class="text-button">地图问答</button>
+      <button id="homeMap" class="icon-button" title="返回全国视野" aria-label="返回全国视野">⌖</button>
       <button id="toggleInfo" class="text-button">要素信息</button>
+      <button id="toggleAssistant" class="text-button">地图问答</button>
     </div>
   </header>
 
   <main class="app-shell">
     <aside id="workspacePanel" class="left-rail" aria-label="铁道漫游工作区">
       <div class="workspace-heading">
-        <div><span class="eyebrow">工作区</span><h2 id="workspaceTitle">沿线旅行</h2></div>
+        <h2 id="workspaceTitle">地图图层</h2>
         <button id="closeWorkspace" class="icon-button" title="关闭工作区" aria-label="关闭工作区">×</button>
       </div>
       <nav class="workspace-nav" aria-label="工作区页面">
-        <button class="workspace-tab selected" data-view="route">线路</button>
+        <button class="workspace-tab selected" data-view="layers">图层</button>
         <button class="workspace-tab" data-view="stations">车站</button>
         <button class="workspace-tab" data-view="favorites">收藏</button>
-        <button class="workspace-tab" data-view="experiences">漫游</button>
-        <button class="workspace-tab" data-view="layers">图层</button>
+        <button class="workspace-tab" data-view="settings">设置</button>
+        <button class="workspace-tab" data-view="experiences">更多</button>
       </nav>
       <div class="workspace-content">
-        <section class="workspace-page" data-page="route">
+        <section class="workspace-page" data-page="route" hidden>
           <label>选择车次
             <select id="routeSelect"></select>
           </label>
@@ -99,10 +98,12 @@
         </section>
         <section class="workspace-page" data-page="favorites" hidden>
           <div class="section-heading"><div><span class="eyebrow">本机保存</span><h2>我的收藏</h2></div></div>
+          <label>搜索收藏<input id="favoriteFilter" type="search" placeholder="名称、城市或标签"></label>
           <div id="favoriteList" class="record-list"></div>
           <p class="panel-note">收藏只保存在当前浏览器；清除网站数据会一并移除。</p>
         </section>
         <section class="workspace-page" data-page="experiences" hidden>
+          <button id="toggleJourney" class="text-button">沿线旅行</button>
           <div class="experience-tabs" role="tablist" aria-label="铁路漫游">
             <button class="experience-tab selected" data-experience="passport">护照</button>
             <button class="experience-tab" data-experience="postcard">明信片</button>
@@ -163,8 +164,9 @@
             <div class="quiz-footer"><span id="quizScore">0 / 0</span><button id="nextQuiz" class="text-button">换一题</button></div>
           </section>
         </section>
-        <section class="workspace-page" data-page="layers" hidden>
-          <div class="section-heading"><div><span class="eyebrow">地图显示</span><h2>图层与外观</h2></div></div>
+        <section class="workspace-page" data-page="layers">
+          <div id="mapLayers"></div>
+          <details><summary>数据来源与区域地图</summary>
           <label class="toggle-row"><input id="showMetro" type="checkbox" checked>城市轨道线路</label>
           <label class="toggle-row"><input id="showConstruction" type="checkbox" checked>在建线路</label>
           <label class="toggle-row"><input id="showRail" type="checkbox" checked>铁路轨道与车站</label>
@@ -179,9 +181,17 @@
             <select id="baseLayer">
               <option value="osm">OpenStreetMap</option>
               <option value="railway">OpenRailwayMap</option>
+              <option value="satellite">卫星影像 · NASA Blue Marble</option>
+              <option value="hybrid">卫星与地名 · NASA / CARTO</option>
             </select>
           </label>
           <p class="panel-note">铁路概览随包提供。放大后从 OpenFreeMap 读取当前视野的轨道与车站。区域地图首次打开后可离线查看。</p>
+          </details>
+        </section>
+        <section class="workspace-page" data-page="settings" hidden>
+          <div id="mapSettings"></div>
+          <button class="text-button" id="exportMapSettings">导出地图设置</button>
+          <label class="file-button">导入地图设置 JSON<input type="file" id="importMapSettings" accept=".json,application/json"></label>
         </section>
       </div>
     </aside>
@@ -190,7 +200,7 @@
 
     <section class="map-stage">
       <div id="map" role="application" aria-label="铁道漫游地图"></div>
-      <div id="playbackBar" class="playback-bar">
+      <div id="playbackBar" class="playback-bar" hidden>
         <button id="playJourney" class="play-button" title="播放沿线旅行" aria-label="播放沿线旅行">▶</button>
         <div class="playback-main">
           <div class="playback-title"><strong id="playbackTrain">G337</strong><span id="playbackClock">16:55</span><span id="playbackPhase">准备出发</span></div>
@@ -205,31 +215,32 @@
         <button id="closePlayback" class="icon-button small" title="关闭沿线旅行" aria-label="关闭沿线旅行">×</button>
       </div>
       <div class="map-status">
-        <span id="dataStatus">正在读取本地路线资料…</span>
+        <span id="dataStatus">正在打开铁路地图…</span>
         <span id="zoomStatus">比例尺</span>
       </div>
       <div class="map-legend" aria-label="地图图例">
         <span><i class="legend-line route-line"></i>铁路</span>
         <span><i class="legend-line metro-line"></i>地铁</span>
-        <span><i class="legend-line construction-line"></i>在建</span>
+        <span><i class="legend-line railway-construction"></i>铁路在建</span>
+        <span><i class="legend-line construction-line"></i>城轨在建</span>
       </div>
     </section>
 
-    <aside id="infoPanel" class="right-panel info-panel" aria-label="要素信息">
+    <aside id="infoPanel" class="right-panel info-panel" aria-label="要素信息" hidden>
       <div class="panel-header">
         <div>
           <span class="eyebrow">要素信息</span>
-          <h2 id="infoTitle">北京西</h2>
+          <h2 id="infoTitle">尚未选择要素</h2>
         </div>
         <div class="header-actions">
-          <button id="favoriteStation" class="icon-button" title="收藏车站" aria-label="收藏车站">☆</button>
+          <button id="favoriteStation" class="icon-button" title="收藏要素" aria-label="收藏要素" hidden>☆</button>
           <button id="closeInfo" class="icon-button" title="关闭要素信息" aria-label="关闭要素信息">×</button>
         </div>
       </div>
-      <div id="infoContent" class="panel-content"></div>
+      <div id="infoContent" class="panel-content">点地图上的线路或车站查看资料。</div>
     </aside>
 
-    <aside id="assistantPanel" class="right-panel assistant-panel" aria-label="地图问答">
+    <aside id="assistantPanel" class="right-panel assistant-panel" aria-label="地图问答" hidden>
       <div class="panel-header">
         <div>
           <span class="eyebrow">地图问答</span>
@@ -291,13 +302,20 @@
           </label>
         </div>
         <div id="claudeTools" class="tool-toggles" hidden>
+          <label>鉴权方式<select id="claudeAuth"><option value="apiKey">API Key</option><option value="bearer">Bearer（兼容网关）</option></select></label>
+          <label>协议版本<input id="apiVersion" value="2023-06-01"></label>
           <label class="toggle-row"><input id="webSearchToggle" type="checkbox">允许联网搜索</label>
           <label class="toggle-row"><input id="webFetchToggle" type="checkbox">允许读取网页</label>
         </div>
+        <label id="gptTools" class="toggle-row"><input id="gptSearch" type="checkbox">允许 Responses 联网搜索</label>
+        <details><summary>模型与输出</summary>
+          <label>常用模型（每行一个 ID）<textarea id="extraModels" rows="3"></textarea></label>
+          <label>输出上限（tokens）<input id="answerLimit" type="number" min="1" max="128000" value="3000"></label>
+        </details>
         <p class="form-note">Key 只在当前页面内存中使用，不写入浏览器存储。朋友应填自己的 API Key。</p>
       </div>
       <div id="conversation" class="conversation" aria-live="polite">
-        <div class="empty-conversation">可以问：G337 经停哪些站？北京西有哪些途经线路？</div>
+        <div class="empty-conversation">点选地图要素后，可以询问线路、站点或换乘。也可以选择不附带地图资料。</div>
       </div>
       <form id="assistantForm" class="composer">
         <textarea id="questionInput" rows="3" placeholder="输入问题，按 ⌘/Ctrl + Enter 发送"></textarea>
@@ -324,11 +342,17 @@
     <div class="dialog-header">
       <div>
         <span class="eyebrow">车站与线路</span>
-        <h2 id="dialogTitle">北京西</h2>
+        <h2 id="dialogTitle">车站资料</h2>
       </div>
       <button id="closeDialog" class="icon-button" title="关闭" aria-label="关闭">×</button>
     </div>
     <div id="dialogContent" class="dialog-content"></div>
+  </dialog>
+  <dialog id="favoriteEditor" class="station-dialog">
+    <div class="dialog-content">
+      <h2>编辑收藏</h2><label>城市<input id="favoriteCity"></label><label>标签<input id="favoriteLabels" placeholder="换乘，想去"></label>
+      <button id="saveFavoriteNote" class="primary-button">保存</button><button id="cancelFavoriteNote" class="text-button">取消</button>
+    </div>
   </dialog>
   <div id="appToast" class="app-toast" role="status" aria-live="polite" hidden></div>
 
@@ -336,11 +360,12 @@
   <script src="./vendor/vector.js"></script>
   <script src="./library.js"></script>
   <script src="./cache-client.js"></script>
+  <script src="./map-preferences.js"></script>
   <script src="./rail-layers.js"></script>
   <script src="./station-board.js"></script>
   <script src="./app.js"></script>
   <script>
-    if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    if ("serviceWorker" in navigator && location.protocol !== "file:" && location.hostname !== "appassets.androidplatform.net") {
       navigator.serviceWorker.register("./sw.js").catch(() => {});
     }
   </script>

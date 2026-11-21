@@ -18,8 +18,8 @@ const STORAGE = {
 };
 const PROVIDERS = {
   gpt: {
-    title: "GPT", endpoint: "https://api.openai.com/v1/chat/completions",
-    model: "gpt-6-astra", protocol: "chat",
+    title: "GPT", endpoint: "https://api.openai.com/v1/responses",
+    model: "gpt-6-astra", protocol: "responses",
     models: ["gpt-6-astra", "gpt-5.6-sol", "gpt-6.1-sol"]
   },
   claude: {
@@ -29,7 +29,7 @@ const PROVIDERS = {
   },
   deepseek: {
     title: "DeepSeek", endpoint: "https://api.deepseek.com/chat/completions",
-    model: "deepseek-flash", protocol: "chat", models: ["deepseek-flash", "deepseek-chat"]
+    model: "deepseek-flash", protocol: "chat", models: ["deepseek-flash", "deepseek-v4-pro", "deepseek-chat"]
   },
   doubao: {
     title: "豆包", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
@@ -60,7 +60,7 @@ const state = {
   playbackMarker: null,
   playbackTimer: null,
   playbackSeconds: 0,
-  playbackVisible: true,
+  playbackVisible: false,
   metroVisible: false,
   showMetro: true,
   showConstruction: true,
@@ -273,7 +273,10 @@ function routeTitle(route) {
 
 function setRouteStatus() {
   const route = state.route;
-  if (!route) return;
+  if (!route || !state.playbackVisible) {
+    $("dataStatus").textContent = `铁路地图 · ${AtlasPrefs.value.mode==="online" ? "在线与本机资料" : AtlasPrefs.value.mode==="cached" ? "随包与本机缓存" : "区域地图"}`;
+    return;
+  }
   const pointCount = route.legs.reduce((total, leg) => total + leg.length, 0);
   const geometry = route.geometryAvailable ? ` · ${pointCount.toLocaleString()} 个轨道点` : " · 无随包轨道几何";
   $("dataStatus").textContent = `本地时刻快照 · ${route.train} · ${route.serviceDate || "日期未记录"}${geometry}`;
@@ -370,7 +373,7 @@ function saveProfile() {
 }
 
 function updateModelSuggestions() {
-  const models = unique([...PROVIDERS[state.provider].models, profileFor().model]);
+  const models = unique([...PROVIDERS[state.provider].models, ...(profileFor().models||[]), profileFor().model]);
   $("modelSuggestions").innerHTML = models.map(model => `<option value="${escapeHTML(model)}"></option>`).join("");
 }
 
@@ -378,6 +381,11 @@ function updateProviderForm() {
   const profile = profileFor();
   $("endpointInput").value = profile.endpoint || "";
   $("modelInput").value = profile.model || "";
+  $("extraModels").value=(profile.models || []).join("\n");
+  $("answerLimit").value=profile.limit || 3000;
+  $("claudeAuth").value=profile.auth || "apiKey";
+  $("apiVersion").value=profile.apiVersion || "2023-06-01";
+  $("gptSearch").checked=!!profile.webSearch;
   const supportedProtocols = state.provider === "custom"
     ? ["chat", "responses", "messages"]
     : state.provider === "gpt" ? ["chat", "responses"] : [PROVIDERS[state.provider].protocol];
@@ -389,6 +397,7 @@ function updateProviderForm() {
     ? savedProtocol : PROVIDERS[state.provider].protocol;
   $("protocolSelect").disabled = supportedProtocols.length === 1;
   $("claudeTools").hidden = state.provider !== "claude";
+  $("gptTools").hidden=state.provider!=="gpt" || $("protocolSelect").value!=="responses";
   $("keyInput").value = state.keys[state.provider] || "";
   $("assistantStatus").textContent = profile.endpoint && profile.model ? `${profile.title} · 未连接` : "请填写地址与模型";
   updateModelSuggestions();
@@ -403,22 +412,29 @@ function collectProfile() {
   state.profiles[state.provider] = {
     title,
     endpoint: $("endpointInput").value.trim(),
-    model: $("modelInput").value.trim(),
-    protocol
+    model: $("modelInput").value.trim(), protocol,
+    models:unique($("extraModels").value.split(/[,\n，]/).map(s=>s.trim()).filter(Boolean)).slice(0,100),
+    limit:Math.max(1,Math.min(128000,parseInt($("answerLimit").value,10)||3000)),
+    auth:$("claudeAuth").value,apiVersion:$("apiVersion").value.trim() || "2023-06-01",webSearch:$("gptSearch").checked
   };
   state.keys[state.provider] = $("keyInput").value.trim();
   saveProfile();
+  updateModelSuggestions();
+  $("gptTools").hidden=state.provider!=="gpt" || protocol!=="responses";
 }
 
 function setWorkspaceView(view) {
+  if (view !== "route" && state.playbackVisible) leaveJourney();
+  state.workspaceView = view;
   document.querySelectorAll(".workspace-tab").forEach(tab => tab.classList.toggle("selected", tab.dataset.view === view));
   document.querySelectorAll(".workspace-page").forEach(page => { page.hidden = page.dataset.page !== view; });
-  const titles = { route: "沿线旅行", stations: "车站目录", favorites: "我的收藏", experiences: "铁路漫游", layers: "图层与外观" };
+  const titles = { route: "沿线旅行", stations: "车站目录", favorites: "我的收藏", experiences: "更多工具", layers: "地图图层", settings:"地图设置" };
   $("workspaceTitle").textContent = titles[view] || "工作区";
   if (view === "experiences") renderPassport();
   if (view === "stations") renderDirectory();
   if (view === "favorites") renderFavorites();
   if (view === "experiences" && $("quizCanvas")) drawQuiz();
+  setLayerVisible(state.historyLayer, view === "experiences" && !document.querySelector('[data-experience-page="history"]').hidden);
   updateJourneyControl();
 }
 
@@ -430,6 +446,7 @@ function setWorkspaceOpen(open) {
   $("toggleWorkspace").setAttribute("aria-expanded", String(open));
   $("toggleWorkspace").title = open ? "关闭工作区" : "打开工作区";
   updateJourneyControl();
+  if(state.map)requestAnimationFrame(()=>state.map.invalidateSize({pan:false}));
 }
 
 function journeyWorkspaceOpen() {
@@ -458,9 +475,21 @@ function setPlaybackVisible(visible) {
 }
 
 function closeJourney() {
+  leaveJourney();
+  setWorkspaceView("layers");
+  setWorkspaceOpen(!window.matchMedia("(max-width: 900px)").matches);
+}
+
+function leaveJourney() {
   setPlaybackVisible(false);
-  setWorkspaceOpen(false);
-  writeStored("railway-atlas-journey-open",false);
+  setLayerVisible(state.routeLayer,false);
+  if (state.journeyCamera && state.map) state.map.setView(state.journeyCamera.center,state.journeyCamera.zoom,{animate:false});
+  state.journeyCamera=null;
+  state.route=null;
+  if (!state.selectedMetroRoute && !state.selectedMetroStation && !state.selectedMapFeature) {
+    state.selectedStation="";renderInfo("");
+  }
+  setRouteStatus();
 }
 
 function closeWorkspace() {
@@ -470,11 +499,13 @@ function closeWorkspace() {
 
 function setJourneyOpen(open) {
   if (open) {
-    writeStored("railway-atlas-journey-open",true);
+    if (!state.routes.length) {showToast("车次资料尚未载入。");return;}
+    state.journeyCamera={center:state.map.getCenter(),zoom:state.map.getZoom()};
     setWorkspaceView("route");
     setWorkspaceOpen(true);
     setPlaybackVisible(true);
-    if (state.route && state.map) fitRoute();
+    const last=readStored(STORAGE.layers,{}).routeID;
+    selectRoute((state.routes.find(r=>r.id===last) || state.routes[0]).id);
     return;
   }
   closeJourney();
@@ -536,7 +567,7 @@ function drawSelectedRoute() {
       }).addTo(state.routeLayer).bindTooltip(route.train);
     }
   }
-  state.routeLayer.addTo(state.map);
+  setLayerVisible(state.routeLayer,state.playbackVisible);
   updatePlaybackBounds();
   updateZoom();
 }
@@ -560,6 +591,7 @@ function updatePlaybackBounds() {
 function selectRoute(id, { fit = true, from = 0, to } = {}) {
   const full = state.routes.find(item => item.id === id);
   if (!full) return;
+  state.selectedMapFeature=null;
   to ??= full.stops.length - 1;
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to >= full.stops.length || from >= to) return;
   const partial = from !== 0 || to !== full.stops.length - 1;
@@ -652,7 +684,7 @@ function buildMetroCityLayers(city, detail) {
       lineCap: "round",
       lineJoin: "round",
       className: construction ? "planned-metro" : "metro-track"
-    }).bindTooltip(`${city.name} · ${metroRouteLabel(route)}`, { sticky: true });
+    }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${city.name} · ${metroRouteLabel(route)}`}), { sticky: true });
     line.on("click", () => selectMetroRoute(city, route));
     line.addTo(routesLayer);
     routeLines.push({ line, route, construction });
@@ -666,7 +698,7 @@ function buildMetroCityLayers(city, detail) {
       weight: 1.4,
       fillColor: "#ffffff",
       fillOpacity: 0.96
-    }).bindTooltip(station.name, { direction: "top", offset: [0, -4] });
+    }).bindTooltip(Object.assign(document.createElement("span"),{textContent:station.name}), { direction: "top", offset: [0, -4] });
     marker.on("click", () => selectMetroStation(city, station));
     marker.addTo(stationsLayer);
     stationMarkers.set(station.id, marker);
@@ -685,6 +717,7 @@ function loadMetroCity(city, { retry = false } = {}) {
     }
     state.metroDetails.set(city.id, detail);
     state.metroCityLayers.set(city.id, buildMetroCityLayers(city, detail));
+    AtlasPrefs.routeList();
     refreshMetroDetailVisibility();
     return detail;
   }).catch(error => {
@@ -703,8 +736,9 @@ function loadMetroCity(city, { retry = false } = {}) {
 function refreshMetroDetailVisibility() {
   if (!state.map) return;
   const zoom = state.map.getZoom();
-  const bounds = state.map.getBounds();
-  const shouldLoad = state.showMetro && zoom >= 7;
+  const prefs=AtlasPrefs.value;
+  const bounds = state.map.getBounds().pad(prefs.viewportBuffer);
+  const shouldLoad = state.showMetro && prefs.mode!=="offline" && zoom >= 7;
   if (shouldLoad) {
     for (const city of state.metroCities) {
       if (metroCityBounds(city).intersects(bounds)) loadMetroCity(city);
@@ -714,30 +748,47 @@ function refreshMetroDetailVisibility() {
   for (const [cityID, layers] of state.metroCityLayers) {
     const city = state.metroCities.find(item => item.id === cityID) || layers.city;
     const inView = metroCityBounds(city).intersects(bounds);
-    const detailedVisible = state.showMetro && zoom >= 8 && inView;
-    const stationsVisible = detailedVisible && zoom >= 10;
+    const detailedVisible = prefs.mode!=="offline" && state.showMetro && zoom >= 8 && inView;
+    const stationsVisible = detailedVisible && prefs.showsStations && (!prefs.automaticDetail || zoom >= 10);
     if (detailedVisible) activeCities.add(city.name);
     setLayerVisible(layers.routesLayer, detailedVisible);
     setLayerVisible(layers.stationsLayer, stationsVisible);
     const detailOpacity = zoom >= 10 ? 0.98 : 0.82;
+    const visibleIDs=new Set();
     layers.routeLines.forEach(({ line, construction, route }) => {
+      const visible=AtlasPrefs.visibleRoute(city.name,route) && (!construction || state.showConstruction) &&
+        AtlasPrefs.visible(AtlasPrefs.classify({...route.tags,route:route.type,...(construction?{state:"construction"}:{})},true),zoom);
+      if (visible) visibleIDs.add(route.id);
+      if (visible !== layers.routesLayer.hasLayer(line)) visible ? layers.routesLayer.addLayer(line) : layers.routesLayer.removeLayer(line);
       const selected = state.selectedMetroRoute?.city.id === cityID && state.selectedMetroRoute?.route.id === route.id;
       line.setStyle({
-        opacity: construction && !state.showConstruction ? 0 : selected ? 1 : detailOpacity,
-        weight: construction ? (selected ? 4.5 : 3) : selected ? 5 : 3.2
+        color:construction?"#d5dce0":prefs.showsMetroColors && route.color || "#526672",
+        opacity: selected ? 1 : detailOpacity,weight:(selected ? 5 : 3.2)*prefs.metroWidthScale
       });
     });
-    for (const [stationID, marker] of layers.stationMarkers) {
+    for (const station of layers.detail.stations) {
+      const stationID=station.id,marker=layers.stationMarkers.get(stationID);if(!marker)continue;
+      const visible=station.routes.some(r=>visibleIDs.has(r.id));
+      if (visible !== layers.stationsLayer.hasLayer(marker)) visible ? layers.stationsLayer.addLayer(marker) : layers.stationsLayer.removeLayer(marker);
       const selected = state.selectedMetroStation?.city.id === cityID && state.selectedMetroStation?.station.id === stationID;
-      marker.setStyle({ radius: selected ? 6 : 3.5, fillColor: selected ? "#f2c94c" : "#ffffff" });
+      marker.setRadius((selected ? 5 : 2.8)*prefs.stationRadiusMultiplier);
+      marker.setStyle({fillColor: selected ? "#f2c94c" : "#ffffff"});
+      const permanent=prefs.showsLabels && zoom>=13 && state.map.getBounds().contains(marker.getLatLng());
+      if(marker.getTooltip()?.options.permanent!==permanent){
+        marker.unbindTooltip().bindTooltip(Object.assign(document.createElement("span"),{textContent:station.name}),{permanent,direction:"top",offset:[0,-4]});
+      }
     }
   }
   state.metroPolylines.forEach(({ line, construction, record }) => {
     const replacedByDetail = activeCities.has(record.city);
-    const visible = state.showMetro && (!construction || state.showConstruction) && !replacedByDetail;
+    const route=record.route;
+    const visible = prefs.showsNationalMetroOverview && state.showMetro && prefs.mode!=="offline" && (!construction || state.showConstruction) && !replacedByDetail &&
+      AtlasPrefs.visibleRoute(record.city,route) && AtlasPrefs.visible(AtlasPrefs.classify({...route.tags,...(construction?{state:"construction"}:{})},true),zoom,{overview:true});
+    if(visible !== state.metroLayer.hasLayer(line)) visible ? state.metroLayer.addLayer(line) : state.metroLayer.removeLayer(line);
     line.setStyle({
+      color:construction?"#d5dce0":prefs.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) || "#526672",
       opacity: visible ? (construction ? 0.22 : 0.16) + Math.max(0, Math.min(1, (zoom - 4) / 5)) * 0.44 : 0,
-      weight: construction ? 1.6 : 1.6 + Math.max(0, Math.min(1, (zoom - 4) / 5)) * 1.3
+      weight: (construction ? 1.6 : 1.6 + Math.max(0, Math.min(1, (zoom - 4) / 5)) * 1.3)*prefs.metroWidthScale
     });
   });
   $("zoomStatus").textContent = `Z${zoom} · 城市轨道 ${activeCities.size ? `细节 ${activeCities.size} 城` : "概览"}`;
@@ -760,7 +811,8 @@ function drawMetro() {
         dashArray: construction ? "7 7" : null,
         lineCap: "round",
         className: construction ? "planned-metro" : "metro-track"
-      }).bindTooltip(`${record.city || ""} · ${route.name || "城市轨道"}`, { sticky: true });
+      }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${record.city || ""} · ${route.name || "城市轨道"}`}), { sticky: true });
+      line.on("click",()=>RailMapLayers.inspect(route.name,route.tags,false,line.getBounds().getCenter()));
       state.metroPolylines.push({ line, construction, record });
       line.addTo(state.metroLayer);
     }
@@ -921,6 +973,7 @@ function stationInfo(name) {
 }
 
 function renderMetroStationInfo(city, station) {
+  state.selectedMapFeature=null;
   $("favoriteStation").hidden = false;
   state.selectedMetroStation = { city, station };
   state.selectedMetroRoute = null;
@@ -957,6 +1010,7 @@ function selectMetroStation(city, station, { pan = true } = {}) {
 }
 
 function selectMetroRoute(city, route) {
+  state.selectedMapFeature=null;
   state.selectedMetroRoute = { city, route };
   state.selectedMetroStation = null;
   state.selectedStation = "";
@@ -981,10 +1035,13 @@ function selectMetroRoute(city, route) {
 }
 
 function renderInfo(name) {
+  state.selectedMapFeature=null;
   $("favoriteStation").hidden = false;
   state.selectedMetroStation = null;
   state.selectedMetroRoute = null;
-  if (!name) return;
+  if (!name) {
+    $("infoTitle").textContent="尚未选择要素";$("infoContent").textContent="点地图上的线路或车站查看资料。";$("favoriteStation").hidden=true;return;
+  }
   const info = stationInfo(name);
   const stop = info.stop;
   const isFavorite = state.favorites.has(name);
@@ -1020,7 +1077,7 @@ function renderInfo(name) {
 function selectStation(name, { pan = true } = {}) {
   state.selectedMetroStation = null;
   state.selectedMetroRoute = null;
-  if (!state.route?.stops.some(stop => stop.name === name)) {
+  if (state.playbackVisible && !state.route?.stops.some(stop => stop.name === name)) {
     const route = state.routes.find(row => row.stops.some(stop => stop.name === name));
     if (route) selectRoute(route.id,{fit:false});
   }
@@ -1035,6 +1092,10 @@ function selectStation(name, { pan = true } = {}) {
   $("infoPanel").hidden = false;
   if (window.matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
   if (marker && pan && state.map) state.map.panTo(marker.getLatLng(), { animate: true, duration: 0.25 });
+  else if (pan && !state.playbackVisible) {
+    const sample=state.routes.find(r=>r.stops.some((s,i)=>s.name===name && r.stopCoordinates[i]));
+    if(sample)state.map.setView(sample.stopCoordinates[sample.stops.findIndex(s=>s.name===name)],12);
+  }
 }
 
 function renderDirectory() {
@@ -1153,15 +1214,22 @@ function metroFavoriteKey(city, station) {
 }
 
 function renderFavorites() {
-  const names = [...state.favorites].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  const notes=readStored("railway-atlas-favorite-notes",{}), query=$("favoriteFilter").value.trim().toLowerCase();
+  const names = [...state.favorites].filter(n=>(n+" "+(notes[n]?.city||"")+" "+(notes[n]?.labels||[]).join(" ")).toLowerCase().includes(query)).sort((a, b) => a.localeCompare(b, "zh-CN"));
   $("favoriteList").innerHTML = names.map(name => `
     <div class="record-item">
-      <button class="record-main" data-station="${escapeHTML(name)}"><strong>${escapeHTML(name.startsWith("metro|") ? name.split("|").slice(3).join("|") : name)}</strong>
+      <button class="record-main" data-station="${escapeHTML(name)}"><strong>${escapeHTML(notes[name]?.feature?.name || (name.startsWith("metro|") ? name.split("|").slice(3).join("|") : name))}</strong>
         <span>${escapeHTML(name.startsWith("metro|") ? state.metroCities.find(c => c.id === name.split("|")[1])?.name || "城市轨道" : unique(state.routes.filter(route => route.stops.some(stop => stop.name === name)).map(route => route.train)).join("、") || "铁路车站")}</span></button>
+      <button class="mini-button edit-favorite" data-station="${escapeHTML(name)}" title="编辑城市和标签">编辑</button>
       <button class="icon-button small remove-favorite" data-station="${escapeHTML(name)}" title="取消收藏" aria-label="取消收藏 ${escapeHTML(name)}">×</button>
     </div>`).join("") || `<p class="panel-note">还没有收藏车站。</p>`;
   $("favoriteList").querySelectorAll(".record-main").forEach(button => button.addEventListener("click", async () => {
     const key = button.dataset.station;
+    if(notes[key]?.feature){
+      const f=notes[key].feature;
+      if(f.coordinate)state.map.setView(f.coordinate,Math.max(12,state.map.getZoom()));
+      RailMapLayers.inspect(f.name,f.tags,f.station,f.coordinate ? L.latLng(f.coordinate) : null);return;
+    }
     if (!key.startsWith("metro|")) return selectStation(key);
     const [, id, stationID] = key.split("|");
     const city = state.metroCities.find(c => c.id === id);
@@ -1171,14 +1239,30 @@ function renderFavorites() {
     if (station) selectMetroStation(city,station);
   }));
   $("favoriteList").querySelectorAll(".remove-favorite").forEach(button => button.addEventListener("click", () => toggleFavorite(button.dataset.station)));
+  $("favoriteList").querySelectorAll(".edit-favorite").forEach(button=>{
+    const key=button.dataset.station, note=notes[key] || {};
+    if(note.city || note.labels?.length)button.parentElement.querySelector(".record-main").append(Object.assign(document.createElement("span"),{textContent:[note.city,...(note.labels||[])].filter(Boolean).join(" · ")}));
+    button.onclick=()=>{
+      $("favoriteCity").value=note.city||"";$("favoriteLabels").value=(note.labels||[]).join("，");
+      $("favoriteEditor").showModal();
+      $("saveFavoriteNote").onclick=()=>{const now=readStored("railway-atlas-favorite-notes",{});now[key]={...now[key],city:$("favoriteCity").value.trim(),labels:unique($("favoriteLabels").value.split(/[,，]/).map(s=>s.trim()))};writeStored("railway-atlas-favorite-notes",now);$("favoriteEditor").close();renderFavorites();};
+    };
+  });
 }
 
-function toggleFavorite(name = state.selectedMetroStation ? metroFavoriteKey(state.selectedMetroStation.city,state.selectedMetroStation.station) : state.selectedStation) {
+function mapFeatureKey(feature) {return `map|${feature.tags.id || feature.coordinate?.map(n=>n.toFixed(4)).join(",") || ""}|${feature.name}`;}
+function toggleFavorite(name = state.selectedMapFeature ? mapFeatureKey(state.selectedMapFeature) : state.selectedMetroStation ? metroFavoriteKey(state.selectedMetroStation.city,state.selectedMetroStation.station) : state.selectedStation) {
   if (!name) return;
   if (state.favorites.has(name)) state.favorites.delete(name);
   else state.favorites.add(name);
   writeStored(STORAGE.favorites, [...state.favorites]);
-  if (state.selectedMetroStation) {
+  if (state.selectedMapFeature) {
+    if(mapFeatureKey(state.selectedMapFeature)===name){
+      const notes=readStored("railway-atlas-favorite-notes",{});
+      if(state.favorites.has(name))notes[name]={...notes[name],feature:state.selectedMapFeature};else delete notes[name];
+      writeStored("railway-atlas-favorite-notes",notes);$("favoriteStation").textContent=state.favorites.has(name)?"★":"☆";
+    }
+  } else if (state.selectedMetroStation) {
     renderMetroStationInfo(state.selectedMetroStation.city, state.selectedMetroStation.station);
   } else {
     if (state.selectedStation) renderInfo(state.selectedStation);
@@ -1209,6 +1293,9 @@ function openStationDialog() {
 function contextText(mode) {
   if (mode === "none") return "";
   if (state.assistantWindow) return state.parentContext?.[mode] || "";
+  if (state.selectedMapFeature) {
+    const {name,tags}=state.selectedMapFeature;return mode==="summary" ? name+" · "+(tags.railway || tags.feature || "地图要素") : JSON.stringify({name,tags});
+  }
   if (state.selectedMetroStation || state.selectedMetroRoute) {
     const selection = state.selectedMetroStation || state.selectedMetroRoute;
     const feature = selection.station || selection.route;
@@ -1217,7 +1304,8 @@ function contextText(mode) {
       stops:feature.stops?.map(s=>s.name),operator:feature.operator,coordinate:feature.coordinate});
   }
   const route = state.route;
-  if (!route) return "";
+  if (!route) return state.selectedStation ? `所选车站 ${state.selectedStation}。${$("infoContent").innerText}`.slice(0,mode==="summary"?350:8000) :
+    state.map ? `地图中心 ${state.map.getCenter().lat.toFixed(3)}, ${state.map.getCenter().lng.toFixed(3)}，缩放 Z${state.map.getZoom()}。` : "";
   const summary = `当前选择：${route.train}，${route.stops[0]?.name} → ${route.stops.at(-1)?.name}，服务日期 ${route.serviceDate || "未记录"}。经停：${route.stops.map(stop => stop.name).join("、")}。`;
   if (mode === "summary") return summary;
   return JSON.stringify({
@@ -1380,14 +1468,14 @@ async function requestJSON(profile, headers, body) {
 async function askClaude(profile, key, system, history, question) {
   const headers = {
     "Content-Type": "application/json",
-    "x-api-key": key,
-    "anthropic-version": "2023-06-01",
+    ...(profile.auth==="bearer" ? {Authorization:`Bearer ${key}`} : {"x-api-key":key}),
+    "anthropic-version": profile.apiVersion || "2023-06-01",
     "anthropic-dangerous-direct-browser-access": "true"
   };
   const tools = claudeTools();
   const body = {
     model: profile.model,
-    max_tokens: 3000,
+    max_tokens: profile.limit || 3000,
     system,
     messages: [...history, { role: "user", content: question }]
   };
@@ -1436,14 +1524,15 @@ async function askAssistant(question) {
       instructions: system,
       input: [...history, { role: "user", content: question }],
       store: false,
-      max_output_tokens: 3000
+      ...(profile.webSearch?{tools:[{type:"web_search"}]}:{}),
+      max_output_tokens: profile.limit || 3000
     };
   } else {
     body = {
       model: profile.model,
       stream: false,
       messages: [{ role: "system", content: system }, ...history, { role: "user", content: question }],
-      max_tokens: 3000
+      max_tokens: profile.limit || 3000
     };
   }
   const json = await requestJSON(profile, headers, body);
@@ -1542,7 +1631,7 @@ function setupAssistant() {
     state.provider = event.target.value;
     updateProviderForm();
   });
-  ["endpointInput", "modelInput", "protocolSelect"].forEach(id => $(id).addEventListener("change", collectProfile));
+  ["endpointInput","modelInput","protocolSelect","extraModels","answerLimit","claudeAuth","apiVersion","gptSearch"].forEach(id => $(id).addEventListener("change", collectProfile));
   $("keyInput").addEventListener("change", collectProfile);
   $("rememberSettings").addEventListener("change", collectProfile);
   ["webSearchToggle", "webFetchToggle"].forEach(id => $(id).addEventListener("change", () => {
@@ -1604,9 +1693,10 @@ function setupPanels() {
     $("closeAssistant").setAttribute("aria-label", "关闭独立问答窗口");
   } else {
     $("assistantPanel").hidden = true;
-    $("infoPanel").hidden = window.matchMedia("(max-width: 900px)").matches;
+    $("infoPanel").hidden = true;
   }
   $("toggleAssistant").addEventListener("click", () => {
+    if (AtlasPrefs.value.assistantPresentation==="window") { $("popoutAssistant").click();return;}
     $("assistantPanel").hidden = !$("assistantPanel").hidden;
     if (!$("assistantPanel").hidden) $("infoPanel").hidden = true;
   });
@@ -1620,7 +1710,7 @@ function setupPanels() {
   });
   $("closeInfo").addEventListener("click", () => { $("infoPanel").hidden = true; });
   $("assistantMode").addEventListener("click", () => {
-    $("assistantPanel").classList.toggle("floating");
+    AtlasPrefs.change("assistantPresentation",$("assistantPanel").classList.contains("floating")?"sidebar":"floating",false);
     $("assistantMode").title = $("assistantPanel").classList.contains("floating") ? "切换回侧栏" : "切换为浮窗";
   });
   $("popoutAssistant").addEventListener("click", () => {
@@ -1632,7 +1722,7 @@ function setupPanels() {
   $("openStationDialog").addEventListener("click", openStationDialog);
   $("closeDialog").addEventListener("click", () => $("stationDialog").close());
   $("stationDialog").addEventListener("click", event => { if (event.target === $("stationDialog")) $("stationDialog").close(); });
-  $("fitG337").addEventListener("click", () => { const route = state.routes.find(r => r.train === "G337"); if (route) selectRoute(route.id); });
+  $("homeMap").addEventListener("click", () => {if(state.playbackVisible)closeJourney();nationalView();});
   $("toggleJourney").addEventListener("click", () => setJourneyOpen(!journeyOpen()));
   $("closePlayback").addEventListener("click", closeJourney);
   $("playJourney").addEventListener("click", () => state.playbackTimer ? stopPlayback() : startPlayback());
@@ -1694,6 +1784,8 @@ function setupPanels() {
   $("loadMetroCity").addEventListener("click", () => loadSelectedMetroCity());
   $("focusMetroCity").addEventListener("click", () => loadSelectedMetroCity({ focus: true }));
   $("favoriteStation").addEventListener("click", () => toggleFavorite());
+  $("favoriteFilter").oninput=renderFavorites;
+  $("cancelFavoriteNote").onclick=()=>$("favoriteEditor").close();
   $("showMetro").addEventListener("change", event => { state.showMetro = event.target.checked; drawMetro(); RailMapLayers.toggle(true); saveLayerPreferences(); });
   $("showConstruction").addEventListener("change", event => { state.showConstruction = event.target.checked; drawMetro(); RailMapLayers.toggle(true); saveLayerPreferences(); });
   $("baseLayer").addEventListener("change", event => setBaseLayer(event.target.value));
@@ -1722,15 +1814,17 @@ function setExperiencePage(page) {
   if (page === "postcard") drawPostcard();
   if (page === "history") renderHistoryEvent();
   if (page === "quiz" && !state.quiz) nextQuiz();
+  setLayerVisible(state.historyLayer,page==="history" && state.workspaceView==="experiences");
 }
 
 function saveLayerPreferences() {
   if (!$("showMetro")) return;
   writeStored(STORAGE.layers, {
     showMetro: state.showMetro,
+    showRail: $("showRail").checked,
     showConstruction: state.showConstruction,
     baseLayer: $("baseLayer").value,
-    routeID: state.route?.id || ""
+    routeID: state.route?.id || readStored(STORAGE.layers,{}).routeID || ""
   });
 }
 
@@ -1738,7 +1832,8 @@ function setBaseLayer(name) {
   const selected = state.baseLayers[name];
   if (!selected || !state.map) return;
   Object.values(state.baseLayers).forEach(layer => { if (state.map.hasLayer(layer)) state.map.removeLayer(layer); });
-  selected.addTo(state.map);
+  if(AtlasPrefs.value.mode==="online")selected.addTo(state.map);
+  setRouteStatus();
   saveLayerPreferences();
 }
 
@@ -1806,6 +1901,7 @@ async function loadData() {
   state.bundledJourneys = journeys;
   state.metroRecords = metro.records || [];
   state.metroCities = metroIndex.cities || [];
+  AtlasPrefs.indexRoutes();
   populateMetroCityPicker();
   state.metroDetails.clear();
   state.metroDetailPromises.clear();
@@ -1829,13 +1925,14 @@ async function loadData() {
   state.showConstruction = layerPrefs.showConstruction !== false;
   $("showMetro").checked = state.showMetro;
   $("showConstruction").checked = state.showConstruction;
+  $("showRail").checked = layerPrefs.showRail !== false;
   $("baseLayer").value = layerPrefs.baseLayer || "osm";
   setBaseLayer($("baseLayer").value);
   drawMetro();
   const selected = state.routes.find(route => route.id === currentID)
     || state.routes.find(route => route.id === layerPrefs.routeID)
     || state.routes.find(route => route.train === "G337") || state.routes[0];
-  if (selected) selectRoute(selected.id, { fit: !currentID });
+  if (selected && state.playbackVisible) selectRoute(selected.id, { fit: !currentID });
   if (state.historyEvents.length) {
     $("historyDate").max = String(state.historyEvents.length - 1);
     $("historyDate").value = String(state.historyEvents.length - 1);
@@ -1844,11 +1941,7 @@ async function loadData() {
   renderDirectory();
   renderFavorites();
   renderHistoryEvent();
-  $("fitG337").disabled = !state.routes.some(route => route.geometryAvailable);
-  if (state.route) {
-    setRouteStatus();
-    if (!currentID) fitRoute();
-  }
+  AtlasPrefs.routeList(); setRouteStatus();
   refreshMetroDetailVisibility();
 }
 
@@ -1877,6 +1970,10 @@ async function importTimetableFile(event) {
 }
 
 function downloadFile(name, blob) {
+  if (location.hostname==="appassets.androidplatform.net" && window.RailwayFileExport) {
+    const reader=new FileReader();reader.onload=()=>RailwayFileExport.postMessage(JSON.stringify({name,data:reader.result.split(",")[1]}));
+    reader.readAsDataURL(blob);return;
+  }
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -2121,7 +2218,7 @@ function renderHistoryEvent() {
   places.forEach(place => L.circleMarker([place.latitude, place.longitude], {
     radius: 5, color: "#152024", weight: 2, fillColor: "#f2c94c", fillOpacity: 1
   }).bindTooltip(place.name).addTo(state.historyLayer));
-  if (state.map && !state.map.hasLayer(state.historyLayer)) state.historyLayer.addTo(state.map);
+  setLayerVisible(state.historyLayer,state.workspaceView==="experiences" && !document.querySelector('[data-experience-page="history"]').hidden);
 }
 
 function nextQuiz() {
@@ -2195,9 +2292,24 @@ function showError(error) {
   $("dataStatus").classList.add("error");
 }
 
+function nationalView() {
+  state.map.fitBounds([[18,73],[54,135]],{padding:[12,12],animate:false});
+}
+function closeTopMapPanel() {
+  const dialog=document.querySelector("dialog[open]");if(dialog){dialog.close();return true;}
+  for(const id of ["assistantPanel","infoPanel"])if(!$(id).hidden){$(id).hidden=true;return true;}
+  if(journeyOpen()){closeJourney();return true;}
+  if(document.querySelector(".workspace-open")){setWorkspaceOpen(false);return true;}return false;
+}
 function initializeMap() {
-  state.map = L.map("map", { zoomControl: true, preferCanvas: true }).setView([34.8, 112.5], 5);
+  state.map = L.map("map", { zoomControl: true, preferCanvas: true,minZoom:2,maxZoom:19 });
+  const camera=readStored("railway-atlas-map-camera",null);
+  if(camera && [camera.lat,camera.lng,camera.z].every(Number.isFinite) && Math.abs(camera.lat)<=85 && Math.abs(camera.lng)<=180 && camera.z>=2 && camera.z<=19)
+    state.map.setView([camera.lat,camera.lng],camera.z,{animate:false});
+  else nationalView();
+  const imagery=()=>L.tileLayer("https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg",{maxNativeZoom:8,maxZoom:19,attribution:"Imagery: NASA GIBS / Blue Marble"});
   state.baseLayers = {
+    satellite:imagery(),hybrid:L.layerGroup([imagery(),L.tileLayer("https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",{maxZoom:19,attribution:"Labels © OpenStreetMap contributors, © CARTO"})]),
     osm: L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
     }),
@@ -2206,12 +2318,11 @@ function initializeMap() {
       attribution: "&copy; OpenStreetMap contributors · OpenRailwayMap"
     })
   };
-  state.baseLayers.osm.addTo(state.map);
+  L.control.scale({imperial:false,position:"bottomleft"}).addTo(state.map);
   state.map.on("zoomend", updateZoom);
   state.map.on("moveend", refreshMetroDetailVisibility);
+  state.map.on("moveend",()=>{if(!state.playbackVisible){const c=state.map.getCenter();writeStored("railway-atlas-map-camera",{lat:c.lat,lng:c.lng,z:state.map.getZoom()});}});
   RailMapLayers.setup(state.map);
-  state.routeLayer.addTo(state.map);
-  state.historyLayer.addTo(state.map);
 }
 
 function setupPassportDefaults() {
@@ -2220,6 +2331,7 @@ function setupPassportDefaults() {
 }
 
 async function start() {
+  AtlasPrefs.restore();
   setupPanels();
   setupAssistant();
   if (state.assistantWindow) {
@@ -2228,11 +2340,9 @@ async function start() {
     $("assistantStatus").textContent = "等待主窗口资料";
     return;
   }
-  initializeMap();
   const desktop=!window.matchMedia("(max-width: 900px)").matches;
-  const journeyVisible=readStored("railway-atlas-journey-open",desktop);
-  setWorkspaceOpen(desktop && journeyVisible);
-  setPlaybackVisible(journeyVisible);
+  setWorkspaceView("layers");setWorkspaceOpen(desktop && AtlasPrefs.value.panelVisible);setPlaybackVisible(false);
+  initializeMap();AtlasPrefs.setup();
   setupPassportDefaults();
   setupLibrary();
   try {

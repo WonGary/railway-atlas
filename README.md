@@ -1,12 +1,12 @@
 # 铁道漫游 Railway Atlas
 
-铁道漫游可在浏览器里查看铁路地图、查站和回放沿线旅程。Mac 另有 SwiftUI 原生版。
+铁道漫游是一张可以点开线路和车站的地图。你可以按速度和用途筛选铁路，单独显示某条地铁，查换乘和站表，也可以收藏要素或向地图助手提问。
 
 ## 给朋友的最短用法
 
-[打开铁道漫游](https://wongary.github.io/railway-atlas/) ｜ [下载 Windows / Mac 便携版](https://github.com/WonGary/railway-atlas/releases/tag/web-v0.7.0)
+[打开地图](https://wongary.github.io/railway-atlas/) ｜ [下载 Android、Windows、Mac 和 iOS 归档](https://github.com/WonGary/railway-atlas/releases/tag/web-v0.8.0)
 
-网页和桌面便携版为 **0.7.0**。「沿线旅行」里的 G337 可以回放北京西至南昌西全程，也可以只选自己的上下车站。手机浏览器可将地图添加到主屏幕。要查更多车次，在「线路 → 本机时刻库」选择路路通官方 APK 或原生版导出的 JSON。桌面便携版还可一键同步排图、查中国铁路地图原站的班表。[数据导入和离线使用说明](Web/README.md)
+0.8.0 首次打开是全国地图，以后回到上次浏览的位置。安卓手机可以直接安装 APK，Windows 和 Mac 的便携包用浏览器打开本机地图。iPhone、iPad 可以立即打开网页版，原生版由发布者签名后发 TestFlight 邀请。「更多」里保留了沿线旅行和铁路护照。[地图和离线资料](Web/README.md) · [手机安装与签名](Mobile/README.md)
 
 网页不提供 API 额度，也不会把 Key 写入仓库。Key 只在当前页面内存中使用。服务商是否允许浏览器直连，取决于该服务的 CORS 和账号权限。
 
@@ -23,7 +23,7 @@
 
 当前边界：
 
-- iPhone、iPad 和 Android 手机使用网页或主屏幕版（PWA）。
+- iPhone 和 iPad 归档使用原生 SwiftUI / MapKit 工程。Android APK 随包附带网页地图与区域资料。
 - macOS 包是本机临时签名，适合源码使用者和本机测试，未公证。
 - 网页不保存 API Key。Claude、DeepSeek、豆包和自定义网关能否在浏览器使用，取决于端点的 CORS、模型权限和余额。
 - G337 的轨道资料是随包的 OSM 派生快照，时刻是一次性样例，不是实时列车位置。
@@ -38,7 +38,7 @@ swift run -c release RailwayAtlasCheck --assistant-regression
 bash Scripts/build-macos.sh release
 ```
 
-网页版本用于 Windows、iOS 和 Android 试用，不依赖这些原生 SDK。需要编译 iOS 原生包时，再安装完整 Xcode；需要编译 Android 原生包时，再安装 Android SDK 和 Android Studio。Xcode 工程由 `Scripts/generate-xcode.mjs` 生成，包含 macOS 和 iOS target。拥有完整 Xcode 后可打开 `RailwayAtlas.xcodeproj`，选择 `RailwayAtlas-iOS` 或 `RailwayAtlas-macOS`。
+手机构建可使用仓库中的 GitHub Actions，本机只需下载成品。若选择本地编译，iOS 使用 Xcode，Android 使用 JDK、Gradle 与 Android SDK 命令行工具。Xcode 工程由 `Scripts/generate-xcode.mjs` 生成。
 
 ## 网页本地预览
 
