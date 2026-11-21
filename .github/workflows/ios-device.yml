@@ -33,7 +33,9 @@ jobs:
           test "$(plutil -extract CFBundleVersion raw "$app/Info.plist")" = "$build"
           lipo -verify_arch arm64 "$app/RailwayAtlas-iOS"
           test -s "$app/Assets.car"
-          test -s "$app/Resources/china-overview.railcache"
+          test -s "$app/china-overview.railcache"
+          test -s "$app/PrivacyInfo.xcprivacy"
+          codesign --verify --deep --strict "$app"
           find "$app" -name 'metro-snapshot-beijing.json' | grep -q .
           mkdir -p out
           ditto -c -k --keepParent "$archive" "out/Railway-Atlas-$version-iOS-xcarchive.zip"

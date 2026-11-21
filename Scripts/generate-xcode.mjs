@@ -26,6 +26,13 @@ const files = swiftFiles(sourceRoot).map((file) => {
   return object(relative, `isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ${quote(relative)}; sourceTree = SOURCE_ROOT;`);
 });
 const resources = object("resources", 'isa = PBXFileReference; lastKnownFileType = folder; path = Sources/RailwayAtlas/Resources; sourceTree = SOURCE_ROOT;');
+// On iOS an app is a flat bundle. A top-level "Resources" directory makes
+// Apple's bundle reader look there for Info.plist and misidentify the binary.
+const iosResources = fs.readdirSync(path.join(sourceRoot, "Resources"), {withFileTypes: true})
+  .filter(entry => entry.isFile() && !entry.name.startsWith("."))
+  .map(entry => `Sources/RailwayAtlas/Resources/${entry.name}`).sort()
+  .concat("Config/PrivacyInfo.xcprivacy")
+  .map(relative => object(relative, `isa = PBXFileReference; lastKnownFileType = file; path = ${quote(relative)}; sourceTree = SOURCE_ROOT;`));
 const catalog = object("catalog", 'isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Design/Assets.xcassets; sourceTree = SOURCE_ROOT;');
 object("package", 'isa = XCLocalSwiftPackageReference; relativePath = ".";');
 const targets = [];
@@ -33,7 +40,7 @@ const products = [];
 for (const platform of ["macOS", "iOS"]) {
   const prefix = `RailwayAtlas-${platform}`;
   const sourceBuilds = files.map((file, n) => object(`${prefix}-source-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
-  const resourceBuilds = [resources, catalog].map((file, n) => object(`${prefix}-resource-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
+  const resourceBuilds = (platform === "iOS" ? [...iosResources, catalog] : [resources, catalog]).map((file, n) => object(`${prefix}-resource-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
   const dependency = object(`${prefix}-core`, `isa = XCSwiftPackageProductDependency; package = ${id("package")}; productName = RailwayCore;`);
   const link = object(`${prefix}-link`, `isa = PBXBuildFile; productRef = ${dependency};`);
   const sourcesPhase = object(`${prefix}-sources`, `isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ${list(sourceBuilds)}; runOnlyForDeploymentPostprocessing = 0;`);
@@ -64,6 +71,8 @@ for (const platform of ["macOS", "iOS"]) {
       INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.travel"
     };
     if (platform === "iOS") {
+      settings.INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+      settings.INFOPLIST_KEY_CFBundleDisplayName = "铁道漫游";
       settings.TARGETED_DEVICE_FAMILY = "1,2";
       settings.INFOPLIST_KEY_UILaunchScreen_Generation = "YES";
       settings.INFOPLIST_KEY_UIApplicationSceneManifest_Generation = "YES";
@@ -81,7 +90,7 @@ for (const platform of ["macOS", "iOS"]) {
   targets.push(target);
 }
 const productGroup = object("products", `isa = PBXGroup; name = Products; children = ${list(products)}; sourceTree = "<group>";`);
-const mainGroup = object("main-group", `isa = PBXGroup; children = ${list([...files, resources, catalog, productGroup])}; sourceTree = "<group>";`);
+const mainGroup = object("main-group", `isa = PBXGroup; children = ${list([...files, resources, ...iosResources, catalog, productGroup])}; sourceTree = "<group>";`);
 const projectConfigs = ["Debug", "Release"].map((name) => object(`project-${name}`, `isa = XCBuildConfiguration; name = ${name}; buildSettings = { CLANG_ENABLE_MODULES = YES; };`));
 const projectConfigList = object("project-configs", `isa = XCConfigurationList; buildConfigurations = ${list(projectConfigs)}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;`);
 object("project", `isa = PBXProject; attributes = { LastUpgradeCheck = 1600; }; buildConfigurationList = ${projectConfigList}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; knownRegions = (en, zh_CN, Base); mainGroup = ${mainGroup}; productRefGroup = ${productGroup}; projectDirPath = ""; projectRoot = ""; targets = ${list(targets)}; packageReferences = (${id("package")});`);
