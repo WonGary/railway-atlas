@@ -40,8 +40,18 @@ jobs:
           set -euo pipefail
           sudo setfacl -m "u:$(id -un):rw" /dev/kvm
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/atlas-device/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;google_apis;x86_64' 'emulator' 'platform-tools'
-          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n railway -k 'system-images;android-35;google_apis;x86_64' --device pixel_6 <<< no
+          avd="$ANDROID_AVD_HOME/railway.avd"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n railway --path "$avd" \
+            -k 'system-images;android-35;google_apis;x86_64' --device pixel_6 <<< no
+          test -s "$avd/config.ini"
+          if [[ ! -s "$ANDROID_AVD_HOME/railway.ini" ]]; then
+            printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$avd" > "$ANDROID_AVD_HOME/railway.ini"
+          fi
+          "$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx railway
           "$ANDROID_HOME/emulator/emulator" -accel-check
           df -h "$RUNNER_TEMP" "$ANDROID_HOME"
       - name: Install and open the map with the network disabled
