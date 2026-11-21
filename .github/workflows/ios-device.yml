@@ -1,0 +1,44 @@
+name: Build native iPhone and iPad archive
+on:
+  push:
+    branches: [codex/mobile-map-release]
+    paths: ['Sources/**', 'Config/**', 'Design/**', 'RailwayAtlas.xcodeproj/**', 'Mobile/VERSION', '.github/workflows/ios-device.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive the native app for physical devices
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          test "${sdk%%.*}" -ge 26
+          version=$(cat Mobile/VERSION)
+          build="$GITHUB_RUN_NUMBER"
+          archive="$RUNNER_TEMP/Railway-Atlas.xcarchive"
+          xcodebuild -project RailwayAtlas.xcodeproj -scheme RailwayAtlas-iOS \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$archive" MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" \
+            CODE_SIGNING_ALLOWED=NO archive
+          app="$archive/Products/Applications/RailwayAtlas-iOS.app"
+          test "$(plutil -extract CFBundleSupportedPlatforms.0 raw "$app/Info.plist")" = iPhoneOS
+          test "$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")" = "$version"
+          test "$(plutil -extract CFBundleVersion raw "$app/Info.plist")" = "$build"
+          lipo -verify_arch arm64 "$app/RailwayAtlas-iOS"
+          test -s "$app/Assets.car"
+          test -s "$app/Resources/china-overview.railcache"
+          find "$app" -name 'metro-snapshot-beijing.json' | grep -q .
+          mkdir -p out
+          ditto -c -k --keepParent "$archive" "out/Railway-Atlas-$version-iOS-xcarchive.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-archive
+          path: out/*.zip
+          compression-level: 0
+          if-no-files-found: error
