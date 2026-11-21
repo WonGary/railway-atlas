@@ -31,7 +31,7 @@ jobs:
           test "$(plutil -extract CFBundleSupportedPlatforms.0 raw "$app/Info.plist")" = iPhoneOS
           test "$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")" = "$version"
           test "$(plutil -extract CFBundleVersion raw "$app/Info.plist")" = "$build"
-          lipo -verify_arch arm64 "$app/RailwayAtlas-iOS"
+          lipo "$app/RailwayAtlas-iOS" -verify_arch arm64
           test -s "$app/Assets.car"
           test -s "$app/china-overview.railcache"
           test -s "$app/PrivacyInfo.xcprivacy"
