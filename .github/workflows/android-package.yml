@@ -1,0 +1,35 @@
+name: Build the Android APK
+on:
+  push:
+    branches: [codex/mobile-map-release]
+    paths: ['Web/**', 'Mobile/Android/**', 'Mobile/VERSION', '.github/workflows/android-package.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.11.1'}
+      - run: gradle -p Mobile/Android :app:assembleRelease
+      - name: Verify the packaged map and installation metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=Mobile/Android/app/build/outputs/apk/release/app-release-unsigned.apk
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$tools/aapt" dump badging "$apk" | head -n 12
+          "$tools/zipalign" -c 4 "$apk"
+          unzip -p "$apk" assets/index.html | cmp Web/index.html -
+          unzip -p "$apk" assets/data/metro/macao.json | cmp Web/data/metro/macao.json -
+          unzip -p "$apk" assets/vendor/sqlite/sqlite3.wasm | cmp Web/vendor/sqlite/sqlite3.wasm -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-unsigned
+          path: Mobile/Android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
