@@ -2,11 +2,17 @@ name: Check published desktop packages
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to verify
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
   android-apk:
-    if: startsWith(github.event.release.tag_name, 'web-v')
+    if: startsWith(inputs.tag || github.event.release.tag_name, 'web-v')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -14,7 +20,7 @@ jobs:
       - name: Install the published APK on Android 15 and open the offline map
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -25,7 +31,8 @@ jobs:
           sha256sum --check --ignore-missing SHA256SUMS.txt
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose ./*.apk
           sudo chmod a+rw /dev/kvm
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;google_apis;x86_64' 'emulator'
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;google_apis;x86_64' 'emulator' 'platform-tools'
           echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n railway -k 'system-images;android-35;google_apis;x86_64' --device 'pixel_6'
           "$ANDROID_HOME/emulator/emulator" -avd railway -no-window -no-snapshot -no-audio -no-boot-anim -gpu swiftshader_indirect > "$work/emulator.log" 2>&1 &
           adb wait-for-device
@@ -37,7 +44,7 @@ jobs:
           adb shell am start -W -n app.railwayatlas.android/.AtlasActivity
           python3 "$GITHUB_WORKSPACE/Mobile/android-smoke.py"
   desktop:
-    if: startsWith(github.event.release.tag_name, 'web-v')
+    if: startsWith(inputs.tag || github.event.release.tag_name, 'web-v')
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +67,7 @@ jobs:
       - name: Download the release archive
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
           TARGET: ${{ matrix.package }}
         shell: bash
         run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "*-$TARGET.zip" --pattern SHA256SUMS.txt
@@ -68,7 +75,7 @@ jobs:
         shell: python
         env:
           LAUNCHER: ${{ matrix.command }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           import hashlib, os, pathlib, subprocess, time, urllib.request, zipfile
           root = pathlib.Path.cwd()
@@ -94,7 +101,7 @@ jobs:
               process.terminate()
               process.wait(timeout=5)
   mobile-web:
-    if: startsWith(github.event.release.tag_name, 'web-v')
+    if: startsWith(inputs.tag || github.event.release.tag_name, 'web-v')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
@@ -106,7 +113,7 @@ jobs:
       - name: Test the released web archive with a mobile browser profile
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
           ENGINE: ${{ matrix.engine }}
         shell: bash
         run: |
