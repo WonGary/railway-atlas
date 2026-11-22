@@ -31,12 +31,13 @@ globalThis.StationLayoutOSM = (() => {
   }
   function mode(t) {
     if (t.subway==="yes" || t.station==="subway" || t.railway==="subway_entrance" || t.route==="subway") return "metro";
-    if (t.tram==="yes" || t.route==="tram") return "tram";
-    if (t.light_rail==="yes" || ["light_rail","monorail"].includes(t.station) || t.route==="light_rail") return "lightRail";
+    if (t.tram==="yes" || t.route==="tram" || t.railway==="tram_stop") return "tram";
+    if (t.light_rail==="yes" || t.monorail==="yes" || ["light_rail","monorail"].includes(t.station) ||
+        ["light_rail","monorail"].includes(t.route)) return "lightRail";
     if (t.train==="yes" || t.route==="train") return "railway";
     return null;
   }
-  const isPlatform = t => t.railway==="platform" || t.railway==="platform_edge" ||
+  const isPlatform = t => t.railway==="platform" || t.railway==="platform_edge" || t["area:railway"]==="platform" ||
     (t.public_transport==="platform" && !!mode(t));
   const isOutline = t => t.building==="train_station" || t.railway==="station" ||
     (t.public_transport==="station" && (!!mode(t) || t.building==="transportation"));
@@ -52,7 +53,7 @@ globalThis.StationLayoutOSM = (() => {
         nodes.set(e.id,e);
         if (!accessible(t)) continue;
         if (t.railway==="subway_entrance" || (t.entrance && mode(t))) entranceNodes.add(e.id);
-        if (mode(t) && (t.railway==="station" || t.railway==="halt" || t.public_transport==="stop_position" || t.railway==="subway_entrance"))
+        if (mode(t) && (["station","halt","tram_stop","subway_entrance"].includes(t.railway) || t.public_transport==="stop_position"))
           anchors.push({point:[e.lon,e.lat],network:mode(t)});
       } else if (e.type==="way") ways.set(e.id,e);
     }
@@ -62,7 +63,7 @@ globalThis.StationLayoutOSM = (() => {
       const members=e.members || [];
       const network=mode(t) || members.map(m=>mode((m.type==="node"?nodes:ways).get(m.ref)?.tags || {})).find(Boolean);
       if (!network) continue;
-      for (const m of members.filter(m=>m.type==="way" || m.type==="relation")) {
+      for (const m of members) {
         if (!m.role?.startsWith("platform") && t.public_transport!=="stop_area") continue;
         const id=m.type+"/"+m.ref;
         railMembers.add(id);
@@ -119,13 +120,111 @@ globalThis.StationLayoutOSM = (() => {
           const direct=(e.nodes || []).some(n=>linked.has(n)) || railMembers.has(source);
           if (kind==="passage" && !containing && !direct) continue;
           const surfaceTerminal = kind==="outline" && t.building==="train_station" && t.name && Number(t.layer)>0;
-          const network=mode(t) || relationModes.get(source) || containing?.network || (surfaceTerminal ? "railway" : nearMode(p[Math.floor(p.length/2)])) || "railway";
+          // A long platform can project beyond the terminal building at both ends.
+          const namedTerminal = kind==="platform" && t.name && shells.find(s=>s.name &&
+            t.name.startsWith(s.name) && p.some((c,i)=>inside(c,s.paths[0]) || i>0 &&
+              inside([(c[0]+p[i-1][0])/2,(c[1]+p[i-1][1])/2],s.paths[0])));
+          const network=mode(t) || (surfaceTerminal ? "railway" : null) || relationModes.get(source) ||
+            containing?.network || namedTerminal?.network || nearMode(p[Math.floor(p.length/2)]) || "railway";
           const feature={id:source+(part?"#"+part:""),kind,network,area,paths};
-          for (const key of ["level","layer","ref","name"]) if (t[key]!=null) feature[key]=t[key];
+          for (const key of ["level","layer","local_ref","ref","name"]) if (t[key]!=null) feature[key]=t[key];
           features.push(feature);
           if (kind==="outline") shells.push(feature);
           if (kind==="platform") for (const n of e.nodes || []) linked.add(n);
           if (e.type==="relation") for (const m of e.members || []) if(m.type==="way") relationWays.add(kind+"/way/"+m.ref);
+        }
+      }
+    }
+    for (const [id,e] of nodes) {
+      const t=e.tags || {}, source="node/"+id;
+      if (!accessible(t) || !(isPlatform(t) || (t.public_transport==="platform" && railMembers.has(source))) ||
+          t.highway==="bus_stop" || (t.bus==="yes" && !mode(t)) || !platformNumber(t) ||
+          !Number.isFinite(e.lon) || !Number.isFinite(e.lat)) continue;
+      const point=[e.lon,e.lat];
+      features.push({id:source,kind:"platform",network:mode(t) || relationModes.get(source) || nearMode(point) || "railway",
+        area:false, paths:[[point]], local_ref:t.local_ref,ref:t.ref,name:t.name,level:t.level,layer:t.layer});
+    }
+    return prepareFeatures(features);
+  }
+  // A number identifies the platform itself. Never borrow a route number, stop ID or floor.
+  function platformNumber(f) {
+    for (const ref of [f.local_ref, f.ref]) {
+      if (typeof ref !== "string") continue;
+      const parts = ref.trim().split(/\s*[;；,/、]\s*/);
+      if (parts.length <= 4 && parts.every(s => /^(?:[A-Z]?\d{1,3}[A-Z]?|[A-Z])$/i.test(s)))
+        return [...new Set(parts)].join("/");
+    }
+    const name = String(f.name || "");
+    const matches = [...name.matchAll(/(?:第\s*)?(\d{1,3}[A-Za-z]?(?:\s*[-–、/]\s*\d{1,3}[A-Za-z]?)*)\s*(?:号|號)?\s*(?:站台|站臺|月台|月臺)/g)];
+    if (matches.length && matches.length <= 4) return matches.map(m=>m[1].replace(/\s/g,"")).join("/");
+    return /^(?:platform|track)\s+([A-Z]?\d{1,3}[A-Z]?|[A-Z])$/i.exec(name)?.[1] || "";
+  }
+  // Three candidate anchors let neighbouring platforms carry short, non-overlapping labels.
+  // For a polygon, intersect a cross section with every ring and choose an interior interval.
+  function labelAnchors(f) {
+    const path = f.paths[0], fractions = [.5,.27,.73];
+    if (!f.area) {
+      const lengths = path.slice(1).map((b,i) => Math.hypot((b[0]-path[i][0])*Math.cos(b[1]*Math.PI/180), b[1]-path[i][1]));
+      const total = lengths.reduce((sum,n)=>sum+n,0);
+      if (!total) return [];
+      return fractions.map(fraction=>{
+        let left = total*fraction;
+        for (let i=0;i<lengths.length;i++) {
+          if (lengths[i]>0 && left<=lengths[i]) return path[i].map((v,j)=>v+(path[i+1][j]-v)*left/lengths[i]);
+          left-=lengths[i];
+        }
+        return path[path.length-1];
+      });
+    }
+    const low = [...path[0]], high = [...path[0]];
+    for (const p of path) for (let j=0;j<2;j++) { low[j]=Math.min(low[j],p[j]); high[j]=Math.max(high[j],p[j]); }
+    const axis = (high[0]-low[0])*Math.cos(low[1]*Math.PI/180) >= high[1]-low[1] ? 0 : 1, other=1-axis;
+    return fractions.flatMap(fraction=>{
+      const cut=low[axis]+fraction*(high[axis]-low[axis]), hits=[];
+      for (const r of f.paths) for (let i=1;i<r.length;i++) {
+        const a=r[i-1], b=r[i];
+        if ((a[axis]>cut)!==(b[axis]>cut)) hits.push(a[other]+(cut-a[axis])*(b[other]-a[other])/(b[axis]-a[axis]));
+      }
+      hits.sort((a,b)=>a-b);
+      let width=0, midpoint;
+      for (let i=1;i<hits.length;i+=2) {
+        const gap=hits[i]-hits[i-1];
+        if (gap>width) { width=gap; midpoint=(hits[i]+hits[i-1])/2; }
+      }
+      return width ? [axis===0?[cut,midpoint]:[midpoint,cut]] : [];
+    });
+  }
+  function withPlatformLabel(feature) {
+    if (feature.kind!=="platform") return feature;
+    const label=platformNumber(feature);
+    if (label && feature.paths?.[0]?.length) {
+      feature.platformLabel=label;
+      feature.labelAnchors=feature.paths[0].length===1 ? [feature.paths[0][0]] : labelAnchors(feature);
+    }
+    return feature;
+  }
+  function prepareFeatures(features) {
+    const facesByVertex=new Map();
+    for (const f of features) {
+      withPlatformLabel(f);
+      if (!f.platformLabel || !f.area) continue;
+      for (const p of f.paths[0]) {
+        const key=p.join(",");
+        if (!facesByVertex.has(key)) facesByVertex.set(key,new Set());
+        facesByVertex.get(key).add(f);
+      }
+    }
+    // A platform edge may be mapped separately from its polygon. Keep both
+    // geometries. Share the label only with a face along the same mapped edge.
+    for (const f of features) {
+      if (f.area || !f.platformLabel) continue;
+      const points=f.paths[0], refs=f.platformLabel.split("/");
+      for (const face of facesByVertex.get(points[0].join(",")) || []) {
+        if (f.level && face.level && f.level!==face.level || f.layer && face.layer && f.layer!==face.layer) continue;
+        if (refs.every(ref=>face.platformLabel.split("/").includes(ref)) &&
+            points.every(p=>facesByVertex.get(p.join(","))?.has(face))) {
+          f.labelOwner=face.id;
+          break;
         }
       }
     }
@@ -137,10 +236,12 @@ globalThis.StationLayoutOSM = (() => {
     if (!box.every(Number.isFinite) || n<=s || e<=w || n-s>0.061 || e-w>0.081) throw Error("请再放大一级");
     const b="("+box.map(v=>v.toFixed(5)).join(",")+")";
     return `[out:json][timeout:15];(`+
-      ["nwr[railway~\"^(station|halt|subway_entrance|platform|platform_edge)$\"]","nwr[public_transport~\"^(platform|station|stop_position)$\"]",
+      ["nwr[railway~\"^(station|halt|tram_stop|subway_entrance|platform|platform_edge)$\"]","nwr[public_transport~\"^(platform|station|stop_position)$\"]","wr[\"area:railway\"=platform]",
        "wr[building=train_station]","wr[indoor=corridor]","way[highway=corridor]","way[footway=corridor]",
        ...["indoor","tunnel","level","location"].map(k=>`way[highway~"^(footway|steps|pedestrian)$"][${k}]`)].map(sel=>sel+b+";").join("")+
-      `);out geom;`;
+      `)->.local;.local out geom;`+
+      `(`+["bn","bw","br"].map(from=>`rel(${from}.local)[public_transport=stop_area];`+
+        `rel(${from}.local)[route~"^(subway|tram|light_rail|monorail|train)$"];`).join("")+`);out body;`;
   }
-  return {extract,query,minimumZoom};
+  return {extract,query,minimumZoom,prepareFeatures};
 })();

@@ -1,13 +1,14 @@
 const StationLayoutLayer = (() => {
   const cacheKey = "railway-atlas-station-areas-v1";
-  const byID = new Map(), drawn = new Map(), renderers = {};
+  const byID = new Map(), drawn = new Map(), numbers = new Map(), renderers = {};
+  const switches = {outline:"showsStationOutlines",platform:"showsPlatforms",passage:"showsPassengerPassages"};
   const colors = {outline:["#536981","#B9C8DA"], platform:["#216B62","#7FD3C4"], passage:["#864097","#E4ACF3"]};
-  let map, snapshot, loading = false, message = "";
+  let map, snapshot, loading = false, message = "", messageBounds;
   const attribution = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>';
   let credited = false;
 
   function remember(features) {
-    for (const feature of features) {
+    for (const feature of StationLayoutOSM.prepareFeatures(features)) {
       if (!colors[feature.kind] || !Array.isArray(feature.paths) || !feature.paths[0]?.length) continue;
       const paths = feature.paths.map(path=>path.map(([lon,lat])=>[lat,lon]));
       byID.set(feature.id,{feature,paths,bounds:L.latLngBounds(paths[0])});
@@ -30,16 +31,49 @@ const StationLayoutLayer = (() => {
       renderers[kind]=L.svg({pane});
     }
     map.on("moveend zoomend resize",refresh);
-    for (const id of ["showMetro","showRail"]) $(id).addEventListener("change",()=>queueMicrotask(refresh));
+    const numberPane=map.createPane("station-layout-number");
+    numberPane.style.zIndex=610;
+    numberPane.style.pointerEvents="none";
     refresh();
+  }
+  function refreshNumbers(entries, enabled, scale) {
+    const keep=new Set(), occupied=[];
+    const candidates=enabled ? entries.filter(({feature})=>feature.platformLabel && feature.labelAnchors?.length) : [];
+    const ids=new Set(candidates.map(({feature})=>feature.id));
+    candidates.sort((a,b)=>Number(b.feature.area)-Number(a.feature.area) || a.feature.id.localeCompare(b.feature.id));
+    const screen=L.bounds([0,0],map.getSize());
+    for (const {feature} of candidates) {
+      if (ids.has(feature.labelOwner)) continue;
+      const text=feature.platformLabel;
+      const width=Math.max(13,text.length*7.5+5)*scale, height=17*scale;
+      for (const [lon,lat] of feature.labelAnchors) {
+        const position=L.latLng(lat,lon), p=map.latLngToContainerPoint(position);
+        const box=L.bounds([p.x-width/2,p.y-height/2],[p.x+width/2,p.y+height/2]);
+        if (!screen.contains(box) || occupied.some(old=>old.intersects(box))) continue;
+        occupied.push(L.bounds(box.min.subtract([2,1]),box.max.add([2,1])));keep.add(feature.id);
+        const previous=numbers.get(feature.id);
+        if (previous && previous.text===text && previous.scale===scale) {
+          if (!previous.marker.getLatLng().equals(position)) previous.marker.setLatLng(position);
+        } else {
+          previous?.marker.remove();
+          const glyph=document.createElement("span");glyph.textContent=text;
+          const icon=L.divIcon({className:"platform-number",html:glyph,iconSize:[width,height],iconAnchor:[width/2,height/2]});
+          const marker=L.marker(position,{icon,pane:"station-layout-number",interactive:false,keyboard:false}).addTo(map);
+          numbers.set(feature.id,{marker,scale,text});
+        }
+        break;
+      }
+    }
+    for (const [id,{marker}] of numbers) if (!keep.has(id)) {marker.remove();numbers.delete(id);}
   }
   function refresh() {
     if (!map) return;
     const p=AtlasPrefs.value, z=map.getZoom();
-    const enabled=p.showsStations && p.showsStationLayouts && z>=16;
+    const enabled=p.showsStationLayouts && z>=16;
     const button=$("loadStationLayouts"), status=$("stationLayoutStatus");
+    const options=$("stationDetailOptions");
+    if (options) options.hidden=!p.showsStationLayouts;
     if (button) { button.hidden=!enabled || p.mode!=="online"; button.disabled=loading; }
-    if (status) {status.hidden=!enabled || !message; status.textContent=message;}
     if (enabled && !snapshot) {
       snapshot=loadJSON("./data/station-layouts.json").then(pack=>{
         remember(pack.features);
@@ -49,11 +83,16 @@ const StationLayoutLayer = (() => {
       }).catch(()=>{snapshot=null;message="未能读取随包站区资料。";if(status){status.hidden=false;status.textContent=message;}});
     }
     const bounds=map.getBounds(), keep=new Set(), dark=map.getContainer().dataset.stationInk==="light";
-    if (enabled) for (const [id,{feature,paths,bounds:box}] of byID) {
-      const urban=feature.network!=="railway";
-      if (z<StationLayoutOSM.minimumZoom[feature.kind] || !bounds.intersects(box) ||
-          !(urban?state.showMetro:$("showRail").checked) || !p.networks.includes(feature.network) ||
-          (urban && !p.prioritizesUrbanTransit && !p.categories.includes("urban"))) continue;
+    const nearby=enabled ? [...byID.values()].filter(entry=>bounds.intersects(entry.bounds)) : [];
+    if (status) {
+      status.hidden=!p.showsStationLayouts;
+      status.textContent=z<16 ? "放大到 Z16 可查看站区。" : message && messageBounds?.contains(bounds.getCenter()) ? message :
+        nearby.length ? `当前视野有 ${nearby.filter(e=>e.feature.kind==="platform" && e.paths[0].length>1).length} 个站台图形。` :
+        (p.mode==="online" ? "本地暂无这一带的站区资料，可补充当前站区。" : "随包和已缓存的资料未覆盖当前视野。");
+    }
+    for (const {feature,paths} of nearby) {
+      const id=feature.id;
+      if (z<StationLayoutOSM.minimumZoom[feature.kind] || !p[switches[feature.kind]] || paths[0].length<2) continue;
       keep.add(id);
       const previous=drawn.get(id);
       if (previous) {
@@ -68,15 +107,16 @@ const StationLayoutLayer = (() => {
       drawn.set(id,{layer,dark});
     }
     for (const [id,{layer}] of drawn) if (!keep.has(id)) { layer.remove(); drawn.delete(id); }
-    if (credited !== !!drawn.size) {
-      credited=!!drawn.size;
+    refreshNumbers(nearby,enabled && z>=18 && p.showsPlatformNumbers,p.uiScale);
+    if (credited !== !!(drawn.size || numbers.size)) {
+      credited=!!(drawn.size || numbers.size);
       map.attributionControl?.[credited?"addAttribution":"removeAttribution"](attribution);
     }
   }
   async function supplement() {
     if (loading || !map || map.getZoom()<16 || AtlasPrefs.value.mode!=="online") return;
     const b=map.getBounds();
-    loading=true; message="正在读取当前站区…"; refresh();
+    loading=true; messageBounds=b; message="正在读取当前站区…"; refresh();
     try {
       const q=StationLayoutOSM.query(b.getSouth(),b.getWest(),b.getNorth(),b.getEast());
       const url = new URL("https://overpass-api.de/api/interpreter");

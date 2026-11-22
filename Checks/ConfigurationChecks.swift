@@ -19,6 +19,16 @@ enum ConfigurationChecks {
                   && value.interface.inspectorWidth == 380 && value.interface.inspectorTab == "feature",
                   "pre-panel config migrates to floating medium panel and closed feature inspector")
         let restored = try AtlasConfiguration.decode(value.encoded())
+        var stationDetail = try AtlasConfiguration.decode(Data(#"{"layers":{"showsStationLayouts":false}}"#.utf8))
+        try check(stationDetail.layers.showsStationLayouts == false && stationDetail.layers.showsPlatforms
+                  && stationDetail.layers.showsStationOutlines && stationDetail.layers.showsPassengerPassages
+                  && stationDetail.layers.showsPlatformNumbers, "legacy station detail master and new layer defaults")
+        stationDetail.layers.showsStationLayouts = true
+        stationDetail.layers.showsPlatforms = false
+        stationDetail.layers.showsStationOutlines = false
+        let savedDetail = try AtlasConfiguration.decode(stationDetail.encoded()).layers
+        try check(!savedDetail.showsPlatforms && !savedDetail.showsStationOutlines && savedDetail.showsPassengerPassages
+                  && savedDetail.showsPlatformNumbers, "platform numbers persist independently from platform shapes")
         try check(!value.layers.prioritizesUrbanTransit && !restored.layers.prioritizesUrbanTransit,
                   "old config defaults urban priority off without changing category/route preferences")
         var priority = value

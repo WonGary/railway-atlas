@@ -168,7 +168,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 } + coordinator.overlays(for: .platform) + coordinator.overlays(for: .passage)
                 + coordinator.highlights.map { $0 as any MKOverlay }
                 + coordinator.experienceOverlays.map { $0 as any MKOverlay }
-            var actual = map.overlays
+            var actual = map.overlays(in: .aboveLabels)
             var positions = Dictionary(uniqueKeysWithValues: actual.enumerated().map { (ObjectIdentifier($0.element), $0.offset) })
             for (target, overlay) in ordered.enumerated() {
                 guard let current = positions[ObjectIdentifier(overlay)], current != target else { continue }
@@ -180,9 +180,14 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 actual.swapAt(current, target)
             }
         }
-        if coordinator.labelRevision != store.labelRevision || coordinator.uiScale != store.uiScale || labelContrastChanged {
+        let numbersEnabled = store.showsPlatformNumbers && store.showsStationLayouts && !store.historyMapActive
+        if coordinator.labelRevision != store.labelRevision || coordinator.uiScale != store.uiScale || labelContrastChanged
+            || coordinator.layoutDataRevision != store.layoutDataRevision || coordinator.numbersEnabled != numbersEnabled
+            || layoutChanged {
             coordinator.uiScale = store.uiScale
             coordinator.labelRevision = store.labelRevision
+            coordinator.layoutDataRevision = store.layoutDataRevision
+            coordinator.numbersEnabled = numbersEnabled
             coordinator.scheduleStationLabels(map)
         }
         if coordinator.cameraRevision != store.cameraRevision {
@@ -294,6 +299,9 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var labelRevision = -1
         var uiScale = 1.0
         var lightStationLabels = false
+        var layoutDataRevision = -1
+        var numbersEnabled = false
+        private(set) var platformAnnotations: [String: PlatformNumberAnnotation] = [:]
         private var layouts: [String: (feature: StationLayout, overlay: any MKOverlay)] = [:]
         private var layoutKinds: [ObjectIdentifier: StationLayoutKind] = [:]
         private var layoutAlignment: MapAlignment?
@@ -384,6 +392,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             updateViewport(mapView, final: true)
+            scheduleStationLabels(mapView)
         }
         func updateViewport(_ mapView: MKMapView, final: Bool) {
             guard store.mapMode == .apple, !cameraUpdatePending else { return }
@@ -453,6 +462,16 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             renderer.lineDashPhase = stroke.phase
         }
         func mapView(_ mapView: MKMapView, viewFor annotation: any MKAnnotation) -> MKAnnotationView? {
+            if let annotation = annotation as? PlatformNumberAnnotation {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "platform-number")
+                    ?? MKAnnotationView(annotation: annotation, reuseIdentifier: "platform-number")
+                view.annotation = annotation
+                view.canShowCallout = false
+                view.isEnabled = false
+                view.displayPriority = .required
+                view.image = annotation.image
+                return view
+            }
             if annotation is ExperienceTrainAnnotation {
                 let view = (mapView.dequeueReusableAnnotationView(withIdentifier: "experience-train") as? MKMarkerAnnotationView)
                     ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "experience-train")
@@ -515,8 +534,35 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         }
         func updateStationLabels(_ map: MKMapView) {
             labelPasses += 1
-            var occupied: [CGRect] = []
             let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
+            let placements = store.platformNumbers(in: store.viewportBounds, zoom: store.displayZoom, screen: map.bounds) {
+                map.convert(store.alignment.display($0).location, toPointTo: map)
+            }
+            let wanted = Set(placements.map(\.id))
+            for (id, annotation) in platformAnnotations where !wanted.contains(id) {
+                map.removeAnnotation(annotation)
+                platformAnnotations.removeValue(forKey: id)
+            }
+            #if os(macOS)
+            let density = map.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+            #else
+            let density = map.traitCollection.displayScale
+            #endif
+            for placement in placements {
+                let coordinate = store.alignment.display(placement.coordinate)
+                let style = PlatformNumberAnnotation.Style(text: placement.text, scale: store.uiScale, light: lightStationLabels, density: density)
+                if let old = platformAnnotations[placement.id], old.style == style {
+                    if old.coordinate.latitude != coordinate.latitude || old.coordinate.longitude != coordinate.longitude {
+                        old.coordinate = coordinate.location
+                    }
+                } else {
+                    if let old = platformAnnotations[placement.id] { map.removeAnnotation(old) }
+                    let annotation = PlatformNumberAnnotation(style: style, coordinate: coordinate.location)
+                    platformAnnotations[placement.id] = annotation
+                    map.addAnnotation(annotation)
+                }
+            }
+            var occupied = placements.map(\.frame)
             var symbols: [(StationAnnotation, MKAnnotationView, StationAppearance)] = []
             for case let annotation as StationAnnotation in map.annotations {
                 guard let view = map.view(for: annotation) else { continue }
@@ -579,6 +625,31 @@ struct AppleRailwayMap: PlatformMapRepresentable {
 }
 
 final class ExperienceTrainAnnotation: MKPointAnnotation {}
+
+@MainActor
+final class PlatformNumberAnnotation: MKPointAnnotation {
+    struct Style: Equatable {
+        let text: String
+        let scale: Double
+        let light: Bool
+        let density: CGFloat
+    }
+    let style: Style
+    let image: StationSymbol.Image?
+
+    init(style: Style, coordinate: CLLocationCoordinate2D) {
+        self.style = style
+        let renderer = ImageRenderer(content: PlatformNumberPlacement.text(style.text, scale: style.scale, light: style.light))
+        renderer.scale = style.density
+        #if os(macOS)
+        image = renderer.nsImage
+        #else
+        image = renderer.uiImage
+        #endif
+        super.init()
+        self.coordinate = coordinate
+    }
+}
 
 private final class StationAnnotationView: MKAnnotationView {
     struct SymbolConfiguration: Equatable {

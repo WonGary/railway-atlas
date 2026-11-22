@@ -58,9 +58,15 @@ final class RailwayMapStore: ObservableObject {
     @Published var categories: Set<RailCategory> = Set(RailCategory.allCases) { didSet { rebuildVisible() } }
     @Published var showsStations = true { didSet { rebuildVisible() } }
     @Published var showsStationLayouts = true { didSet { persist(showsStationLayouts, "railway.stationLayouts") } }
+    @Published var showsStationOutlines = true { didSet { persist(showsStationOutlines, "railway.stationOutlines") } }
+    @Published var showsPlatforms = true { didSet { persist(showsPlatforms, "railway.platforms") } }
+    @Published var showsPassengerPassages = true { didSet { persist(showsPassengerPassages, "railway.passengerPassages") } }
+    @Published var showsPlatformNumbers = true { didSet { persist(showsPlatformNumbers, "railway.platformNumbers") } }
     @Published var loadingLayouts = false
     @Published var layoutStatus = ""
-    @Published var layoutFeatures = RailwayMapStore.bundledLayouts()
+    var layoutStatusBounds: MapBounds?
+    var layoutDataRevision = 0
+    @Published var layoutFeatures = RailwayMapStore.bundledLayouts() { didSet { layoutDataRevision += 1 } }
     @Published var showsLabels = true { didSet { labelRevision += 1 } }
     @Published var basemapDarkness = 0.0 {
         didSet { persist(basemapDarkness, "railway.basemapDarkness") }
@@ -299,6 +305,10 @@ final class RailwayMapStore: ObservableObject {
         favoriteIDs = Set(UserDefaults.standard.stringArray(forKey: "railway.favorites") ?? [])
         if qaIndex == nil {
             showsStationLayouts = UserDefaults.standard.object(forKey: "railway.stationLayouts") as? Bool ?? true
+            showsStationOutlines = UserDefaults.standard.object(forKey: "railway.stationOutlines") as? Bool ?? true
+            showsPlatforms = UserDefaults.standard.object(forKey: "railway.platforms") as? Bool ?? true
+            showsPassengerPassages = UserDefaults.standard.object(forKey: "railway.passengerPassages") as? Bool ?? true
+            showsPlatformNumbers = UserDefaults.standard.object(forKey: "railway.platformNumbers") as? Bool ?? true
             restoreStationLayouts()
             hiddenRoutes = Set(UserDefaults.standard.stringArray(forKey: "railway.hiddenRoutes") ?? [])
             basemapDarkness = UserDefaults.standard.object(forKey: "railway.basemapDarkness") == nil

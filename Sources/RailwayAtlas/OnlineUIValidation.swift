@@ -255,8 +255,8 @@ enum OnlineUIValidation {
         store.showsStationLayouts = true
         store.showsStations = true
         store.historyMapActive = false
-        store.networks = Set(RailNetwork.allCases)
-        store.categories = Set(RailCategory.allCases)
+        store.networks = [.metro, .lightRail, .tram]
+        store.categories.remove(.urban)
         let window = NSWindow(contentRect: CGRect(x: 100,y: 100,width: 1000,height: 690),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -300,24 +300,72 @@ enum OnlineUIValidation {
         try require(west == [1,10,0], "Beijing West platforms")
         try require(coordinator.overlays(for: .platform).allSatisfy { $0 is MKPolygon }, "Platform polygons")
         _ = try await capture("beijing-west-z17", directory: directory, window: window)
+        store.showsStations = false
+        store.showsStationOutlines = false
+        try await Task.sleep(for: .milliseconds(220))
+        try require(counts() == [0,10,0], "Platforms independent of outlines, tracks and dots")
+        store.showsStationOutlines = true
+        try await focus(Coordinate(39.922,116.4555),18)
+        try require(coordinator.overlays(for: .platform).count == 2 && coordinator.overlays(for: .platform).allSatisfy { $0 is MKMultiPolyline } &&
+                    coordinator.platformAnnotations.isEmpty, "Hujialou two unnumbered platform lines")
+        let admiralty = Coordinate(22.27848,114.16602)
+        func texts() -> [String] { coordinator.platformAnnotations.values.map(\.style.text).sorted() }
+        try await focus(admiralty,17)
+        try require(texts().isEmpty, "No platform numbers at Z17")
+        try await focus(admiralty,18)
+        let actualZoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
+        let placement = store.platformNumbers(in: store.viewportBounds, zoom: actualZoom, screen: map.bounds) {
+            map.convert(store.alignment.display($0).location, toPointTo: map)
+        }
+        try require(texts() == ["5/6","7","8"], "Admiralty platform numbers \(texts()), map Z\(actualZoom), projected \(placement.map(\.text)), map center \(map.region.center), requested \(store.displayRegion.center), pixels \(map.bounds), pass \(coordinator.labelPasses)")
+        try require(coordinator.platformAnnotations.values.allSatisfy { $0.image != nil && map.view(for: $0)?.image != nil }, "Visible number glyphs")
+        _ = try await capture("admiralty-z18", directory: directory, window: window)
+        store.showsPlatforms = false
+        try await Task.sleep(for: .milliseconds(220))
+        try require(coordinator.overlays(for: .platform).isEmpty && texts() == ["5/6","7","8"], "Numbers alone")
+        store.showsPlatformNumbers = false
+        store.showsPlatforms = true
+        try await Task.sleep(for: .milliseconds(220))
+        try require(!coordinator.overlays(for: .platform).isEmpty && texts().isEmpty, "Shapes alone")
+        store.showsPlatformNumbers = true
+        try await focus(Coordinate(22.44565,114.03473),19)
+        let lightRail = Set(texts())
+        try require(Set(["1","2","3","4","5"]).isSubset(of: lightRail), "Yuen Long light rail \(texts())")
+        _ = try await capture("yuen-long-z19", directory: directory, window: window)
         try await focus(metro,18)
         let xizhimen = counts()
         try require(xizhimen.allSatisfy { $0 > 0 }, "Xizhimen passenger passages")
         NSApp.appearance = NSAppearance(named: .darkAqua)
         try await Task.sleep(for: .milliseconds(320))
         _ = try await capture("xizhimen-z18-dark", directory: directory, window: window)
+        store.showsPassengerPassages = false
+        try await Task.sleep(for: .milliseconds(220))
+        try require(counts() == [xizhimen[0],xizhimen[1],0], "Passages off")
+        store.showsPassengerPassages = true
         store.showsStationLayouts = false
         try await Task.sleep(for: .milliseconds(150))
         try require(counts() == [0,0,0], "Hidden detail layer")
         store.showsStationLayouts = true
         store.showsStations = false
         try await Task.sleep(for: .milliseconds(150))
-        try require(counts() == [0,0,0], "Hidden stations")
-        store.showsStations = true
+        try require(counts() == xizhimen, "Station dots independent")
+        try await focus(admiralty,18)
+        try require(texts() == ["5/6","7","8"], "Dark map numbers")
         window.contentView = NSHostingView(rootView: OfflineRailwayMap().environmentObject(store))
         try await Task.sleep(for: .milliseconds(400))
-        _ = try await capture("xizhimen-z18-offline", directory: directory, window: window)
-        try "Z13 0; Beijing West Z17 \(west); Xizhimen Z18 \(xizhimen); both visibility switches passed; Apple and offline renders captured."
+        // The offline view now owns the viewport; set its own Z18 after the MapKit view has detached.
+        store.zoom(exp2(store.displayZoom - 18.3))
+        try await Task.sleep(for: .milliseconds(250))
+        let canvasSize = window.contentView!.bounds.size
+        let projection = RailProjection(region: store.region, size: canvasSize)
+        let canvasLabels = store.platformNumbers(in: projection.visibleBounds, zoom: store.displayZoom,
+            screen: CGRect(origin: .zero, size: canvasSize), project: projection.screen)
+        try require(canvasLabels.map(\.text).sorted() == ["5/6","7","8"], "Offline numbers \(canvasLabels.map(\.text)), viewport \(store.viewportWidth)x\(store.viewportHeight), region \(store.region), size \(canvasSize), bounds \(projection.visibleBounds), enabled \(store.showsPlatformNumbers)")
+        _ = try await capture("admiralty-z18-offline-dark", directory: directory, window: window)
+        store.showsPlatformNumbers = false
+        try await Task.sleep(for: .milliseconds(250))
+        _ = try await capture("admiralty-z18-offline-no-numbers", directory: directory, window: window)
+        try "Beijing West Z17 \(west), two unnumbered Hujialou lines, Admiralty Z18 5/6, 7, 8, Yuen Long light rail 1–5, Xizhimen Z18 \(xizhimen). Independent switches passed. Online and offline renderers captured."
             .write(to: directory.appendingPathComponent("station-layout-check.txt"), atomically: true, encoding: .utf8)
     }
 

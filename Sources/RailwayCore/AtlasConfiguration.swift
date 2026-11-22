@@ -52,6 +52,10 @@ public struct AtlasConfiguration: Codable, Sendable {
         public var showsNationalMetroOverview = true
         public var showsStations = true
         public var showsStationLayouts: Bool? = true
+        public var showsStationOutlines = true
+        public var showsPlatforms = true
+        public var showsPassengerPassages = true
+        public var showsPlatformNumbers = true
         public var showsLabels = true
         public var showsMetroColors = true
         public var enrichWikiColours = true

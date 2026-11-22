@@ -10,6 +10,7 @@ const AtlasPrefs = (() => {
   const minZoom = {urban:8,metro:8,lightRail:8,tram:8,freight:8,branch:8,industrial:9,narrowGauge:9,construction:10,disused:10,abandoned:10,service:15};
   const defaults = {
     automaticDetail:true,showsNationalMetroOverview:true,showsStations:true,showsStationLayouts:true,showsLabels:true,showsMetroColors:true,prioritizesUrbanTransit:false,
+    showsStationOutlines:true,showsPlatforms:true,showsPassengerPassages:true,showsPlatformNumbers:true,
     categories:Object.keys(categories),networks:Object.keys(networks),forcedCategories:[],forcedNetworks:[],hiddenRoutes:[],
     metroWidthScale:1,railwayWidthScale:1,stationRadiusMultiplier:1.25,depotBrightness:.5,railwayPattern:true,viewportBuffer:.2,
     basemapDarkness:0,mapAppearance:"system",mode:"online",uiScale:1,panelWidth:320,inspectorWidth:380,panelSize:"medium",panelLayout:"floating",
@@ -144,15 +145,18 @@ const AtlasPrefs = (() => {
       for (const [v,n] of Object.entries(values)) el.add(new Option(n,v));el.value=p[k];
       el.onchange=()=>{change(k,el.value,k==="mode");callback?.();};label.append(el);parent.append(label);
     }
-    const vis=section(l,"visibility","地图与站点");
+    const station=section(l,"stationDetails","底图与站点");
+    const vis=section(l,"visibility","线路显示");
     toggle(vis,"automaticDetail","随缩放调整图层");toggle(vis,"showsNationalMetroOverview","全国城市轨道概览");
-    toggle(vis,"prioritizesUrbanTransit","优先显示都市轨道");toggle(vis,"showsStations","车站位置");toggle(vis,"showsLabels","放大后显示站名");
-    toggle(vis,"showsStationLayouts","车站轮廓、站台与通道");
-    const guide=make("p","Z16 站体 · Z17 站台 · Z18 乘客通道");guide.className="panel-note";vis.append(guide);
+    toggle(vis,"prioritizesUrbanTransit","优先显示都市轨道");toggle(station,"showsStations","车站位置");toggle(station,"showsLabels","放大后显示站名");
+    toggle(station,"showsStationLayouts","站区细节",false);
+    const detailControls=make("div");detailControls.id="stationDetailOptions";station.append(detailControls);
+    for (const [key,title] of [["showsStationOutlines","车站轮廓 · Z16"],["showsPlatforms","站台轮廓 · Z17"],
+      ["showsPassengerPassages","乘客通道 · Z18"],["showsPlatformNumbers","站台号 · Z18"]]) toggle(detailControls,key,title,false);
     const load=make("button","补充当前站区");load.className="text-button";load.type="button";load.id="loadStationLayouts";load.hidden=true;
-    load.onclick=StationLayoutLayer.supplement;vis.append(load);
+    load.onclick=StationLayoutLayer.supplement;station.append(load);
     const detailStatus=make("p");detailStatus.className="panel-note";detailStatus.id="stationLayoutStatus";detailStatus.hidden=true;
-    detailStatus.setAttribute("role","status");vis.append(detailStatus);
+    detailStatus.setAttribute("role","status");station.append(detailStatus);
     toggle(vis,"showsMetroColors","使用地铁线路色");
     function preset(high) {p.categories=high?Object.keys(categories).slice(0,4):Object.keys(categories);p.forcedCategories=high?[]:[...p.categories];persist();controls();apply();}
     button(vis,"全部显示",()=>preset(false));button(vis,"仅高铁",()=>preset(true));

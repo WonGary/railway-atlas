@@ -30,8 +30,12 @@ struct StationLayout: Decodable, Equatable, Identifiable {
     let area: Bool
     let paths: [[Coordinate]]
     let bounds: MapBounds
+    let platformLabel: String?
+    let labelAnchors: [Coordinate]
+    let labelOwner: String?
+    var hasShape: Bool { paths[0].count > 1 }
 
-    enum CodingKeys: CodingKey { case id, kind, network, area, paths }
+    enum CodingKeys: CodingKey { case id, kind, network, area, paths, platformLabel, labelAnchors, labelOwner }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -39,13 +43,16 @@ struct StationLayout: Decodable, Equatable, Identifiable {
         network = RailNetwork(rawValue: try c.decode(String.self, forKey: .network)) ?? .other
         area = try c.decode(Bool.self, forKey: .area)
         let vertices = try c.decode([[[Double]]].self, forKey: .paths)
-        paths = try vertices.map { ring in
-            try ring.map { pair in
-                guard pair.count == 2, Coordinate(pair[1], pair[0]).isValid else { throw URLError(.cannotParseResponse) }
-                return Coordinate(pair[1], pair[0])
-            }
+        func coordinate(_ pair: [Double]) throws -> Coordinate {
+            guard pair.count == 2, Coordinate(pair[1], pair[0]).isValid else { throw URLError(.cannotParseResponse) }
+            return Coordinate(pair[1], pair[0])
         }
-        guard let outer = paths.first, outer.count >= 2,
+        paths = try vertices.map { try $0.map(coordinate) }
+        platformLabel = try c.decodeIfPresent(String.self, forKey: .platformLabel)
+        labelOwner = try c.decodeIfPresent(String.self, forKey: .labelOwner)
+        labelAnchors = try (c.decodeIfPresent([[Double]].self, forKey: .labelAnchors) ?? []).map(coordinate)
+        guard let outer = paths.first, !outer.isEmpty,
+              outer.count >= 2 || (kind == .platform && platformLabel != nil && !labelAnchors.isEmpty),
               area ? paths.allSatisfy({ $0.count >= 4 && $0.first == $0.last }) : paths.count == 1
         else { throw URLError(.cannotParseResponse) }
         bounds = MapBounds(points: outer)
@@ -77,6 +84,22 @@ struct StationLayout: Decodable, Equatable, Identifiable {
     }
 }
 
+struct PlatformNumberPlacement {
+    let id: String
+    let text: String
+    let coordinate: Coordinate
+    let point: CGPoint
+    let frame: CGRect
+
+    static func text(_ number: String, scale: CGFloat, light: Bool) -> some View {
+        Text(verbatim: number)
+            .font(.system(size: 11 * scale, weight: .semibold).monospacedDigit())
+            .foregroundStyle(light ? Color.white : Color(red: 0.05, green: 0.20, blue: 0.19))
+            .shadow(color: light ? .black : .white, radius: 1)
+            .fixedSize().padding(2)
+    }
+}
+
 private struct LayoutSnapshot: Decodable {
     let features: [StationLayout]
 }
@@ -88,12 +111,53 @@ extension RailwayMapStore {
         return pack.features
     }
     func stationLayouts(in bounds: MapBounds, zoom: Double) -> [StationLayout] {
-        guard zoom >= 16, showsStationLayouts, showsStations, !historyMapActive else { return [] }
+        guard zoom + 0.000001 >= 16, showsStationLayouts, !historyMapActive else { return [] }
         return layoutFeatures.filter { feature in
-            zoom + 0.000001 >= feature.kind.minimumZoom && feature.bounds.intersects(bounds) &&
-            networkVisible(feature.network) &&
-            (feature.network == .railway || categoryVisible(.urban))
+            let enabled = switch feature.kind {
+            case .outline: showsStationOutlines
+            case .platform: showsPlatforms
+            case .passage: showsPassengerPassages
+            }
+            return enabled && feature.hasShape && zoom + 0.000001 >= feature.kind.minimumZoom && feature.bounds.intersects(bounds)
         }
+    }
+
+    func platformNumbers(in bounds: MapBounds, zoom: Double, screen: CGRect,
+                         project: (Coordinate) -> CGPoint) -> [PlatformNumberPlacement] {
+        guard showsStationLayouts, showsPlatformNumbers, !historyMapActive, zoom + 0.000001 >= 18 else { return [] }
+        let candidates = layoutFeatures.filter { $0.platformLabel != nil && !$0.labelAnchors.isEmpty && $0.bounds.intersects(bounds) }
+        let ids = Set(candidates.map(\.id))
+        var placed: [PlatformNumberPlacement] = []
+        for feature in candidates.sorted(by: { ($0.area ? 0 : 1, $0.id) < ($1.area ? 0 : 1, $1.id) }) {
+            guard let text = feature.platformLabel, !text.isEmpty,
+                  !(feature.labelOwner.map(ids.contains) ?? false) else { continue }
+            let width = max(13, CGFloat(text.count) * 7.5 + 5) * uiScale
+            let height = 17 * uiScale
+            for anchor in feature.labelAnchors {
+                let point = project(anchor)
+                let frame = CGRect(x: point.x - width/2, y: point.y - height/2, width: width, height: height)
+                if screen.contains(frame) && !placed.contains(where: { $0.frame.insetBy(dx: -2, dy: -1).intersects(frame) }) {
+                    placed.append(.init(id: feature.id, text: text, coordinate: anchor, point: point, frame: frame))
+                    break
+                }
+            }
+        }
+        return placed
+    }
+
+    var stationLayoutHint: String {
+        guard !historyMapActive else { return "返回当前地图可查看站区细节。" }
+        guard displayZoom >= 16 else { return "放大到 Z16 可查看站区。地铁、轻轨和铁路共用这些开关。" }
+        let nearby = layoutFeatures.filter { $0.bounds.intersects(viewportBounds) }
+        guard !nearby.isEmpty else {
+            return mapMode == .apple ? "本地暂无这一带的站区资料，可点下方按钮查询。" : "随包和已缓存的资料未覆盖当前视野。"
+        }
+        let platforms = nearby.filter { $0.kind == .platform }
+        return "当前视野有 \(platforms.filter(\.hasShape).count) 个站台图形，\(Set(platforms.compactMap { $0.platformLabel == nil ? nil : $0.labelOwner ?? $0.id }).count) 处标有站台号。"
+    }
+    var currentLayoutStatus: String {
+        guard let bounds = layoutStatusBounds, bounds.contains(viewportBounds.center) else { return "" }
+        return layoutStatus
     }
 
     func loadStationLayouts() async {
@@ -101,6 +165,7 @@ extension RailwayMapStore {
         let bounds = viewportBounds
         guard let script = Self.resourceURL("station-layouts", extension: "js") else { return }
         loadingLayouts = true
+        layoutStatusBounds = bounds
         layoutStatus = "正在读取当前站区…"
         defer { loadingLayouts = false }
         do {
@@ -130,11 +195,20 @@ extension RailwayMapStore {
     func restoreStationLayouts() {
         guard let dir = layoutCacheDirectory, let files = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
-        let extra = files.filter { $0.pathExtension == "json" }.sorted {
+        let filesByDate = files.filter { $0.pathExtension == "json" }.sorted {
             (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast <
             (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-        }.suffix(32).flatMap { url -> [StationLayout] in
+        }.suffix(32)
+        let extra = filesByDate.flatMap { url -> [StationLayout] in
             guard let data = try? Data(contentsOf: url) else { return [] }
+            // Version-one caches stored raw refs and paths. Recreate the same labels as the live extractor.
+            if let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+               rows.contains(where: { $0["kind"] as? String == "platform" && $0["platformLabel"] == nil &&
+                   ($0["ref"] != nil || $0["name"] != nil || $0["local_ref"] != nil) }),
+               let script = Self.resourceURL("station-layouts", extension: "js"),
+               let migrated = try? StationLayoutFetch.run(script, method: "prepareFeatures", arguments: [rows]).toArray(),
+               let json = try? JSONSerialization.data(withJSONObject: migrated),
+               let result = try? JSONDecoder().decode([StationLayout].self, from: json) { return result }
             return (try? JSONDecoder().decode([StationLayout].self, from: data)) ?? []
         }
         if !extra.isEmpty { mergeStationLayouts(extra) }
@@ -157,7 +231,7 @@ private enum StationLayoutFetch {
             var components = URLComponents(string: source)!
             components.queryItems = [URLQueryItem(name: "data", value: q)]
             var request = URLRequest(url: components.url!, timeoutInterval: 20)
-            request.setValue("RailwayAtlas/0.8.1 (+https://github.com/WonGary/railway-atlas)", forHTTPHeaderField: "User-Agent")
+            request.setValue("RailwayAtlas/\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "local") (+https://github.com/WonGary/railway-atlas)", forHTTPHeaderField: "User-Agent")
             request.setValue("https://wongary.github.io/railway-atlas/", forHTTPHeaderField: "Referer")
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)

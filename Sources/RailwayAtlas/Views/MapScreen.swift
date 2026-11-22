@@ -360,7 +360,18 @@ struct OfflineRailwayMap: View {
                     context.stroke(path, with: .color(.orange.opacity(0.25)), style: StrokeStyle(lineWidth: 11, lineCap: .round))
                     draw(path, appearance: store.appearance(selected), context: &context)
                 }
-                var labels: [CGRect] = []
+                let numbers = store.platformNumbers(in: projection.visibleBounds, zoom: store.displayZoom + log2(magnification),
+                    screen: CGRect(origin: .zero, size: size), project: projection.screen)
+                for number in numbers {
+                    let ink: Color = scheme == .dark ? .white : Color(red: 0.05, green: 0.20, blue: 0.19)
+                    let glyph = Text(verbatim: number.text).font(.system(size: 11 * uiScale, weight: .semibold).monospacedDigit())
+                    let edge = context.resolve(glyph.foregroundStyle(scheme == .dark ? Color.black : Color.white))
+                    for offset in [CGPoint(x: 0, y: 1), CGPoint(x: 0, y: -1), CGPoint(x: 1, y: 0), CGPoint(x: -1, y: 0)] {
+                        context.draw(edge, at: CGPoint(x: number.point.x + offset.x, y: number.point.y + offset.y))
+                    }
+                    context.draw(context.resolve(glyph.foregroundStyle(ink)), at: number.point)
+                }
+                var labels = numbers.map(\.frame)
                 let stations = (store.historyMapActive ? [] : store.visibleStations).sorted {
                     ($0.id == store.selection?.id ? 0 : 1) < ($1.id == store.selection?.id ? 0 : 1)
                 }
