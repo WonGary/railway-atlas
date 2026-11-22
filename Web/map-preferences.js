@@ -12,14 +12,14 @@ const AtlasPrefs = (() => {
     automaticDetail:true,showsNationalMetroOverview:true,showsStations:true,showsLabels:true,showsMetroColors:true,prioritizesUrbanTransit:false,
     categories:Object.keys(categories),networks:Object.keys(networks),forcedCategories:[],forcedNetworks:[],hiddenRoutes:[],
     metroWidthScale:1,railwayWidthScale:1,stationRadiusMultiplier:1.25,depotBrightness:.5,railwayPattern:true,viewportBuffer:.2,
-    basemapDarkness:0,mode:"online",uiScale:1,panelWidth:320,inspectorWidth:380,panelSize:"medium",panelLayout:"floating",
+    basemapDarkness:0,mapAppearance:"system",mode:"online",uiScale:1,panelWidth:320,inspectorWidth:380,panelSize:"medium",panelLayout:"floating",
     inspectorLayout:"docked",panelVisible:true,panelBackgroundOpacity:1,inspectorBackgroundOpacity:1,statusVisible:true,
     assistantPresentation:"sidebar",statusX:0,statusY:0
   };
   const ranges = {metroWidthScale:[.5,2],railwayWidthScale:[.5,2],stationRadiusMultiplier:[.5,3],depotBrightness:[.1,1],
     viewportBuffer:[0,.5],basemapDarkness:[0,1],uiScale:[.75,1.6],panelWidth:[250,560],inspectorWidth:[200,560],
     panelBackgroundOpacity:[0,1],inspectorBackgroundOpacity:[0,1],statusX:[-2000,2000],statusY:[-2000,2000]};
-  const enums = {mode:["online","cached","offline"],panelSize:["small","medium","large"],panelLayout:["floating","docked"],
+  const enums = {mode:["online","cached","offline"],mapAppearance:["system","light","dark"],panelSize:["small","medium","large"],panelLayout:["floating","docked"],
     inspectorLayout:["floating","docked"],assistantPresentation:["sidebar","floating","window"]};
   const key = "railway-atlas-map-settings-v1";
   let p = {...defaults}, filter = "";
@@ -103,7 +103,8 @@ const AtlasPrefs = (() => {
     const status=document.querySelector(".map-status");status.hidden=!p.statusVisible;
     status.style.transform=`translate(${p.statusX}px,${p.statusY}px)`;
     if (!state.map) return;
-    state.map.getPane("tilePane").style.filter=`brightness(${1-p.basemapDarkness})`;
+    updateBasemapAppearance();
+    StationLabels.schedule();
     $("assistantPanel").classList.toggle("floating",p.assistantPresentation==="floating");
     if (redraw) {setBaseLayer($("baseLayer").value); drawMetro(); RailMapLayers.toggle(true);}
     requestAnimationFrame(()=>state.map.invalidateSize({pan:false}));
@@ -162,7 +163,9 @@ const AtlasPrefs = (() => {
     button(lines,"显示全部城市线路",()=>{p.hiddenRoutes=[];p.categories=[...new Set([...p.categories,"urban"])];p.networks=[...new Set([...p.networks,"metro","lightRail","tram"])];persist();controls();apply();});
     const list=make("div");list.id="routeVisibility";lines.append(list);routeList();
     const source=section(s,"source","地图模式");select(source,"mode","数据来源",{online:"在线与本机缓存",cached:"仅随包与本机缓存",offline:"仅区域地图"});
-    const render=section(s,"render","地图绘制");range(render,"basemapDarkness","底图暗化",.05);
+    const render=section(s,"render","地图绘制");
+    select(render,"mapAppearance","地图外观",{system:"跟随系统",light:"浅色",dark:"深色"});
+    range(render,"basemapDarkness","底图暗化",.05,false);
     range(render,"railwayWidthScale","铁路线宽",.05);range(render,"metroWidthScale","地铁线宽",.05);range(render,"stationRadiusMultiplier","站点半径",.05);
     toggle(render,"railwayPattern","铁路轨枕纹理");range(render,"depotBrightness","站场轨道亮度",.05);range(render,"viewportBuffer","视野边缘预绘制比例",.05);
     const ui=section(s,"ui","界面与面板",false);range(ui,"uiScale","界面缩放",.05,false);

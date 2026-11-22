@@ -553,10 +553,13 @@ function drawSelectedRoute() {
     const coordinate = getStopCoordinate(index);
     if (!coordinate) return;
     const marker = L.circleMarker(coordinate, {
-      radius: 5, color: "#152024", weight: 2, fillColor: "#ffe17a", fillOpacity: 1
+      radius: 5, color: "#152024", weight: 2, fillColor: "#ffe17a", fillOpacity: 1, bubblingMouseEvents: false
     }).addTo(state.routeLayer);
     marker.on("click", () => selectStation(stop.name));
-    marker.bindTooltip(stop.name, { direction: "top", offset: [0, -5] });
+    StationLabels.bind(marker, stop.name, {
+      important: index === 0 || index === route.stops.length - 1,
+      selected: () => state.selectedStation === stop.name
+    });
     state.stationMarkers.set(stop.name, marker);
   });
   if (state.route.geometryAvailable) {
@@ -689,6 +692,13 @@ function buildMetroCityLayers(city, detail) {
     line.addTo(routesLayer);
     routeLines.push({ line, route, construction });
   }
+  const platformsByName = new Map();
+  for (const station of detail.stations || []) {
+    const location = pointToLatLng(station.coordinate);
+    if (!location) continue;
+    if (!platformsByName.has(station.name)) platformsByName.set(station.name, []);
+    platformsByName.get(station.name).push({location, routes: station.routes || []});
+  }
   for (const station of detail.stations || []) {
     const coordinate = pointToLatLng(station.coordinate);
     if (!coordinate) continue;
@@ -697,8 +707,15 @@ function buildMetroCityLayers(city, detail) {
       color: "#172126",
       weight: 1.4,
       fillColor: "#ffffff",
-      fillOpacity: 0.96
-    }).bindTooltip(Object.assign(document.createElement("span"),{textContent:station.name}), { direction: "top", offset: [0, -4] });
+      fillOpacity: 0.96, bubblingMouseEvents: false
+    });
+    const routesAtStop = platformsByName.get(station.name)
+      .filter(platform => marker.getLatLng().distanceTo(platform.location) <= 350)
+      .flatMap(platform => platform.routes);
+    StationLabels.bind(marker, station.name, {
+      id: station.id, minZoom: 13, important: StationLabels.prominent({}, routesAtStop),
+      selected: () => state.selectedMetroStation?.city.id === city.id && state.selectedMetroStation.station.id === station.id
+    });
     marker.on("click", () => selectMetroStation(city, station));
     marker.addTo(stationsLayer);
     stationMarkers.set(station.id, marker);
@@ -773,10 +790,6 @@ function refreshMetroDetailVisibility() {
       const selected = state.selectedMetroStation?.city.id === cityID && state.selectedMetroStation?.station.id === stationID;
       marker.setRadius((selected ? 5 : 2.8)*prefs.stationRadiusMultiplier);
       marker.setStyle({fillColor: selected ? "#f2c94c" : "#ffffff"});
-      const permanent=prefs.showsLabels && zoom>=13 && state.map.getBounds().contains(marker.getLatLng());
-      if(marker.getTooltip()?.options.permanent!==permanent){
-        marker.unbindTooltip().bindTooltip(Object.assign(document.createElement("span"),{textContent:station.name}),{permanent,direction:"top",offset:[0,-4]});
-      }
     }
   }
   state.metroPolylines.forEach(({ line, construction, record }) => {
@@ -792,6 +805,7 @@ function refreshMetroDetailVisibility() {
     });
   });
   $("zoomStatus").textContent = `Z${zoom} · 城市轨道 ${activeCities.size ? `细节 ${activeCities.size} 城` : "概览"}`;
+  StationLabels.schedule();
 }
 
 function drawMetro() {
@@ -1833,8 +1847,24 @@ function setBaseLayer(name) {
   if (!selected || !state.map) return;
   Object.values(state.baseLayers).forEach(layer => { if (state.map.hasLayer(layer)) state.map.removeLayer(layer); });
   if(AtlasPrefs.value.mode==="online")selected.addTo(state.map);
+  updateBasemapAppearance();
   setRouteStatus();
   saveLayerPreferences();
+}
+
+const systemDarkMap = window.matchMedia("(prefers-color-scheme: dark)");
+function updateBasemapAppearance() {
+  if (!state.map) return;
+  const {mapAppearance, basemapDarkness, mode} = AtlasPrefs.value;
+  const dark = mapAppearance === "dark" || (mapAppearance === "system" && systemDarkMap.matches);
+  const imagery = mode === "online" && ["satellite", "hybrid"].includes($("baseLayer").value);
+  const brightness = (1 - basemapDarkness) * (dark && !imagery ? 0.34 : 1);
+  const surface = state.map.getContainer();
+  surface.dataset.stationInk = imagery || brightness <= 0.54 ? "light" : "dark";
+  // Transparent or missing tiles reveal the map surface, including in offline mode.
+  const background = imagery ? [46, 54, 59] : [205, 213, 214];
+  surface.style.backgroundColor = `rgb(${background.map(c => Math.round(c * brightness)).join(",")})`;
+  state.map.getPane("tilePane").style.filter = `brightness(${brightness})`;
 }
 
 async function loadJSON(path) {
@@ -2215,9 +2245,12 @@ function renderHistoryEvent() {
     const points = places.map(place => [place.latitude, place.longitude]);
     L.polyline(points, { color: "#f2c94c", weight: 3, opacity: 0.82, dashArray: "5 7" }).addTo(state.historyLayer);
   }
-  places.forEach(place => L.circleMarker([place.latitude, place.longitude], {
-    radius: 5, color: "#152024", weight: 2, fillColor: "#f2c94c", fillOpacity: 1
-  }).bindTooltip(place.name).addTo(state.historyLayer));
+  places.forEach(place => {
+    const marker = L.circleMarker([place.latitude, place.longitude], {
+      radius: 5, color: "#152024", weight: 2, fillColor: "#f2c94c", fillOpacity: 1
+    }).addTo(state.historyLayer);
+    StationLabels.bind(marker, place.name);
+  });
   setLayerVisible(state.historyLayer,state.workspaceView==="experiences" && !document.querySelector('[data-experience-page="history"]').hidden);
 }
 
@@ -2322,6 +2355,8 @@ function initializeMap() {
   state.map.on("zoomend", updateZoom);
   state.map.on("moveend", refreshMetroDetailVisibility);
   state.map.on("moveend",()=>{if(!state.playbackVisible){const c=state.map.getCenter();writeStored("railway-atlas-map-camera",{lat:c.lat,lng:c.lng,z:state.map.getZoom()});}});
+  StationLabels.setup(state.map, RailMapLayers.eachVisibleStation);
+  systemDarkMap.addEventListener("change", updateBasemapAppearance);
   RailMapLayers.setup(state.map);
 }
 
