@@ -1,11 +1,11 @@
 const VERSION = "0.8.1";
-const SHELL = `railway-atlas-web-${VERSION}-station-layouts-1`;
+const SHELL = `railway-atlas-web-${VERSION}-vector-basemap-3`;
 // City snapshots still carry the same 2026-11-05 edition. Reuse downloads on upgrade.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
 const address = path => new URL(path, base).href;
 const files = [
-  "index.html","styles.css","app.js","library.js","timetable-package.mjs","map-preferences.js","station-labels.js","rail-layers.js","station-board.js","cache-client.js","cache-worker.mjs",
+  "index.html","styles.css","app.js","library.js","timetable-package.mjs","map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js","cache-worker.mjs",
   "station-layout-layer.js","data/station-layouts.js","data/station-layouts.json",
   "vendor/sqlite/index.mjs","vendor/sqlite/sqlite3.wasm","vendor/sqlite/sqlite3-opfs-async-proxy.js",
   "manifest.webmanifest","touch.png","icon-192.png","icon-512.png",

@@ -207,7 +207,7 @@ const RailMapLayers = (() => {
       }
     });
     const grid = new Grid({pane:"railDetail",minZoom:7,maxNativeZoom:14,maxZoom:19,keepBuffer:2,updateWhenIdle:true,
-      attribution:'<a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a> · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});
+      attribution:AtlasVectorBasemap.openFreeMapAttribution});
     grid.on("tileunload",event => event.tile.abortTile?.());
     grid.on("tileload tileunload add remove", StationLabels.schedule);
     grid.on("load",()=>toggle());
