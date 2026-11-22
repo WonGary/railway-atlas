@@ -57,6 +57,10 @@ final class RailwayMapStore: ObservableObject {
     @Published var searchText = ""
     @Published var categories: Set<RailCategory> = Set(RailCategory.allCases) { didSet { rebuildVisible() } }
     @Published var showsStations = true { didSet { rebuildVisible() } }
+    @Published var showsStationLayouts = true { didSet { persist(showsStationLayouts, "railway.stationLayouts") } }
+    @Published var loadingLayouts = false
+    @Published var layoutStatus = ""
+    @Published var layoutFeatures = RailwayMapStore.bundledLayouts()
     @Published var showsLabels = true { didSet { labelRevision += 1 } }
     @Published var basemapDarkness = 0.0 {
         didSet { persist(basemapDarkness, "railway.basemapDarkness") }
@@ -294,6 +298,8 @@ final class RailwayMapStore: ObservableObject {
             directory: directory.appendingPathComponent("MetroOverview", isDirectory: true), session: tileSession)
         favoriteIDs = Set(UserDefaults.standard.stringArray(forKey: "railway.favorites") ?? [])
         if qaIndex == nil {
+            showsStationLayouts = UserDefaults.standard.object(forKey: "railway.stationLayouts") as? Bool ?? true
+            restoreStationLayouts()
             hiddenRoutes = Set(UserDefaults.standard.stringArray(forKey: "railway.hiddenRoutes") ?? [])
             basemapDarkness = UserDefaults.standard.object(forKey: "railway.basemapDarkness") == nil
                 ? (UserDefaults.standard.bool(forKey: "railway.dimBasemap") ? 0.42 : 0)

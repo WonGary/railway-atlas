@@ -80,6 +80,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             renderer.darkness = store.basemapDarkness
             renderer.setNeedsDisplay()
         }
+        let layoutChanged = coordinator.updateLayouts(map, dark: lightLabels)
         if coordinator.renderRevision != store.renderRevision {
             coordinator.renderRevision = store.renderRevision
             let inputs = Coordinator.RenderInputs(categories: store.categories, networks: store.networks,
@@ -139,26 +140,6 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 coordinator.retire(coordinator.groups.removeValue(forKey: key) ?? [],
                                    immediately: userVisibilityChanged, on: map)
             }
-            // New groups arrive after retained overlays in MapKit. Restore
-            // the prepared paint order so a late neutral track cannot cover
-            // an already-coloured route. Reordering keeps vector geometry.
-            let ordered: [any MKOverlay] = (coordinator.shade.map { [$0 as any MKOverlay] } ?? [])
-                + displayGroups.flatMap {
-                    coordinator.groups[.init(token: $0.geometryToken, alignment: store.alignment), default: []]
-                        .map { $0 as any MKOverlay }
-                } + coordinator.highlights.map { $0 as any MKOverlay }
-                + coordinator.experienceOverlays.map { $0 as any MKOverlay }
-            var actual = map.overlays
-            var positions = Dictionary(uniqueKeysWithValues: actual.enumerated().map { (ObjectIdentifier($0.element), $0.offset) })
-            for (target, overlay) in ordered.enumerated() {
-                guard let current = positions[ObjectIdentifier(overlay)], current != target else { continue }
-                // The legacy index-based API operates only above roads;
-                // our rail layers are above labels. Exchange actual objects.
-                map.exchangeOverlay(overlay, with: actual[target])
-                positions[ObjectIdentifier(actual[target])] = current
-                positions[ObjectIdentifier(overlay)] = target
-                actual.swapAt(current, target)
-            }
             let ids = Set(store.visibleLines.map(\.id))
             coordinator.geometry = coordinator.geometry.filter { ids.contains($0.key) }
             let stations = Dictionary((store.historyMapActive ? [] : store.visibleStations).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -174,6 +155,30 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             }
             map.addAnnotations(added)
             coordinator.scheduleStationLabels(map)
+        }
+        if renderingChanged || layoutChanged {
+            // New groups arrive after retained overlays in MapKit. Restore
+            // the prepared paint order so a late neutral track cannot cover
+            // an already-coloured route. Reordering keeps vector geometry.
+            let ordered: [any MKOverlay] = (coordinator.shade.map { [$0 as any MKOverlay] } ?? [])
+                + coordinator.overlays(for: .outline)
+                + displayGroups.flatMap {
+                    coordinator.groups[.init(token: $0.geometryToken, alignment: store.alignment), default: []]
+                        .map { $0 as any MKOverlay }
+                } + coordinator.overlays(for: .platform) + coordinator.overlays(for: .passage)
+                + coordinator.highlights.map { $0 as any MKOverlay }
+                + coordinator.experienceOverlays.map { $0 as any MKOverlay }
+            var actual = map.overlays
+            var positions = Dictionary(uniqueKeysWithValues: actual.enumerated().map { (ObjectIdentifier($0.element), $0.offset) })
+            for (target, overlay) in ordered.enumerated() {
+                guard let current = positions[ObjectIdentifier(overlay)], current != target else { continue }
+                // The legacy index-based API operates only above roads;
+                // our rail layers are above labels. Exchange actual objects.
+                map.exchangeOverlay(overlay, with: actual[target])
+                positions[ObjectIdentifier(actual[target])] = current
+                positions[ObjectIdentifier(overlay)] = target
+                actual.swapAt(current, target)
+            }
         }
         if coordinator.labelRevision != store.labelRevision || coordinator.uiScale != store.uiScale || labelContrastChanged {
             coordinator.uiScale = store.uiScale
@@ -289,6 +294,55 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var labelRevision = -1
         var uiScale = 1.0
         var lightStationLabels = false
+        private var layouts: [String: (feature: StationLayout, overlay: any MKOverlay)] = [:]
+        private var layoutKinds: [ObjectIdentifier: StationLayoutKind] = [:]
+        private var layoutAlignment: MapAlignment?
+        private var layoutDark = false
+        func overlays(for kind: StationLayoutKind) -> [any MKOverlay] {
+            layouts.values.filter { $0.feature.kind == kind }.sorted { $0.feature.id < $1.feature.id }.map(\.overlay)
+        }
+        func updateLayouts(_ map: MKMapView, dark: Bool) -> Bool {
+            let visible = store.stationLayouts(in: store.viewportBounds, zoom: store.displayZoom)
+            let wanted = Set(visible.map(\.id)), realign = layoutAlignment != store.alignment
+            let recolor = layoutDark != dark
+            layoutAlignment = store.alignment
+            layoutDark = dark
+            var changed = false
+            for (key, item) in layouts where realign || !wanted.contains(key) {
+                map.removeOverlay(item.overlay)
+                layouts.removeValue(forKey: key)
+                layoutKinds.removeValue(forKey: ObjectIdentifier(item.overlay))
+                changed = true
+            }
+            for feature in visible {
+                if let item = layouts[feature.id] {
+                    if item.feature == feature {
+                        if recolor, let renderer = map.renderer(for: item.overlay) as? MKOverlayPathRenderer {
+                            paintLayout(feature.kind, renderer)
+                            renderer.setNeedsDisplay()
+                        }
+                        continue
+                    }
+                    map.removeOverlay(item.overlay)
+                    layoutKinds.removeValue(forKey: ObjectIdentifier(item.overlay))
+                }
+                let overlay = feature.overlay(alignment: store.alignment)
+                layouts[feature.id] = (feature, overlay)
+                layoutKinds[ObjectIdentifier(overlay)] = feature.kind
+                map.addOverlay(overlay, level: .aboveLabels)
+                changed = true
+            }
+            return changed
+        }
+        private func paintLayout(_ kind: StationLayoutKind, _ renderer: MKOverlayPathRenderer) {
+            let color = PlatformColor(kind.ink(dark: layoutDark))
+            renderer.strokeColor = color
+            renderer.fillColor = color.withAlphaComponent(kind.opacity)
+            renderer.lineWidth = kind.width
+            renderer.lineJoin = .round
+            renderer.lineCap = .round
+            renderer.lineDashPattern = kind.dash.map { NSNumber(value: Double($0)) }
+        }
         var viewportUpdate: Task<Void, Never>?
         var labelUpdate: Task<Void, Never>?
         private(set) var symbolUpdates = 0
@@ -352,6 +406,14 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             }
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
+            if let kind = layoutKinds[ObjectIdentifier(overlay)] {
+                let renderer: MKOverlayPathRenderer
+                if let polygon = overlay as? MKPolygon { renderer = MKPolygonRenderer(polygon: polygon) }
+                else if let line = overlay as? MKMultiPolyline { renderer = MKMultiPolylineRenderer(multiPolyline: line) }
+                else { return MKOverlayRenderer(overlay: overlay) }
+                paintLayout(kind, renderer)
+                return renderer
+            }
             if overlay is BasemapShade {
                 let renderer = BasemapShadeRenderer(overlay: overlay)
                 renderer.darkness = store.basemapDarkness

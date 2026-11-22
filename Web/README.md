@@ -1,10 +1,12 @@
-# 铁道漫游 0.8.0 网页地图
+# 铁道漫游 0.8.1 网页地图
 
-[打开地图](https://wongary.github.io/railway-atlas/) ｜ [下载安装包](https://github.com/WonGary/railway-atlas/releases/tag/web-v0.8.0)
+[打开地图](https://wongary.github.io/railway-atlas/) ｜ [下载安装包](https://github.com/WonGary/railway-atlas/releases/latest)
 
 第一次打开是全国地图，随后会记住上次看过的位置。「图层」可按铁路速度、用途、状态、轨道网络或单条城市线路筛选。点线路或车站可看资料。「设置」可调地图模式、线宽、车站大小、底图亮度和面板布局，也可导入或导出地图设置。沿线旅行、时光机和铁路护照在「更多」里。
 
 放大地图，站名会直接显示在站点旁边。浅色底图用深灰字，深色底图和卫星影像用浅灰字。站点密集时优先显示换乘站和大站。地图外观默认跟随系统，也可以在「设置 → 地图绘制 → 地图外观」手动切换。
+
+Z16 开始显示车站轮廓，Z17 显示站台，Z18 显示乘客通道。北京西站能看到站台面，呼家楼有两条站台线，西直门还有站内步行通道。随包资料覆盖北京、上海、香港的部分站区。在线模式可在「图层 → 地图与站点」点「补充当前站区」，查询范围限于眼前的地图。取得的要素会留在本机。通道依据 OSM 测绘，不同楼层可在俯视图中重叠。现场换乘请按站内指引行走。[图层资料和许可](data/station-layouts.json)
 
 ## 使用本机资料
 
@@ -34,4 +36,4 @@ python3 -m http.server 8080 --directory Web
 
 随后访问 `http://127.0.0.1:8080/`。自行部署时把 `Web/` 的内容放到同一 HTTPS 路径，保留目录结构。重建桌面 ZIP 使用 `python3 Portable/package.py <新的输出目录>`，需要 macOS、Go 和 Command Line Tools。
 
-[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.0.md)
+[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.1.md)

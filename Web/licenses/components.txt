@@ -1,4 +1,5 @@
 铁路与地铁地理资料：© OpenStreetMap contributors，ODbL 1.0。六城详情按线路关系和站点对象计数，站台、方向和支线可能单独计数。
+车站轮廓、站台和乘客通道同属 ODbL 1.0。data/station-layouts.json 保存截取范围、来源、原始文件摘要及各要素的 OSM 编号。
 在线基础轨道使用 OpenFreeMap / OpenMapTiles / OpenStreetMap，数据范围取决于视野和来源。参见 NOTICE.txt、NATIONAL-METRO-LICENCE.txt、METRO-PALETTE-LICENCE.txt。
 Leaflet 1.9.4 — BSD-2-Clause，见 ../vendor/LICENSE。
 @mapbox/vector-tile 3.0.0、pbf 5.2.0、@mapbox/point-geometry 1.1.0 — 许可见同目录 vector-tile.txt、pbf.txt、point-geometry.txt。

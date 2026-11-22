@@ -27,7 +27,7 @@ async function run() {
     page.on("pageerror", error=>errors.push(error.message));
     await page.goto(site, {waitUntil:"domcontentloaded"});
     await page.waitForFunction(()=>state.routes.length>0 && state.metroPolylines.length>0);
-    assert.equal(await page.locator("#versionBadge").textContent(),"0.8.0");
+    assert.equal(await page.locator("#versionBadge").textContent(),require("node:fs").readFileSync(require("node:path").join(__dirname,"../Mobile/VERSION"),"utf8").trim());
     assert.equal(await page.locator("#playbackBar").isVisible(),false);
     assert.deepEqual(await page.evaluate(()=>[state.route,state.map.hasLayer(state.routeLayer),state.map.hasLayer(state.historyLayer),state.workspaceView]),[null,false,false,"layers"]);
     await page.tap("#toggleWorkspace");

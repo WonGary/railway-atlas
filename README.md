@@ -4,15 +4,15 @@
 
 ## 给朋友的最短用法
 
-[打开地图](https://wongary.github.io/railway-atlas/) ｜ [下载 Android、Windows、Mac 和 iOS 归档](https://github.com/WonGary/railway-atlas/releases/tag/web-v0.8.0)
+[打开地图](https://wongary.github.io/railway-atlas/) ｜ [下载 Android、Windows、Mac 和 iOS 归档](https://github.com/WonGary/railway-atlas/releases/latest)
 
-0.8.0 首次打开是全国地图，以后回到上次浏览的位置。安卓手机可以直接安装 APK，Windows 和 Mac 的便携包用浏览器打开本机地图。iPhone、iPad 可以立即打开网页版，原生版由发布者签名后发 TestFlight 邀请。「更多」里保留了沿线旅行和铁路护照。[地图和离线资料](Web/README.md) · [手机安装与签名](Mobile/README.md)
+放大到北京西站可以看到站房和各个站台，再到西直门看地铁站台和乘客通道。安卓手机可安装 APK，Windows 和 Mac 的便携包通过浏览器打开地图。iPhone 和 iPad 可直接打开网页版，也可由发布者签名后通过 TestFlight 试用原生版。[地图和离线资料](Web/README.md) · [手机安装与签名](Mobile/README.md)
 
 网页不提供 API 额度，也不会把 Key 写入仓库。Key 只在当前页面内存中使用。服务商是否允许浏览器直连，取决于该服务的 CORS 和账号权限。
 
 ## SwiftUI 原生版
 
-`0.6.0 (1)`
+`macOS 0.8.1 (1)`
 
 已验证：
 

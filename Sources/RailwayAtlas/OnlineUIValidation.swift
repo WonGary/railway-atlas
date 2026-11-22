@@ -27,6 +27,11 @@ enum OnlineUIValidation {
             window?.setContentSize(NSSize(width: 1240, height: 820))
             window?.center()
             window?.title = "铁道图鉴 · 本地验证"
+            if arguments.contains("--station-layout-check") {
+                try await checkStationLayouts(store, directory: directory)
+                NSApp.terminate(nil)
+                return
+            }
             if arguments.contains("--scale-check") {
                 try await ViewportValidation.scaleCheck(store: store, directory: directory, window: window)
                 NSApp.terminate(nil)
@@ -243,6 +248,77 @@ enum OnlineUIValidation {
             print(report)
             exit(1)
         }
+    }
+
+    private static func checkStationLayouts(_ store: RailwayMapStore, directory: URL) async throws {
+        let western = Coordinate(39.8935,116.3151), metro = Coordinate(39.9403,116.3491)
+        store.showsStationLayouts = true
+        store.showsStations = true
+        store.historyMapActive = false
+        store.networks = Set(RailNetwork.allCases)
+        store.categories = Set(RailCategory.allCases)
+        let window = NSWindow(contentRect: CGRect(x: 100,y: 100,width: 1000,height: 690),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        // Use real Apple/Canvas renderers with the offline QA store to isolate the geometry from live track providers.
+        store.mapMode = .offline
+        store.viewportWidth = 1000
+        store.viewportHeight = 690
+        window.contentView = NSHostingView(rootView: AppleRailwayMap(store: store))
+        window.makeKeyAndOrderFront(nil)
+        try await Task.sleep(for: .milliseconds(350))
+        func findMap(_ v: NSView) -> MKMapView? {
+            if let map = v as? MKMapView { return map }
+            return v.subviews.lazy.compactMap(findMap).first
+        }
+        guard let map = window.contentView.flatMap(findMap), let coordinator = map.delegate as? AppleRailwayMap.Coordinator else {
+            throw DataError.invalid("Missing native map")
+        }
+        func focus(_ p: Coordinate, _ z: Double) async throws {
+            let width = store.viewportWidth * 360 / (256 * exp2(z+0.1))
+            store.region = MKCoordinateRegion(center: p.location, span: .init(latitudeDelta: width*0.53, longitudeDelta: width))
+            store.cameraRevision += 1
+            store.rebuildVisible()
+            try await Task.sleep(for: .milliseconds(120))
+            map.setRegion(store.displayRegion, animated: false)
+            try await Task.sleep(for: .milliseconds(900))
+            guard abs(RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width) - z) < 0.6 else {
+                throw DataError.invalid("MapKit camera did not settle at Z\(z)")
+            }
+        }
+        func counts() -> [Int] { StationLayoutKind.allCases.map { coordinator.overlays(for: $0).count } }
+        func require(_ ok: Bool, _ label: String) throws {
+            if !ok { throw DataError.invalid("\(label) Z\(store.displayZoom): \(counts())") }
+        }
+        try await focus(western,13)
+        try require(counts() == [0,0,0], "Z13")
+        try await focus(western,16)
+        try require(counts() == [1,0,0], "Beijing West outline")
+        try await focus(western,17)
+        let west = counts()
+        try require(west == [1,10,0], "Beijing West platforms")
+        try require(coordinator.overlays(for: .platform).allSatisfy { $0 is MKPolygon }, "Platform polygons")
+        _ = try await capture("beijing-west-z17", directory: directory, window: window)
+        try await focus(metro,18)
+        let xizhimen = counts()
+        try require(xizhimen.allSatisfy { $0 > 0 }, "Xizhimen passenger passages")
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        try await Task.sleep(for: .milliseconds(320))
+        _ = try await capture("xizhimen-z18-dark", directory: directory, window: window)
+        store.showsStationLayouts = false
+        try await Task.sleep(for: .milliseconds(150))
+        try require(counts() == [0,0,0], "Hidden detail layer")
+        store.showsStationLayouts = true
+        store.showsStations = false
+        try await Task.sleep(for: .milliseconds(150))
+        try require(counts() == [0,0,0], "Hidden stations")
+        store.showsStations = true
+        window.contentView = NSHostingView(rootView: OfflineRailwayMap().environmentObject(store))
+        try await Task.sleep(for: .milliseconds(400))
+        _ = try await capture("xizhimen-z18-offline", directory: directory, window: window)
+        try "Z13 0; Beijing West Z17 \(west); Xizhimen Z18 \(xizhimen); both visibility switches passed; Apple and offline renders captured."
+            .write(to: directory.appendingPathComponent("station-layout-check.txt"), atomically: true, encoding: .utf8)
     }
 
     private static func renderingRevisionCheck(_ store: RailwayMapStore, directory: URL, window: NSWindow?) async throws {

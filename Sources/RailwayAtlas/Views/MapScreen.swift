@@ -342,9 +342,17 @@ struct OfflineRailwayMap: View {
                                      at: CGPoint(x: point.x + 5, y: point.y - 10), anchor: .leading)
                     }
                 }
+                let zoom = RailDisplayPolicy.zoom(longitudeSpan: projection.visibleRegion.span.longitudeDelta, width: size.width)
+                let details = store.stationLayouts(in: projection.visibleBounds, zoom: zoom)
+                for feature in details where feature.kind == .outline {
+                    feature.draw(&context, projection: projection, dark: scheme == .dark)
+                }
                 for group in store.historyMapActive ? [] : store.renderGroups {
                     let path = Path(group.path).applying(projection.transform)
                     draw(path, appearance: group.appearance, context: &context)
+                }
+                for feature in details where feature.kind != .outline {
+                    feature.draw(&context, projection: projection, dark: scheme == .dark)
                 }
                 if !store.historyMapActive, let selected = store.visibleLines.first(where: { $0.id == store.selection?.id }) {
                     var path = Path()

@@ -110,6 +110,15 @@ struct LayerControlsContent: View {
             }
             .disabled(store.mapMode != .apple)
             settingToggle("车站位置", isOn: $store.showsStations)
+            settingToggle("车站轮廓、站台与通道", isOn: $store.showsStationLayouts)
+                .disabled(!store.showsStations)
+            if store.showsStations && store.showsStationLayouts {
+                Text("Z16 站体 · Z17 站台 · Z18 乘客通道").atlasFont(.caption2).foregroundStyle(.secondary)
+                if store.displayZoom >= 16 && store.mapMode == .apple {
+                    Button("补充当前站区") { Task { await store.loadStationLayouts() } }.disabled(store.loadingLayouts)
+                    if !store.layoutStatus.isEmpty { Text(store.layoutStatus).atlasFont(.caption2) }
+                }
+            }
             settingToggle("放大后显示站名", isOn: $store.showsLabels)
             Picker("坐标对齐", selection: $store.alignment) {
                 ForEach(MapAlignment.allCases) { Text($0.title).tag($0) }

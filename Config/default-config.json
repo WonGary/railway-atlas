@@ -20,6 +20,7 @@
     "prioritizesUrbanTransit": false,
     "showsNationalMetroOverview": true,
     "showsStations": true,
+    "showsStationLayouts": true,
     "showsLabels": true,
     "showsMetroColors": true,
     "enrichWikiColours": true,

@@ -1,10 +1,10 @@
 # 手机测试版
 
-Android 8 及以上可以下载安装包 `Railway-Atlas-0.8.0-Android.apk`。在系统文件管理器点开 APK，按提示允许这次安装。以后使用同一签名的新版本可以覆盖升级。地图和六城资料随包提供，在线底图和地图问答需要网络。
+Android 8 及以上可以下载安装包 `Railway-Atlas-0.8.1-Android.apk`。在系统文件管理器点开 APK，按提示允许这次安装。以后使用同一签名的新版本可以覆盖升级。地图、六城线路资料和部分车站的高倍细节随包提供，在线底图和地图问答需要网络。
 
 ## iPhone 和 iPad
 
-`Railway-Atlas-0.8.0-iOS-xcarchive.zip` 里是原生 SwiftUI / MapKit 应用的真机归档，最低支持 iOS / iPadOS 17。归档使用临时签名。发给朋友时，请分享 App Store Connect 生成的 TestFlight 邀请。
+`Railway-Atlas-0.8.1-iOS-xcarchive.zip` 里是原生 SwiftUI / MapKit 应用的真机归档，最低支持 iOS / iPadOS 17。归档使用临时签名。发给朋友时，请分享 App Store Connect 生成的 TestFlight 邀请。
 
 **用自己的个人开发者团队导出 IPA**　下面的步骤在 GitHub 的 Mac 上完成编译。自己的 Mac 只需要用 Transporter 上传。
 
@@ -23,5 +23,5 @@ Android 8 及以上可以下载安装包 `Railway-Atlas-0.8.0-Android.apk`。在
 GitHub Actions 的 **Build the Android APK** 使用 Java 17、Android SDK 35、Gradle 8.11.1。下载 `android-unsigned` 后，用 Android Build Tools 中的 `apksigner.jar` 和本机专用签名目录执行以下命令。首次运行创建测试签名，以后复用同一目录。备份该目录，后续覆盖安装需要原密钥。
 
 ```sh
-python3 Mobile/sign-android.py /path/to/apksigner.jar app-release-unsigned.apk Railway-Atlas-0.8.0-Android.apk --key-dir /path/to/private-signing-directory
+python3 Mobile/sign-android.py /path/to/apksigner.jar app-release-unsigned.apk Railway-Atlas-0.8.1-Android.apk --key-dir /path/to/private-signing-directory
 ```

@@ -4,6 +4,7 @@ import vm from "node:vm";
 import {fileURLToPath} from "node:url";
 import {join} from "node:path";
 import "./check-track.mjs";
+import "./check-station-layouts.mjs";
 const root = fileURLToPath(new URL("../Web/",import.meta.url));
 const text = file=>fs.readFileSync(join(root,file),"utf8");
 const json = file=>JSON.parse(text(file));

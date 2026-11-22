@@ -35,6 +35,8 @@ jobs:
           test -s "$app/Assets.car"
           test -s "$app/china-overview.railcache"
           test -s "$app/PrivacyInfo.xcprivacy"
+          cmp "$app/station-layouts.json" Sources/RailwayAtlas/Resources/station-layouts.json
+          cmp "$app/station-layouts.js" Sources/RailwayAtlas/Resources/station-layouts.js
           codesign --verify --deep --strict "$app"
           find "$app" -name 'metro-snapshot-beijing.json' | grep -q .
           mkdir -p out

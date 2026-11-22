@@ -1861,6 +1861,7 @@ function updateBasemapAppearance() {
   const brightness = (1 - basemapDarkness) * (dark && !imagery ? 0.34 : 1);
   const surface = state.map.getContainer();
   surface.dataset.stationInk = imagery || brightness <= 0.54 ? "light" : "dark";
+  StationLayoutLayer.refresh();
   // Transparent or missing tiles reveal the map surface, including in offline mode.
   const background = imagery ? [46, 54, 59] : [205, 213, 214];
   surface.style.backgroundColor = `rgb(${background.map(c => Math.round(c * brightness)).join(",")})`;
@@ -2358,6 +2359,7 @@ function initializeMap() {
   StationLabels.setup(state.map, RailMapLayers.eachVisibleStation);
   systemDarkMap.addEventListener("change", updateBasemapAppearance);
   RailMapLayers.setup(state.map);
+  StationLayoutLayer.setup(state.map);
 }
 
 function setupPassportDefaults() {

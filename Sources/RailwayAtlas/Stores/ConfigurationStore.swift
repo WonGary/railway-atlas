@@ -83,6 +83,7 @@ final class ConfigurationStore: ObservableObject {
         value.layers.prioritizesUrbanTransit = map.prioritizesUrbanTransit
         value.layers.showsNationalMetroOverview = map.showsNationalMetroOverview
         value.layers.showsStations = map.showsStations
+        value.layers.showsStationLayouts = map.showsStationLayouts
         value.layers.showsLabels = map.showsLabels
         value.layers.showsMetroColors = map.showsMetroColors
         value.layers.enrichWikiColours = map.enrichWikiColours
@@ -153,6 +154,7 @@ final class ConfigurationStore: ObservableObject {
         map.prioritizesUrbanTransit = value.layers.prioritizesUrbanTransit
         map.showsNationalMetroOverview = value.layers.showsNationalMetroOverview
         map.showsStations = value.layers.showsStations
+        map.showsStationLayouts = value.layers.showsStationLayouts ?? true
         map.showsLabels = value.layers.showsLabels
         map.showsMetroColors = value.layers.showsMetroColors
         if map.enrichWikiColours != value.layers.enrichWikiColours { map.enrichWikiColours = value.layers.enrichWikiColours }
