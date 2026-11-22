@@ -195,7 +195,7 @@ func main() {
 		}
 		files.ServeHTTP(w, r)
 	})
-	fmt.Printf("铁道漫游 0.7.0　%s\n关闭此窗口或按 Ctrl+C 退出。\n", page)
+	fmt.Printf("铁道漫游　%s\n关闭此窗口或按 Ctrl+C 退出。\n", page)
 	if !*quiet {
 		go func() {
 			var cmd *exec.Cmd
