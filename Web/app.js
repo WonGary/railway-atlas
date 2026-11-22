@@ -1843,10 +1843,14 @@ function saveLayerPreferences() {
 }
 
 function setBaseLayer(name) {
-  const selected = state.baseLayers[name];
-  if (!selected || !state.map) return;
-  Object.values(state.baseLayers).forEach(layer => { if (state.map.hasLayer(layer)) state.map.removeLayer(layer); });
-  if(AtlasPrefs.value.mode==="online")selected.addTo(state.map);
+  if (!state.map) return;
+  const baseID = Object.hasOwn(state.baseLayers, name) ? name : "osm";
+  $("baseLayer").value = baseID;
+  const selected = AtlasPrefs.value.mode === "online" ? state.baseLayers[baseID] : null;
+  for (const layer of Object.values(state.baseLayers)) {
+    if (layer !== selected && state.map.hasLayer(layer)) state.map.removeLayer(layer);
+  }
+  selected?.addTo(state.map);
   updateBasemapAppearance();
   setRouteStatus();
   saveLayerPreferences();
@@ -1858,13 +1862,16 @@ function updateBasemapAppearance() {
   const {mapAppearance, basemapDarkness, mode} = AtlasPrefs.value;
   const dark = mapAppearance === "dark" || (mapAppearance === "system" && systemDarkMap.matches);
   const imagery = mode === "online" && ["satellite", "hybrid"].includes($("baseLayer").value);
-  const brightness = (1 - basemapDarkness) * (dark && !imagery ? 0.34 : 1);
+  const brightness = 1 - basemapDarkness;
+  const rasterBrightness = brightness * (dark && !imagery ? 0.34 : 1);
   const surface = state.map.getContainer();
-  surface.dataset.stationInk = imagery || brightness <= 0.54 ? "light" : "dark";
+  surface.dataset.stationInk = imagery || dark || brightness <= 0.54 ? "light" : "dark";
   // Transparent or missing tiles reveal the map surface, including in offline mode.
   const background = imagery ? [46, 54, 59] : [205, 213, 214];
-  surface.style.backgroundColor = `rgb(${background.map(c => Math.round(c * brightness)).join(",")})`;
-  state.map.getPane("tilePane").style.filter = `brightness(${brightness})`;
+  surface.style.backgroundColor = `rgb(${background.map(c => Math.round(c * rasterBrightness)).join(",")})`;
+  state.map.getPane("tilePane").style.filter = `brightness(${rasterBrightness})`;
+  state.map.getPane("vectorBasemap").style.filter = `brightness(${brightness})`;
+  AtlasVectorBasemap.setTheme(dark, state.baseLayers[$("baseLayer").value], state.map);
 }
 
 async function loadJSON(path) {
@@ -1956,8 +1963,7 @@ async function loadData() {
   $("showMetro").checked = state.showMetro;
   $("showConstruction").checked = state.showConstruction;
   $("showRail").checked = layerPrefs.showRail !== false;
-  $("baseLayer").value = layerPrefs.baseLayer || "osm";
-  setBaseLayer($("baseLayer").value);
+  setBaseLayer(layerPrefs.baseLayer);
   drawMetro();
   const selected = state.routes.find(route => route.id === currentID)
     || state.routes.find(route => route.id === layerPrefs.routeID)
@@ -2336,6 +2342,8 @@ function closeTopMapPanel() {
 }
 function initializeMap() {
   state.map = L.map("map", { zoomControl: true, preferCanvas: true,minZoom:2,maxZoom:19 });
+  state.map.createPane("vectorBasemap").style.zIndex = 190;
+  state.map.getPane("vectorBasemap").style.pointerEvents = "none";
   const camera=readStored("railway-atlas-map-camera",null);
   if(camera && [camera.lat,camera.lng,camera.z].every(Number.isFinite) && Math.abs(camera.lat)<=85 && Math.abs(camera.lng)<=180 && camera.z>=2 && camera.z<=19)
     state.map.setView([camera.lat,camera.lng],camera.z,{animate:false});
@@ -2349,7 +2357,9 @@ function initializeMap() {
     railway: L.tileLayer("https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png", {
       maxZoom: 19, subdomains: "abc",
       attribution: "&copy; OpenStreetMap contributors · OpenRailwayMap"
-    })
+    }),
+    "openfreemap-vector": AtlasVectorBasemap.create("openfreemap"),
+    "versatiles-vector": AtlasVectorBasemap.create("versatiles")
   };
   L.control.scale({imperial:false,position:"bottomleft"}).addTo(state.map);
   state.map.on("zoomend", updateZoom);

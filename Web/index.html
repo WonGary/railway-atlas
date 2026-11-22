@@ -179,13 +179,19 @@
           <p id="cacheStatus" class="panel-note" role="status">只读取你选择的文件，瓦片副本占用本机浏览器空间。</p>
           <label>地图底图
             <select id="baseLayer">
-              <option value="osm">OpenStreetMap</option>
-              <option value="railway">OpenRailwayMap</option>
+              <optgroup label="矢量底图">
+                <option value="openfreemap-vector">OpenFreeMap · 矢量</option>
+                <option value="versatiles-vector">VersaTiles · 矢量</option>
+              </optgroup>
+              <optgroup label="栅格底图">
+                <option value="osm" selected>OpenStreetMap</option>
+                <option value="railway">OpenRailwayMap</option>
+              </optgroup>
               <option value="satellite">卫星影像 · NASA Blue Marble</option>
               <option value="hybrid">卫星与地名 · NASA / CARTO</option>
             </select>
           </label>
-          <p class="panel-note">铁路概览随包提供。放大后从 OpenFreeMap 读取当前视野的轨道与车站。区域地图首次打开后可离线查看。</p>
+          <p class="panel-note">矢量底图需联网。铁路概览随包提供，区域地图首次打开后可离线查看。</p>
           </details>
         </section>
         <section class="workspace-page" data-page="settings" hidden>
@@ -217,6 +223,7 @@
       <div class="map-status">
         <span id="dataStatus">正在打开铁路地图…</span>
         <span id="zoomStatus">比例尺</span>
+        <span id="baseLayerWarning" role="status" hidden></span>
       </div>
       <div class="map-legend" aria-label="地图图例">
         <span><i class="legend-line route-line"></i>铁路</span>
@@ -358,6 +365,7 @@
 
   <script src="./vendor/leaflet.js"></script>
   <script src="./vendor/vector.js"></script>
+  <script src="./vector-basemap.js"></script>
   <script src="./library.js"></script>
   <script src="./cache-client.js"></script>
   <script src="./map-preferences.js"></script>
