@@ -66,8 +66,23 @@ async function run() {
     assert.equal(await page.evaluate(()=>state.route),null);
     assert.deepEqual(await page.evaluate(()=>[AtlasPrefs.value.showsStations,AtlasPrefs.value.mode,state.favorites.has("北京西")]),[false,"cached",true]);
     assert.equal(await page.evaluate(async()=>(await (await fetch("./data/metro/macao.json")).json()).stations.length),32);
+    await page.emulateMedia({colorScheme:"light"});
+    await page.evaluate(async()=>{
+      AtlasPrefs.change("showsStations",true);
+      const city=state.metroCities.find(item=>item.id==="macao");
+      const detail=await loadMetroCity(city);
+      state.map.setView(pointToLatLng(detail.stations[0].coordinate),15,{animate:false});
+    });
+    const label=page.locator("#map .station-label").first();
+    await label.waitFor();
+    assert.deepEqual(await label.evaluate(el=>{
+      const style=getComputedStyle(el);
+      return [style.color,style.backgroundColor,style.borderWidth,style.boxShadow,getComputedStyle(el,"::before").display];
+    }),["rgb(46, 46, 46)","rgba(0, 0, 0, 0)","0px","none","none"]);
+    await page.emulateMedia({colorScheme:"dark"});
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector("#map .station-label")).color==="rgb(230, 230, 230)");
     assert.deepEqual(errors,[]);
-    console.log(`${engine} / ${phone}: map-first upgrade, map settings, G337, city directory and offline reopening passed.`);
+    console.log(`${engine} / ${phone}: map-first upgrade, map settings, G337, city directory, offline reopening and station label themes passed.`);
   } finally {
     await browser?.close();
     server?.kill();

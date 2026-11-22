@@ -66,10 +66,15 @@ const RailMapLayers = (() => {
       if (fit) coords.forEach(point => bounds.extend(point));
       if (!visual.visible || (AtlasPrefs.value.automaticDetail && (zoom < 8 || (!feature.coordinates && zoom < 11)))) continue;
       const item = feature.coordinates ? L.polyline(coords,visual) :
-        L.circleMarker(coords[0],{radius:3.2*AtlasPrefs.value.stationRadiusMultiplier,color:visual.color,fillColor:"#fff",fillOpacity:1,weight:2});
+        L.circleMarker(coords[0],{radius:3.2*AtlasPrefs.value.stationRadiusMultiplier,color:visual.color,fillColor:"#fff",fillOpacity:1,weight:2,bubblingMouseEvents:false});
       const title = feature.name || feature.id;
-      const tooltip = document.createElement("span"); tooltip.textContent = title;
-      item.bindTooltip(tooltip,{permanent:!feature.coordinates && zoom>=13 && AtlasPrefs.value.showsLabels}).on("click", e => inspect(title,{...tags,
+      if (feature.coordinates) {
+        const tooltip = document.createElement("span"); tooltip.textContent = title;
+        item.bindTooltip(tooltip);
+      } else {
+        StationLabels.bind(item, title, {id:feature.id, minZoom:13, important:StationLabels.prominent(tags, feature.routes)});
+      }
+      item.on("click", e => inspect(title,{...tags,
         membership:(feature.routes || []).map(route => route.name).filter(Boolean).join("、")}, !feature.coordinates,e.latlng)).addTo(region);
     }
     if (fit && bounds.isValid()) map.fitBounds(bounds,{maxZoom:13,animate:false});
@@ -147,6 +152,7 @@ const RailMapLayers = (() => {
           }
           if (controller.signal.aborted) return;
           canvas.hits = [];
+          canvas.stationNames = [];
           for (const source of sources) {
           const tile = AtlasVector.decode(source);
           for (const layerName of Object.keys(tile.layers).filter(name =>
@@ -171,9 +177,16 @@ const RailMapLayers = (() => {
                 ctx.beginPath();
                 if (station && path.length) {
                   const px = path[0].x*factor, py = path[0].y*factor;
-                  ctx.arc(px,py,2.4*AtlasPrefs.value.stationRadiusMultiplier,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill();
+                  const radius = 2.4 * AtlasPrefs.value.stationRadiusMultiplier;
+                  ctx.arc(px,py,radius,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill();
                   const name=tags["name:zh"] || tags.name;
-                  if(name && AtlasPrefs.value.showsLabels && z>=12){ctx.fillStyle="#23282d";ctx.font="11px sans-serif";ctx.fillText(name,px+5,py-4);}
+                  if (name && z >= 12 && px >= 0 && py >= 0 && px < size && py < size) {
+                    canvas.stationNames.push({
+                      name, id:feature.id ?? name, minZoom:12, tileZoom:z, radius,
+                      important:StationLabels.prominent(tags),
+                      latlng:map.unproject([x * size + px, y * size + py], z)
+                    });
+                  }
                   canvas.hits.push({x:px,y:py,tags,station:true});
                 } else {
                   const points=path.map(p=>[p.x*factor,p.y*factor]);
@@ -196,6 +209,7 @@ const RailMapLayers = (() => {
     const grid = new Grid({pane:"railDetail",minZoom:7,maxNativeZoom:14,maxZoom:19,keepBuffer:2,updateWhenIdle:true,
       attribution:'<a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a> · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});
     grid.on("tileunload",event => event.tile.abortTile?.());
+    grid.on("tileload tileunload add remove", StationLabels.schedule);
     grid.on("load",()=>toggle());
     map.on("click",event => {
       if (!map.hasLayer(grid)) return;
@@ -215,6 +229,13 @@ const RailMapLayers = (() => {
       if (hit) inspect(hit.tags["name:zh"] || hit.tags.name || hit.tags.ref || (hit.station?"车站":"轨道"),hit.tags,!!hit.station,event.latlng);
     });
     return grid;
+  }
+  function eachVisibleStation(visit) {
+    if (!live || !map.hasLayer(live)) return;
+    const zoom = Math.min(map.getZoom(), 14);
+    for (const tile of Object.values(live._tiles)) {
+      if (tile.current && tile.coords.z === zoom) tile.el.stationNames?.forEach(visit);
+    }
   }
   function toggle(redraw=false) {
     if (!map) return;
@@ -246,5 +267,5 @@ const RailMapLayers = (() => {
     };
     loadOverview().catch(error => { $("regionStatus").textContent = error.message; });
   }
-  return {setup,toggle,inspect};
+  return {setup,toggle,inspect,eachVisibleStation};
 })();
