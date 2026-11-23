@@ -11,8 +11,19 @@ const windows = {
 };
 
 export function cityRequest(city) {
-  const box = windows[city];
+  const accessOnly = city.endsWith("-access");
+  const box = windows[accessOnly ? city.slice(0, -7) : city];
   if (!box) throw Error(`Unknown station extract: ${city}`);
+  const [south,west,north,east] = box;
+  if (accessOnly) {
+    const query = `[out:json][timeout:45][bbox:${box.join(",")}];` +
+      `(wr[building=train_station];wr[railway=station];)->.term;` +
+      `(way.term;way(r.term:"outer");)->.walls;` +
+      `(node(w.walls)[entrance];node[railway=train_station_entrance];` +
+      `node[name~"[进進出]站口"][entrance];node[name~"[进進出]站口"][barrier=gate];);out body;` +
+      `.term out geom;.walls out geom;`;
+    return {bounds:[west,south,east,north],query,url:"https://ovp.dresel.systems/api-as/interpreter"};
+  }
   const selectors = [
     'node[railway~"^(station|halt|subway_entrance|tram_stop)$"]',
     'node[public_transport="stop_position"][subway=yes]',
@@ -31,7 +42,6 @@ export function cityRequest(city) {
     'way[highway~"^(footway|steps|pedestrian)$"][level~"(^|;)-"]'
   ];
   const query = `[out:json][timeout:45][bbox:${box.join(",")}];(${selectors.map(s=>s+";").join("")});out geom;`;
-  const [south,west,north,east] = box;
   return {bounds:[west,south,east,north], query, url:"https://ovp.dresel.systems/api-as/interpreter"};
 }
 

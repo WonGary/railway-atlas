@@ -281,21 +281,70 @@ enum OnlineUIValidation {
             store.cameraRevision += 1
             store.rebuildVisible()
             try await Task.sleep(for: .milliseconds(120))
-            map.setRegion(store.displayRegion, animated: false)
-            try await Task.sleep(for: .milliseconds(900))
-            guard abs(RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width) - z) < 0.6 else {
-                throw DataError.invalid("MapKit camera did not settle at Z\(z)")
+            let target=store.displayRegion
+            for attempt in 0..<30 {
+                if attempt.isMultiple(of: 5) {
+                    map.setCenter(target.center, animated: false)
+                    map.setRegion(target, animated: false)
+                }
+                try await Task.sleep(for:.milliseconds(160))
+                if abs(map.region.center.latitude-target.center.latitude) < target.span.latitudeDelta / 10 &&
+                    abs(map.region.center.longitude-target.center.longitude) < target.span.longitudeDelta / 10 &&
+                    abs(RailDisplayPolicy.zoom(longitudeSpan:map.region.span.longitudeDelta,width:map.bounds.width)-z)<0.4 {
+                    try await Task.sleep(for:.milliseconds(350))
+                    return
+                }
             }
+            throw DataError.invalid("MapKit camera did not reach \(target.center) at Z\(z), actual \(map.region.center)")
         }
-        func counts() -> [Int] { StationLayoutKind.allCases.map { coordinator.overlays(for: $0).count } }
+        func counts() -> [Int] { [StationLayoutKind.outline,.concourse,.platform,.passage].map { coordinator.overlays(for: $0).count } }
         func require(_ ok: Bool, _ label: String) throws {
             if !ok { throw DataError.invalid("\(label) Z\(store.displayZoom): \(counts())") }
         }
         try await focus(western,13)
         try require(counts() == [0,0,0,0], "Z13")
-        try await focus(western,16)
+        try require(coordinator.overlays(for: .entrance).isEmpty, "Z13 entrance layer hidden")
+        try await focus(western,14)
         let westOutlineCount = counts()[0]
         try require(westOutlineCount >= 1 && counts() == [westOutlineCount,0,0,0], "Beijing West outline")
+        try await focus(western,15)
+        try require(counts()[2] >= 10 && counts()[3] == 0 && coordinator.overlays(for: .entrance).isEmpty, "Z15 platforms without entrances or passages")
+        let hujialou = Coordinate(39.922,116.4555), qingdao = Coordinate(36.0641,120.3076)
+        func badge(_ id: String, _ text: String) -> Bool {
+            guard let a = coordinator.platformAnnotations[id] else { return false }
+            return a.style.text == text && a.image != nil && map.view(for:a)?.image != nil
+        }
+        try await focus(hujialou,16)
+        try require(badge("node/3450796157","C1") || badge("node/3450796158","C2"), "Hujialou signed entrance on native map")
+        _ = try await capture("hujialou-z16-exits", directory: directory, window: window)
+        try await focus(qingdao,16)
+        _ = try await capture("qingdao-z16-entrances", directory: directory, window: window)
+        if !(badge("node/13446134636","西进") && badge("node/13446134640","东进")) {
+            let signs = coordinator.platformAnnotations.values.map(\.style.text).sorted()
+            let planned = store.layoutLabels(in:store.viewportBounds,zoom:store.displayZoom,screen:map.bounds) {
+                map.convert(store.alignment.display($0).location,toPointTo:map)
+            }
+            let point = map.convert(store.alignment.display(qingdao).location,toPointTo:map)
+            try require(false,"Qingdao signs \(signs), planned \(planned.map(\.text)), shapes \(coordinator.overlays(for:.entrance).count), screen \(map.bounds), gate \(point), map \(map.region.center), requested \(store.displayRegion.center)")
+        }
+        store.showsStationEntrances = false
+        try await Task.sleep(for: .milliseconds(250))
+        try require(coordinator.overlays(for:.entrance).isEmpty && coordinator.platformAnnotations.values.allSatisfy { $0.style.kind != .entrance }, "Entrance switch")
+        try await focus(Coordinate(39.98325,116.47734),16)
+        try require(badge("way/330398338","→B2"), "Mapped passage to B2 at Z16")
+        store.showsPassageSigns = false
+        try await Task.sleep(for:.milliseconds(240))
+        try require(coordinator.platformAnnotations.values.allSatisfy { $0.style.kind != .passage } &&
+                    !coordinator.overlays(for:.passage).isEmpty, "Passage signs switch leaves path geometry visible")
+        store.showsStationEntrances = true
+        store.focusStationLayouts(at: qingdao)
+        for _ in 0..<35 {
+            if badge("node/13446134636","西进") && badge("node/13446134640","东进") { break }
+            try await Task.sleep(for:.milliseconds(140))
+        }
+        try require(badge("node/13446134636","西进") && badge("node/13446134640","东进"),
+                    "View station details moves the native camera between cities")
+        store.showsStationEntrances = false
         try await focus(western,17)
         let west = counts()
         try require(west[0] >= 1 && west == [west[0],0,10,0], "Beijing West platforms")
@@ -337,11 +386,11 @@ enum OnlineUIValidation {
                     "Qianmen tram point platforms")
         let admiralty = Coordinate(22.27848,114.16602)
         func texts() -> [String] { coordinator.platformAnnotations.values.map(\.style.text).sorted() }
-        try await focus(admiralty,17)
-        try require(texts().isEmpty, "No platform numbers at Z17")
+        try await focus(admiralty,15)
+        try require(texts().isEmpty, "No platform numbers at Z15")
         try await focus(admiralty,18)
         let actualZoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
-        let placement = store.platformNumbers(in: store.viewportBounds, zoom: actualZoom, screen: map.bounds) {
+        let placement = store.layoutLabels(in: store.viewportBounds, zoom: actualZoom, screen: map.bounds) {
             map.convert(store.alignment.display($0).location, toPointTo: map)
         }
         try require(texts() == ["5/6","7","8"], "Admiralty platform numbers \(texts()), map Z\(actualZoom), projected \(placement.map(\.text)), map center \(map.region.center), requested \(store.displayRegion.center), pixels \(map.bounds), pass \(coordinator.labelPasses)")
@@ -385,7 +434,7 @@ enum OnlineUIValidation {
         try await Task.sleep(for: .milliseconds(250))
         let canvasSize = window.contentView!.bounds.size
         let projection = RailProjection(region: store.region, size: canvasSize)
-        let canvasLabels = store.platformNumbers(in: projection.visibleBounds, zoom: store.displayZoom,
+        let canvasLabels = store.layoutLabels(in: projection.visibleBounds, zoom: store.displayZoom,
             screen: CGRect(origin: .zero, size: canvasSize), project: projection.screen)
         try require(canvasLabels.map(\.text).sorted() == ["5/6","7","8"], "Offline numbers \(canvasLabels.map(\.text)), viewport \(store.viewportWidth)x\(store.viewportHeight), region \(store.region), size \(canvasSize), bounds \(projection.visibleBounds), enabled \(store.showsPlatformNumbers)")
         _ = try await capture("admiralty-z18-offline-dark", directory: directory, window: window)
@@ -399,9 +448,18 @@ enum OnlineUIValidation {
         let focusedProjection = RailProjection(region: store.region, size: canvasSize)
         let focusedZoom = RailDisplayPolicy.zoom(longitudeSpan: focusedProjection.visibleRegion.span.longitudeDelta, width: canvasSize.width)
         let shilipu = store.stationLayouts(in: focusedProjection.visibleBounds, zoom: focusedZoom)
-        try require(focusedZoom >= 18 && store.showsStationLayouts && shilipu.contains { $0.kind == .passage } &&
+        try require(focusedZoom >= 16 && store.showsStationLayouts && shilipu.contains { $0.kind == .passage } &&
                     !store.showsPlatformNumbers, "View station detail action preserves individual switches")
         _ = try await capture("shilipu-offline-detail", directory: directory, window: window)
+        store.showsStationEntrances = true
+        store.showsPassageSigns = true
+        store.focusStationLayouts(at: qingdao)
+        try await Task.sleep(for: .milliseconds(300))
+        let gatesProjection = RailProjection(region: store.region, size: canvasSize)
+        let gates = store.layoutLabels(in: gatesProjection.visibleBounds, zoom: store.displayZoom,
+            screen: CGRect(origin:.zero,size:canvasSize), project:gatesProjection.screen)
+        try require(Set(["东进","西进"]).isSubset(of:Set(gates.map(\.text))), "Qingdao offline entrance badges")
+        _ = try await capture("qingdao-offline-entrances", directory: directory, window: window)
         var receipt = "Dongmen Z17: 1 station, 2 metro platform polygons. Taipei Main Z17: \(taipei), hall switch passed. Yuxin Z18 station polygon. Shahe Z18 concourse polygon. Qianmen Z19 two tram platform circles with active renderers. Shilipu Z18: outlines and rendered passages, station-detail action on offline Canvas. Beijing West Z17 \(west), two unnumbered Hujialou lines, Admiralty Z18 5/6, 7, 8, Yuen Long light rail 1–5, Xizhimen Z18 \(xizhimen)."
         if CommandLine.arguments.contains("--live-station-cell") {
             // Remove the two bundled records from this isolated QA store so only a live query can restore them.
@@ -428,6 +486,7 @@ enum OnlineUIValidation {
             guard online.layoutVisits[target]?.date == visit.date else { throw DataError.invalid("Duplicate station request") }
             receipt += "\nLive camera query at Nongye Zhanlanguan returned both metro platforms. Cached mode and revisiting the same cell retained the result."
         }
+        receipt += "\nZ13 hidden, Z14 outlines, Z15 platforms, Z16 signed Hujialou and Qingdao entrances. The switch removed the entrance dots and glyphs. Offline Canvas retained both Qingdao directions."
         try receipt
             .write(to: directory.appendingPathComponent("station-layout-check.txt"), atomically: true, encoding: .utf8)
     }

@@ -5,9 +5,9 @@ import RailwayCore
 import SwiftUI
 
 enum StationLayoutKind: String, Codable, CaseIterable {
-    case outline, concourse, platform, passage
+    case outline, concourse, platform, passage, entrance
     var minimumZoom: Double {
-        switch self { case .outline: 16; case .concourse, .platform: 17; case .passage: 18 }
+        switch self { case .outline: 14; case .concourse, .platform: 15; case .passage, .entrance: 16 }
     }
     func ink(dark: Bool) -> Color {
         let hex: String
@@ -16,6 +16,7 @@ enum StationLayoutKind: String, Codable, CaseIterable {
         case .concourse: hex = dark ? "#FFCD8F" : "#925216"
         case .platform: hex = dark ? "#7FD3C4" : "#216B62"
         case .passage: hex = dark ? "#E4ACF3" : "#864097"
+        case .entrance: hex = dark ? "#A9D6FF" : "#12558A"
         }
         return RailColor(hex)!.tint
     }
@@ -32,12 +33,14 @@ struct StationLayout: Decodable, Equatable, Identifiable {
     let paths: [[Coordinate]]
     let bounds: MapBounds
     let platformLabel: String?
+    let accessLabel: String?
+    let accessTitle: String?
     let labelAnchors: [Coordinate]
     let labelOwner: String?
     var hasGeometry: Bool { !paths[0].isEmpty }
     var hasShape: Bool { paths[0].count > 1 }
 
-    enum CodingKeys: CodingKey { case id, kind, network, area, paths, platformLabel, labelAnchors, labelOwner }
+    enum CodingKeys: CodingKey { case id, kind, network, area, paths, platformLabel, accessLabel, accessTitle, labelAnchors, labelOwner }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -51,10 +54,12 @@ struct StationLayout: Decodable, Equatable, Identifiable {
         }
         paths = try vertices.map { try $0.map(coordinate) }
         platformLabel = try c.decodeIfPresent(String.self, forKey: .platformLabel)
+        accessLabel = try c.decodeIfPresent(String.self, forKey: .accessLabel)
+        accessTitle = try c.decodeIfPresent(String.self, forKey: .accessTitle)
         labelOwner = try c.decodeIfPresent(String.self, forKey: .labelOwner)
         labelAnchors = try (c.decodeIfPresent([[Double]].self, forKey: .labelAnchors) ?? []).map(coordinate)
         guard let outer = paths.first, !outer.isEmpty,
-              outer.count >= 2 || kind == .platform,
+              outer.count >= 2 || kind == .platform || kind == .entrance,
               area ? paths.allSatisfy({ $0.count >= 4 && $0.first == $0.last }) : paths.count == 1
         else { throw URLError(.cannotParseResponse) }
         bounds = MapBounds(points: outer)
@@ -65,8 +70,8 @@ struct StationLayout: Decodable, Equatable, Identifiable {
             return MKPolygon(coordinates: points, count: points.count, interiorPolygons: holes)
         }
         if area { return polygon(paths[0], holes: paths.dropFirst().map { polygon($0) }) }
-        if paths[0].count == 1, kind == .platform {
-            return MKCircle(center: alignment.display(paths[0][0]).location, radius: 8)
+        if paths[0].count == 1 {
+            return MKCircle(center: alignment.display(paths[0][0]).location, radius: kind == .entrance ? 4 : 8)
         }
         let segments = alignment.displaySegments(paths[0]).map { line in
             let points = line.map(\.location)
@@ -77,8 +82,8 @@ struct StationLayout: Decodable, Equatable, Identifiable {
     func draw(_ context: inout GraphicsContext, projection: RailProjection, dark: Bool) {
         guard let first = paths.first?.first else { return }
         let color = kind.ink(dark: dark)
-        if paths[0].count == 1, kind == .platform {
-            let radius = CGFloat(5)
+        if paths[0].count == 1 {
+            let radius: CGFloat = kind == .entrance ? 3 : 5
             let frame = CGRect(x: projection.screen(first).x - radius, y: projection.screen(first).y - radius,
                                width: radius * 2, height: radius * 2)
             context.fill(Path(ellipseIn: frame), with: .color(color.opacity(kind.opacity)))
@@ -105,13 +110,27 @@ struct PlatformNumberPlacement {
     let coordinate: Coordinate
     let point: CGPoint
     let frame: CGRect
+    let kind: StationLayoutKind
+    let title: String?
 
-    static func text(_ number: String, scale: CGFloat, light: Bool) -> some View {
-        Text(verbatim: number)
+    static func diameter(_ text: String, scale: CGFloat) -> CGFloat {
+        let units = text.unicodeScalars.reduce(0.0) { $0 + ($1.value > 255 ? 10.5 : 6.7) }
+        return max(18, units + 6) * scale
+    }
+    @ViewBuilder static func text(_ number: String, kind: StationLayoutKind, scale: CGFloat, light: Bool) -> some View {
+        if kind == .platform {
+            Text(verbatim: number)
             .font(.system(size: 11 * scale, weight: .semibold).monospacedDigit())
             .foregroundStyle(light ? Color.white : Color(red: 0.05, green: 0.20, blue: 0.19))
             .shadow(color: light ? .black : .white, radius: 1)
             .fixedSize().padding(2)
+        } else {
+            let side = diameter(number, scale: scale)
+            Text(verbatim: number).font(.system(size: 10 * scale, weight: .bold).monospacedDigit())
+                .foregroundStyle(kind.ink(dark: light)).frame(width: side, height: side)
+                .background(light ? Color(red: 0.10, green: 0.13, blue: 0.18) : .white, in: Circle())
+                .overlay(Circle().strokeBorder(kind.ink(dark: light), lineWidth: 1.5 * scale))
+        }
     }
 }
 
@@ -149,7 +168,7 @@ struct StationLayoutVisit {
 extension RailwayMapStore {
     func focusStationLayouts(at point: Coordinate) {
         guard point.isValid, !historyMapActive else { return }
-        let zoom = max(18.3, displayZoom)
+        let zoom = max(16.3, displayZoom)
         let degreesPerPoint = 360 / (256 * exp2(zoom))
         region = MKCoordinateRegion(center: point.location, span: MKCoordinateSpan(
             latitudeDelta: degreesPerPoint * max(100, viewportHeight) * cos(point.latitude * .pi / 180),
@@ -166,34 +185,53 @@ extension RailwayMapStore {
         return pack.features
     }
     func stationLayouts(in bounds: MapBounds, zoom: Double) -> [StationLayout] {
-        guard zoom + 0.000001 >= 16, showsStationLayouts, !historyMapActive else { return [] }
+        guard zoom + 0.000001 >= StationLayoutKind.outline.minimumZoom, showsStationLayouts, !historyMapActive else { return [] }
         return layoutFeatures.filter { feature in
             let enabled = switch feature.kind {
             case .outline: showsStationOutlines
             case .concourse: showsConcourses
             case .platform: showsPlatforms
             case .passage: showsPassengerPassages
+            case .entrance: showsStationEntrances
             }
             return enabled && feature.hasGeometry && zoom + 0.000001 >= feature.kind.minimumZoom && feature.bounds.intersects(bounds)
         }
     }
 
-    func platformNumbers(in bounds: MapBounds, zoom: Double, screen: CGRect,
+    func layoutLabels(in bounds: MapBounds, zoom: Double, screen: CGRect,
                          project: (Coordinate) -> CGPoint) -> [PlatformNumberPlacement] {
-        guard showsStationLayouts, showsPlatformNumbers, !historyMapActive, zoom + 0.000001 >= 18 else { return [] }
-        let candidates = layoutFeatures.filter { $0.platformLabel != nil && !$0.labelAnchors.isEmpty && $0.bounds.intersects(bounds) }
+        guard showsStationLayouts, !historyMapActive, zoom + 0.000001 >= StationLayoutKind.entrance.minimumZoom,
+              showsStationEntrances || showsPlatformNumbers || showsPassageSigns else { return [] }
+        let candidates = layoutFeatures.filter { feature in
+            guard !feature.labelAnchors.isEmpty && feature.bounds.intersects(bounds) else { return false }
+            switch feature.kind {
+            case .entrance: return showsStationEntrances && !(feature.accessLabel ?? "").isEmpty
+            case .passage: return showsPassageSigns && !(feature.accessLabel ?? "").isEmpty
+            case .platform: return showsPlatformNumbers && feature.platformLabel != nil
+            default: return false
+            }
+        }
         let ids = Set(candidates.map(\.id))
         var placed: [PlatformNumberPlacement] = []
-        for feature in candidates.sorted(by: { ($0.area ? 0 : 1, $0.id) < ($1.area ? 0 : 1, $1.id) }) {
-            guard let text = feature.platformLabel, !text.isEmpty,
+        func rank(_ feature: StationLayout) -> Int {
+            if feature.kind == .entrance {
+                let title = feature.accessTitle ?? ""
+                return feature.network == .railway && (title.contains("进站") || title.contains("進站") || title.contains("出站")) ? 0 : 1
+            }
+            return feature.kind == .passage ? 4 : feature.area ? 2 : 3
+        }
+        for feature in candidates.sorted(by: { (rank($0), $0.id) < (rank($1), $1.id) }) {
+            guard let text = feature.accessLabel ?? feature.platformLabel, !text.isEmpty,
                   !(feature.labelOwner.map(ids.contains) ?? false) else { continue }
-            let width = max(13, CGFloat(text.count) * 7.5 + 5) * uiScale
-            let height = 17 * uiScale
+            let badge = feature.kind != .platform
+            let width = badge ? PlatformNumberPlacement.diameter(text, scale: uiScale) : max(13, CGFloat(text.count) * 7.5 + 5) * uiScale
+            let height = badge ? width : 17 * uiScale
             for anchor in feature.labelAnchors {
                 let point = project(anchor)
                 let frame = CGRect(x: point.x - width/2, y: point.y - height/2, width: width, height: height)
                 if screen.contains(frame) && !placed.contains(where: { $0.frame.insetBy(dx: -2, dy: -1).intersects(frame) }) {
-                    placed.append(.init(id: feature.id, text: text, coordinate: anchor, point: point, frame: frame))
+                    placed.append(.init(id: feature.id, text: text, coordinate: anchor, point: point, frame: frame,
+                                        kind: feature.kind, title: feature.accessTitle))
                     break
                 }
             }
@@ -203,13 +241,13 @@ extension RailwayMapStore {
 
     var stationLayoutHint: String {
         guard !historyMapActive else { return "返回当前地图可查看站区细节。" }
-        guard displayZoom >= 16 else { return "放大到 Z16 可查看站区。地铁、轻轨和铁路共用这些开关。" }
+        guard displayZoom + 0.000001 >= StationLayoutKind.outline.minimumZoom else { return "放大到 Z14 可查看站区轮廓。" }
         let nearby = layoutFeatures.filter { $0.bounds.intersects(viewportBounds) }
         guard !nearby.isEmpty else {
             return mapMode == .apple ? "放大后会自动查询地图中心附近的站区。" : "本地没有当前视野的站区图形。"
         }
         let counts = Dictionary(grouping: nearby.filter(\.hasGeometry), by: \.kind).mapValues(\.count)
-        return "当前视野已收录车站轮廓 \(counts[.outline, default: 0])，站厅 \(counts[.concourse, default: 0])，站台 \(counts[.platform, default: 0])，通道 \(counts[.passage, default: 0])。"
+        return "当前视野已收录车站轮廓 \(counts[.outline, default: 0])，站厅 \(counts[.concourse, default: 0])，站台 \(counts[.platform, default: 0])，通道 \(counts[.passage, default: 0])，出入口 \(counts[.entrance, default: 0])。"
     }
     var currentLayoutStatus: String {
         guard layoutStatusCell == stationLayoutTarget else { return "" }
@@ -218,8 +256,8 @@ extension RailwayMapStore {
 
     var stationLayoutTarget: StationLayoutCell? {
         let point = viewportBounds.center
-        guard mapMode == .apple, !historyMapActive, showsStationLayouts, displayZoom + 0.000001 >= 16,
-              showsStationOutlines || showsConcourses || showsPlatforms || showsPassengerPassages || showsPlatformNumbers,
+        guard mapMode == .apple, !historyMapActive, showsStationLayouts, displayZoom + 0.000001 >= StationLayoutKind.outline.minimumZoom,
+              showsStationOutlines || showsConcourses || showsPlatforms || showsPassengerPassages || showsPlatformNumbers || showsStationEntrances || showsPassageSigns,
               point.isValid, abs(point.latitude) <= 85 else { return nil }
         return StationLayoutCell(point)
     }
@@ -259,7 +297,7 @@ extension RailwayMapStore {
         }
     }
     private func layoutResult(_ rows: [StationLayout]) -> String {
-        rows.isEmpty ? "已查询，OSM 暂无这片站区可绘制的站台、站厅、站体或通道。" : "已读取地图中心附近的 \(rows.count) 个站区要素。"
+        rows.isEmpty ? "已查询，OSM 暂无这片站区的可绘制资料。" : "已读取地图中心附近的 \(rows.count) 个站区要素。"
     }
     private func fetchStationLayouts(_ cell: StationLayoutCell, generation: UUID) async {
         guard let script = Self.resourceURL("station-layouts", extension: "js") else { layoutStatus = "站区读取组件缺失。"; return }
@@ -274,7 +312,7 @@ extension RailwayMapStore {
             guard !Task.isCancelled, layoutGeneration == generation else { return }
             layoutVisits[cell] = StationLayoutVisit(date: Date(), features: additions)
             layoutRetry.removeValue(forKey: cell)
-            let cache = layoutCacheDirectory?.appendingPathComponent("cells-v2", isDirectory: true)
+            let cache = layoutCacheDirectory?.appendingPathComponent("cells-v3", isDirectory: true)
             if let cache {
                 try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
                 try? data.write(to: cache.appendingPathComponent(cell.filename).appendingPathExtension("json"), options: .atomic)
@@ -324,15 +362,22 @@ extension RailwayMapStore {
             return (try? JSONDecoder().decode([StationLayout].self, from: data)) ?? []
         }
         layoutBase.append(contentsOf: extra.filter { f in !layoutBase.contains(where: { $0.id == f.id }) })
-        let cells = dir.appendingPathComponent("cells-v2", isDirectory: true)
+        for generation in ["cells-v2","cells-v3"] {
+        let cells = dir.appendingPathComponent(generation, isDirectory: true)
         let recent = (try? FileManager.default.contentsOfDirectory(at: cells, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         for url in recent where url.pathExtension == "json" {
             guard let cell = StationLayoutCell(filename: url.deletingPathExtension().lastPathComponent),
                   let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
                   let data = try? Data(contentsOf: url), let rows = try? JSONDecoder().decode([StationLayout].self, from: data) else { continue }
-            layoutVisits[cell] = .init(date: date, features: rows)
+            if generation == "cells-v2" {
+                let known = Set(layoutBase.map(\.id))
+                layoutBase.append(contentsOf: rows.filter { !known.contains($0.id) })
+            } else {
+                layoutVisits[cell] = .init(date: date, features: rows)
+            }
         }
-        if !extra.isEmpty || !layoutVisits.isEmpty { rebuildStationLayouts() }
+        }
+        rebuildStationLayouts()
     }
 }
 

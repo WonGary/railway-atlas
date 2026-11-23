@@ -65,10 +65,11 @@ Claude 在对话页及设置中有独立的“联网搜索”和“读取网页�
 | `layers.prioritizesUrbanTransit` | 都市轨道交通优先显示，默认 `false`；开启越过网络与速度 / 用途类别筛选，关闭恢复原有各分类设置，不是都市交通总隐藏 |
 | `layers.showsNationalMetroOverview` | 全国地铁、轻轨、单轨和有轨电车简化概览开关；关闭不影响放大后的详细城市轨道 |
 | `layers.showsStations` / `showsLabels` | 站点、站名开关 |
-| `layers.showsStationLayouts` | 站区细节总开关。关闭时保留下面五项选择 |
-| `layers.showsStationOutlines` / `showsPlatforms` | Z16 显示车站轮廓，Z17 显示有记录的站台面、线或位置点 |
-| `layers.showsConcourses` | Z17 显示已收录的站厅轮廓 |
-| `layers.showsPassengerPassages` / `showsPlatformNumbers` | Z18 显示乘客通道和已知站台号，可单独开关。关闭线路或车站圆点仍可查看 |
+| `layers.showsStationLayouts` | 站区细节总开关，保留各项选择 |
+| `layers.showsStationOutlines` / `showsPlatforms` | Z14 显示车站轮廓，Z15 显示站台面、线或位置点 |
+| `layers.showsConcourses` | Z15 显示已收录的站厅轮廓 |
+| `layers.showsPassengerPassages` / `showsPlatformNumbers` | Z16 显示乘客通道和已知站台号，可单独开关 |
+| `layers.showsStationEntrances` / `showsPassageSigns` | Z16 显示出入口和通道圆标，可单独开关 |
 | `layers.showsMetroColors` / `enrichWikiColours` | 线路色、在线百科补色开关 |
 | `interface.uiScale` | 原生字号与布局缩放，0.75–1.6；保持屏幕原生像素密度 |
 | `interface.panelVisible` / `panelWidth` | 左侧面板可见性 / 基准宽度 250–560 点；浮窗、分屏均可拖动右缘调宽 |

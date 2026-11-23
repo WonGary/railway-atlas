@@ -22,14 +22,17 @@ enum ConfigurationChecks {
         var stationDetail = try AtlasConfiguration.decode(Data(#"{"layers":{"showsStationLayouts":false}}"#.utf8))
         try check(stationDetail.layers.showsStationLayouts == false && stationDetail.layers.showsPlatforms
                   && stationDetail.layers.showsStationOutlines && stationDetail.layers.showsConcourses && stationDetail.layers.showsPassengerPassages
-                  && stationDetail.layers.showsPlatformNumbers, "legacy station detail master and new layer defaults")
+                  && stationDetail.layers.showsPlatformNumbers && stationDetail.layers.showsStationEntrances
+                  && stationDetail.layers.showsPassageSigns, "legacy station detail master and new layer defaults")
         stationDetail.layers.showsStationLayouts = true
         stationDetail.layers.showsPlatforms = false
         stationDetail.layers.showsStationOutlines = false
         stationDetail.layers.showsConcourses = false
+        stationDetail.layers.showsStationEntrances = false
         let savedDetail = try AtlasConfiguration.decode(stationDetail.encoded()).layers
         try check(!savedDetail.showsPlatforms && !savedDetail.showsStationOutlines && !savedDetail.showsConcourses && savedDetail.showsPassengerPassages
-                  && savedDetail.showsPlatformNumbers, "platform numbers persist independently from platform shapes")
+                  && savedDetail.showsPlatformNumbers && !savedDetail.showsStationEntrances && savedDetail.showsPassageSigns,
+                  "platform, entrance, and passage switches persist independently")
         try check(!value.layers.prioritizesUrbanTransit && !restored.layers.prioritizesUrbanTransit,
                   "old config defaults urban priority off without changing category/route preferences")
         var priority = value

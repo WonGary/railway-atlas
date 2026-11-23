@@ -1,7 +1,7 @@
 // Shared by JavaScriptCore, the web map and the snapshot builder.
 // Coordinates stay in WGS84. A point is never expanded into a footprint.
 globalThis.StationLayoutOSM = (() => {
-  const minimumZoom = {outline: 16, concourse: 17, platform: 17, passage: 18};
+  const minimumZoom = {outline: 14, concourse: 15, platform: 15, passage: 16, entrance: 16};
   const accessible = t => ![t.access,t.foot].some(v => /^(private|no|employees|staff|military)$/.test(v))
     && !t.construction && !t.proposed && !t["proposed:building"] && t.landuse!=="construction" &&
     !["construction","proposed"].includes(t.building) && t.disused !== "yes" && t.abandoned !== "yes";
@@ -63,6 +63,28 @@ globalThis.StationLayoutOSM = (() => {
   const isPassage = t => t.indoor==="corridor" || t.highway==="corridor" || t.footway==="corridor" ||
     (t.indoor==="room" && t.stairs==="yes") || walkSurface(t) ||
     (["footway","pedestrian","steps"].includes(t.highway) && (indoorWalk(t) || t.level!=null || t.covered==="yes"));
+  const gateRole = role => /^(entrance|exit|entry_only|exit_only|entrance_only|entrance_exit|station_entrance)$/.test(role || "");
+  const passengerDoor = t => !t.shop && !t.amenity && !t.emergency && !t.fixme &&
+    !["no","service","private","emergency","garage","home","residence","delivery","staff"].includes(t.entrance) &&
+    !/员工|職員|应急|應急|消防|停车场|停車場|货运|貨運/.test(t["name:zh"] || t.name || "");
+  const signedGate = name => /[进進出]站[口門门]|[进進出]站通道/.test(name || "");
+  function accessSign(t,kind,role="") {
+    const name = String(t["name:zh"] || t.name || "").trim();
+    const code = /^[A-Z]{1,2}(?:[-.]?\d{1,3}[A-Z]?)?$|^\d{1,3}[A-Z]?$/i;
+    const short = v => typeof v==="string" && code.test(v.trim()) ? v.trim().toUpperCase() : "";
+    const isGate = kind==="entrance";
+    const fromName = isGate
+      ? /(?:^|[^A-Za-z0-9])([A-Z]{1,2}(?:[-.]?\d{1,3}[A-Z]?)?|\d{1,3}[A-Z]?)\s*(?:号|號)?\s*(?:出入口|[进進出入]站口|出口|入口|口)|\b(?:exit|entrance|gate)\s+([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)\b/i
+      : /(?:^|[^A-Za-z0-9])([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)\s*(?:号|號)?\s*(?:通道|走廊)|(?:通道|走廊|\bpassage(?:way)?|\bcorridor)\s*([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)(?:号|號)?(?:$|[^A-Za-z0-9])/i;
+    const matched = fromName.exec(name);
+    const number = short(t.local_ref) || short(t.ref) || short(matched?.[1] || matched?.[2]) || (isGate ? short(name) : "");
+    const dir = /([东東西南北]{1,2})(?:侧|側|广场|廣場)?\s*(?:[进進出]站(?:口|通道)|出入口|出口|入口|门|門)/.exec(name)?.[1];
+    const flow = /[进進]站/.test(name) || t.entrance==="entrance" || t.entrance==="entrance_only" || ["entry_only","entrance_only"].includes(role) ? "进" :
+      /出站/.test(name) || ["exit","exit_only"].includes(t.entrance) || ["exit","exit_only"].includes(role) ? "出" : "";
+    const label = number || (isGate ? (dir?.replace("東","东") || "") + flow : transferWalk(t) ? "换" : "");
+    const title = name && name !== number ? name : [number, isGate ? (flow==="出" ? "出站口" : flow==="进" ? "进站口" : "出入口") : "通道"].filter(Boolean).join(" ");
+    return {accessLabel:label,accessTitle:title};
+  }
   function extract(doc) {
     if (!Array.isArray(doc.elements) || doc.remark) throw Error("车站资料不完整");
     const asOf = (doc.osm3s?.timestamp_osm_base || new Date().toISOString()).slice(0,10);
@@ -140,6 +162,11 @@ globalThis.StationLayoutOSM = (() => {
       return best;
     }
     const features=[], shells=[], linked=new Set(entranceNodes), relationWays=new Set(), passages=[];
+    const wallModes=new Map(), wallGateNames=new Map(), entranceRoles=new Map(), entranceByNode=new Map();
+    for (const e of elements.values()) {
+      if (e.tags?.public_transport!=="stop_area" || !accessible(e.tags)) continue;
+      for (const m of e.members || []) if (m.type==="node" && gateRole(m.role)) entranceRoles.set(m.ref,m.role);
+    }
     const candidates=[...elements.values()].filter(e=>e.type==="way" || e.tags?.type==="multipolygon")
       .filter(e=>accessible(e.tags || {}) && !unopened(e.tags || {}));
     // Process area relations first. Their member ways can carry the same tags.
@@ -188,10 +215,39 @@ globalThis.StationLayoutOSM = (() => {
             extend:indoorWalk(t) || t.highway==="corridor" || t.footway==="corridor"});
           else features.push(feature);
           if (kind==="outline" || kind==="concourse") shells.push(feature);
+          if (kind==="outline") {
+            for (const id of vertices) wallModes.set(id,network);
+            if (t.building==="train_station" && signedGate(t.name) && passengerDoor(t)) {
+              const doors=vertices.filter(id=>{
+                const door=nodes.get(id)?.tags;
+                return door && (door.entrance || door.railway==="train_station_entrance" || door.railway==="subway_entrance") &&
+                  accessible(door) && passengerDoor(door);
+              });
+              for (const id of doors) wallGateNames.set(id,t.name);
+              if (!doors.length) {
+                const anchor=labelAnchors(feature)[0];
+                if (anchor) features.push({id:feature.id+"#access",kind:"entrance",network,area:false,paths:[[anchor]],
+                  name:t.name,...accessSign(t,"entrance"),positionSource:"building"});
+              }
+            }
+          }
           if (kind==="platform" || kind==="concourse") for (const n of vertices) linked.add(n);
           if (e.type==="relation") for (const m of e.members || []) if(m.type==="way") relationWays.add(kind+"/way/"+m.ref);
         }
       }
+    }
+    for (const [id,e] of nodes) {
+      const t=e.tags || {}, role=entranceRoles.get(id), source="node/"+id;
+      if (!accessible(t) || unopened(t) || !passengerDoor(t) || !Number.isFinite(e.lon) || !Number.isFinite(e.lat)) continue;
+      const subway=t.railway==="subway_entrance", railway=t.railway==="train_station_entrance";
+      const memberMode=relationModes.get(source), wallMode=wallModes.get(id);
+      if (!subway && !railway && !(role && memberMode) && !(t.entrance && (wallMode || memberMode))) continue;
+      const name=t["name:zh"] || t.name || wallGateNames.get(id);
+      const feature={id:source,kind:"entrance",network:subway?"metro":railway?"railway":wallMode || memberMode,
+        area:false, paths:[[[e.lon,e.lat]]], local_ref:t.local_ref,ref:t.ref,name:t.name,level:t.level,
+        ...accessSign({...t,name},"entrance",role)};
+      features.push(feature);
+      entranceByNode.set(id,feature);
     }
     // Paths often split at stairs. Follow mapped shared nodes inside the station; an exit
     // may anchor a segment but does not turn a chain of covered street sidewalks into passages.
@@ -200,7 +256,15 @@ globalThis.StationLayoutOSM = (() => {
       const next=[], added=[];
       for (const item of pending) {
         if (!item.direct && !item.vertices.some(n=>linked.has(n))) { next.push(item); continue; }
-        features.push(item.feature);
+        const passage=item.feature;
+        const sign=accessSign(passage,"passage");
+        if (sign.accessLabel) Object.assign(passage,sign);
+        else {
+          const exits=[...new Set(item.vertices.map(id=>entranceByNode.get(id)?.accessLabel).filter(Boolean))];
+          if (exits.length===1 && /^[A-Z0-9][A-Z0-9.-]*$/i.test(exits[0]))
+            Object.assign(passage,{accessLabel:"→"+exits[0],accessTitle:`通往 ${exits[0]} 口`});
+        }
+        features.push(passage);
         if (item.extend) added.push(...item.vertices);
       }
       if (added.every(n=>linked.has(n))) break;
@@ -279,6 +343,8 @@ globalThis.StationLayoutOSM = (() => {
     const facesByVertex=new Map();
     for (const f of features) {
       withPlatformLabel(f);
+      if (f.kind==="entrance" || (f.kind==="passage" && f.accessLabel))
+        f.labelAnchors=f.paths[0].length===1 ? [f.paths[0][0]] : labelAnchors(f);
       if (!f.platformLabel || !f.area) continue;
       for (const p of f.paths[0]) {
         const key=p.join(",");
@@ -309,7 +375,8 @@ globalThis.StationLayoutOSM = (() => {
         n<=s || e<=w || n-s>0.061 || e-w>0.081) throw Error("请再放大一级");
     const b=box.map(v=>v.toFixed(5)).join(",");
     const selectors=[
-      'nwr[railway~"^(station|halt|tram_stop|subway_entrance|platform|platform_edge)$"]',
+      'nwr[railway~"^(station|halt|tram_stop|subway_entrance|train_station_entrance|platform|platform_edge)$"]',
+      'node[entrance]',
       'node[railway=stop]',
       'nwr[public_transport~"^(platform|station|stop_position)$"]',
       'wr["area:railway"~"^(platform|concourse)$"]',
@@ -341,7 +408,8 @@ globalThis.StationLayoutOSM = (() => {
       // A few platforms have only a member role. Fetch their geometry only in this cell.
       `(.local;`+["node","way","rel"].flatMap(type=>
         ["platform","platform_entry_only","platform_exit_only"].map(role=>`${type}(r.parents:"${role}")(${b});`)
-      ).join("")+`);out geom;.parents out body;`;
+      ).join("")+["entrance","exit","entry_only","exit_only","entrance_only","entrance_exit","station_entrance"].map(
+        role=>`node(r.parents:"${role}")(${b});`).join("")+`);out geom;.parents out body;`;
   }
   const globalSource = "https://overpass-api.de/api/interpreter";
   // Use a regional extract only well inside its coverage. Elsewhere query a global source.

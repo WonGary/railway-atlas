@@ -89,6 +89,8 @@ final class ConfigurationStore: ObservableObject {
         value.layers.showsPlatforms = map.showsPlatforms
         value.layers.showsPassengerPassages = map.showsPassengerPassages
         value.layers.showsPlatformNumbers = map.showsPlatformNumbers
+        value.layers.showsStationEntrances = map.showsStationEntrances
+        value.layers.showsPassageSigns = map.showsPassageSigns
         value.layers.showsLabels = map.showsLabels
         value.layers.showsMetroColors = map.showsMetroColors
         value.layers.enrichWikiColours = map.enrichWikiColours
@@ -165,6 +167,8 @@ final class ConfigurationStore: ObservableObject {
         map.showsPlatforms = value.layers.showsPlatforms
         map.showsPassengerPassages = value.layers.showsPassengerPassages
         map.showsPlatformNumbers = value.layers.showsPlatformNumbers
+        map.showsStationEntrances = value.layers.showsStationEntrances
+        map.showsPassageSigns = value.layers.showsPassageSigns
         map.showsLabels = value.layers.showsLabels
         map.showsMetroColors = value.layers.showsMetroColors
         if map.enrichWikiColours != value.layers.enrichWikiColours { map.enrichWikiColours = value.layers.enrichWikiColours }

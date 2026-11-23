@@ -63,6 +63,8 @@ final class RailwayMapStore: ObservableObject {
     @Published var showsPlatforms = true { didSet { persist(showsPlatforms, "railway.platforms"); scheduleStationLayouts() } }
     @Published var showsPassengerPassages = true { didSet { persist(showsPassengerPassages, "railway.passengerPassages"); scheduleStationLayouts() } }
     @Published var showsPlatformNumbers = true { didSet { persist(showsPlatformNumbers, "railway.platformNumbers"); scheduleStationLayouts() } }
+    @Published var showsStationEntrances = true { didSet { persist(showsStationEntrances, "railway.stationEntrances"); scheduleStationLayouts() } }
+    @Published var showsPassageSigns = true { didSet { persist(showsPassageSigns, "railway.passageSigns"); scheduleStationLayouts() } }
     @Published var loadingLayouts = false
     @Published var layoutStatus = ""
     var layoutStatusCell: StationLayoutCell?
@@ -320,6 +322,8 @@ final class RailwayMapStore: ObservableObject {
             showsPlatforms = UserDefaults.standard.object(forKey: "railway.platforms") as? Bool ?? true
             showsPassengerPassages = UserDefaults.standard.object(forKey: "railway.passengerPassages") as? Bool ?? true
             showsPlatformNumbers = UserDefaults.standard.object(forKey: "railway.platformNumbers") as? Bool ?? true
+            showsStationEntrances = UserDefaults.standard.object(forKey: "railway.stationEntrances") as? Bool ?? true
+            showsPassageSigns = UserDefaults.standard.object(forKey: "railway.passageSigns") as? Bool ?? true
             restoreStationLayouts()
             hiddenRoutes = Set(UserDefaults.standard.stringArray(forKey: "railway.hiddenRoutes") ?? [])
             basemapDarkness = UserDefaults.standard.object(forKey: "railway.basemapDarkness") == nil

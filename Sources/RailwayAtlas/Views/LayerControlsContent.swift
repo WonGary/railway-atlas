@@ -113,11 +113,13 @@ struct LayerControlsContent: View {
             settingToggle("站区细节", isOn: $store.showsStationLayouts)
             if store.showsStationLayouts {
                 VStack(alignment: .leading, spacing: 5 * uiScale) {
-                    settingToggle("车站轮廓 · Z16", isOn: $store.showsStationOutlines)
-                    settingToggle("站厅轮廓 · Z17", isOn: $store.showsConcourses)
-                    settingToggle("站台（面、线或点）· Z17", isOn: $store.showsPlatforms)
-                    settingToggle("乘客通道 · Z18", isOn: $store.showsPassengerPassages)
-                    settingToggle("站台号 · Z18", isOn: $store.showsPlatformNumbers)
+                    settingToggle("车站轮廓 · Z14", isOn: $store.showsStationOutlines)
+                    settingToggle("站厅轮廓 · Z15", isOn: $store.showsConcourses)
+                    settingToggle("站台（面、线或点）· Z15", isOn: $store.showsPlatforms)
+                    settingToggle("乘客通道 · Z16", isOn: $store.showsPassengerPassages)
+                    settingToggle("站台号 · Z16", isOn: $store.showsPlatformNumbers)
+                    settingToggle("出入口与方向 · Z16", isOn: $store.showsStationEntrances)
+                    settingToggle("通道标识 · Z16", isOn: $store.showsPassageSigns)
                 }.padding(.leading, 10 * uiScale)
                 Text(store.stationLayoutHint).atlasFont(.caption2).foregroundStyle(.secondary)
                 if store.displayZoom >= 16 && store.mapMode == .apple {

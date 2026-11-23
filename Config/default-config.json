@@ -26,6 +26,8 @@
     "showsPlatforms": true,
     "showsPassengerPassages": true,
     "showsPlatformNumbers": true,
+    "showsStationEntrances": true,
+    "showsPassageSigns": true,
     "showsLabels": true,
     "showsMetroColors": true,
     "enrichWikiColours": true,

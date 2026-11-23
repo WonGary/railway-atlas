@@ -1,9 +1,10 @@
 const StationLayoutLayer = (() => {
   const legacyCacheKey = "railway-atlas-station-areas-v1";
-  const cacheKey = "railway-atlas-station-cells-v2";
+  const oldCellsKey = "railway-atlas-station-cells-v2";
+  const cacheKey = "railway-atlas-station-cells-v3";
   const byID = new Map(), drawn = new Map(), numbers = new Map(), renderers = {};
-  const switches = {outline:"showsStationOutlines",concourse:"showsConcourses",platform:"showsPlatforms",passage:"showsPassengerPassages"};
-  const colors = {outline:["#536981","#B9C8DA"], concourse:["#925216","#FFCD8F"], platform:["#216B62","#7FD3C4"], passage:["#864097","#E4ACF3"]};
+  const switches = {outline:"showsStationOutlines",concourse:"showsConcourses",platform:"showsPlatforms",passage:"showsPassengerPassages",entrance:"showsStationEntrances"};
+  const colors = {outline:["#536981","#B9C8DA"], concourse:["#925216","#FFCD8F"], platform:["#216B62","#7FD3C4"], passage:["#864097","#E4ACF3"],entrance:["#12558A","#A9D6FF"]};
   const visits = new Map(), failures = new Map();
   let map, snapshot, baseFeatures = [], activeKey, pending, timer, nextRequest = 0, message = "";
   let snapshotError = false;
@@ -19,13 +20,13 @@ const StationLayoutLayer = (() => {
   }
   function style(feature,dark) {
     const kind = feature.kind;
-    const point=kind==="platform" && feature.paths[0].length===1;
+    const point=feature.paths[0].length===1;
     return {color:colors[kind][dark?1:0], weight:kind==="outline"?1.4:2.2,
       fill:feature.area || point, fillOpacity:kind==="outline"?0.17:kind==="concourse"?0.22:0.34, dashArray:kind==="passage"?"4 3":null};
   }
   function setup(leafletMap) {
     map = leafletMap;
-    for (const [kind,index] of [["outline",375],["concourse",376],["platform",394],["passage",395]]) {
+    for (const [kind,index] of [["outline",375],["concourse",376],["platform",394],["passage",395],["entrance",396]]) {
       const pane="station-layout-"+kind;
       const el=map.createPane(pane);
       el.style.zIndex=index;
@@ -38,30 +39,43 @@ const StationLayoutLayer = (() => {
     numberPane.style.pointerEvents="none";
     refresh();
   }
-  function refreshNumbers(entries, enabled, scale) {
+  function refreshNumbers(entries, enabled, p) {
+    const scale=p.uiScale;
     const keep=new Set(), occupied=[];
-    const candidates=enabled ? entries.filter(({feature})=>feature.platformLabel && feature.labelAnchors?.length) : [];
+    const candidates=enabled ? entries.filter(({feature:f})=>f.labelAnchors?.length &&
+      (f.kind==="platform" && p.showsPlatformNumbers && f.platformLabel ||
+       f.kind==="passage" && p.showsPassageSigns && f.accessLabel ||
+       f.kind==="entrance" && p.showsStationEntrances && f.accessLabel)) : [];
     const ids=new Set(candidates.map(({feature})=>feature.id));
-    candidates.sort((a,b)=>Number(b.feature.area)-Number(a.feature.area) || a.feature.id.localeCompare(b.feature.id));
+    const rank=f=>f.kind==="entrance" ? (f.network==="railway" && /[进進出]站/.test(f.accessTitle)?0:1) :
+      f.kind==="passage" ? 4 : f.area ? 2 : 3;
+    candidates.sort((a,b)=>rank(a.feature)-rank(b.feature) || a.feature.id.localeCompare(b.feature.id));
     const screen=L.bounds([0,0],map.getSize());
     for (const {feature} of candidates) {
       if (ids.has(feature.labelOwner)) continue;
-      const text=feature.platformLabel;
-      const width=Math.max(13,text.length*7.5+5)*scale, height=17*scale;
+      const badge=feature.kind!=="platform", text=feature.accessLabel || feature.platformLabel;
+      const textWidth=Array.from(text).reduce((sum,ch)=>sum+(ch.codePointAt(0)>255?10.5:6.7),0);
+      const width=(badge?Math.max(18,textWidth+6):Math.max(13,text.length*7.5+5))*scale, height=badge?width:17*scale;
       for (const [lon,lat] of feature.labelAnchors) {
         const position=L.latLng(lat,lon), p=map.latLngToContainerPoint(position);
         const box=L.bounds([p.x-width/2,p.y-height/2],[p.x+width/2,p.y+height/2]);
         if (!screen.contains(box) || occupied.some(old=>old.intersects(box))) continue;
         occupied.push(L.bounds(box.min.subtract([2,1]),box.max.add([2,1])));keep.add(feature.id);
         const previous=numbers.get(feature.id);
-        if (previous && previous.text===text && previous.scale===scale) {
+        if (previous && previous.text===text && previous.scale===scale && previous.title===feature.accessTitle) {
           if (!previous.marker.getLatLng().equals(position)) previous.marker.setLatLng(position);
         } else {
           previous?.marker.remove();
           const glyph=document.createElement("span");glyph.textContent=text;
-          const icon=L.divIcon({className:"platform-number",html:glyph,iconSize:[width,height],iconAnchor:[width/2,height/2]});
-          const marker=L.marker(position,{icon,pane:"station-layout-number",interactive:false,keyboard:false}).addTo(map);
-          numbers.set(feature.id,{marker,scale,text});
+          const icon=L.divIcon({className:badge?"access-badge "+feature.kind:"platform-number",html:glyph,iconSize:[width,height],iconAnchor:[width/2,height/2]});
+          const marker=L.marker(position,{icon,pane:"station-layout-number",interactive:badge,keyboard:badge,
+            title:feature.accessTitle || "",alt:feature.accessTitle || text}).addTo(map);
+          if (badge) {
+            const title=document.createElement("span");title.textContent=feature.accessTitle || text;
+            marker.bindTooltip(title,{direction:"top"}).on("click",()=>marker.openTooltip());
+          }
+          marker.getElement().dataset.osmId=feature.id;
+          numbers.set(feature.id,{marker,scale,text,title:feature.accessTitle});
         }
         break;
       }
@@ -71,7 +85,7 @@ const StationLayoutLayer = (() => {
   function refresh() {
     if (!map) return;
     const p=AtlasPrefs.value, z=map.getZoom();
-    const enabled=p.showsStationLayouts && z>=16;
+    const enabled=p.showsStationLayouts && z>=StationLayoutOSM.minimumZoom.outline;
     const cell=currentCell(enabled,p);
     const button=$("loadStationLayouts"), status=$("stationLayoutStatus");
     const options=$("stationDetailOptions");
@@ -86,7 +100,8 @@ const StationLayoutLayer = (() => {
         snapshotError=true;
         return [];
       }).then(features=>{
-        const old=Array.isArray(legacy)?legacy.flatMap(row=>Array.isArray(row?.features)?row.features:[]):[];
+        const old=[legacy,readStored(oldCellsKey,[])].flatMap(cache=>Array.isArray(cache)?
+          cache.flatMap(row=>Array.isArray(row?.features)?row.features:[]):[]);
         baseFeatures=[...old,...features];
         rebuild();
         refresh();
@@ -98,11 +113,11 @@ const StationLayoutLayer = (() => {
     const nearby=enabled ? [...byID.values()].filter(entry=>bounds.intersects(entry.bounds)) : [];
     if (status) {
       status.hidden=!p.showsStationLayouts;
-      const counts={outline:0,concourse:0,platform:0,passage:0};
+      const counts={outline:0,concourse:0,platform:0,passage:0,entrance:0};
       for (const entry of nearby) counts[entry.feature.kind]++;
-      const summary=nearby.length ? `当前视野有车站轮廓 ${counts.outline}，站厅 ${counts.concourse}，站台 ${counts.platform}，通道 ${counts.passage}。` :
+      const summary=nearby.length ? `当前视野有车站轮廓 ${counts.outline}，站厅 ${counts.concourse}，站台 ${counts.platform}，通道 ${counts.passage}，出入口 ${counts.entrance}。` :
         p.mode==="online" ? "" : "本地没有当前视野的站区图形。";
-      status.textContent=z<16 ? "放大到 Z16 可查看站区。" : [summary,message,
+      status.textContent=z<StationLayoutOSM.minimumZoom.outline ? "放大到 Z14 可查看站区轮廓。" : [summary,message,
         snapshotError?"随包资料读取失败。":""].filter(Boolean).join(" ");
     }
     for (const {feature,paths} of nearby) {
@@ -117,15 +132,15 @@ const StationLayoutLayer = (() => {
       previous?.layer.remove();
       const options={...style(feature,dark),renderer:renderers[feature.kind],pane:"station-layout-"+feature.kind,interactive:false};
       const layer=feature.area ? L.polygon(paths,options) :
-        paths[0].length === 1 && feature.kind === "platform" ?
-          L.circleMarker(paths[0][0],{...options,radius:4}) : L.polyline(paths[0],options);
+        paths[0].length === 1 ?
+          L.circleMarker(paths[0][0],{...options,radius:feature.kind==="entrance"?3:4}) : L.polyline(paths[0],options);
       layer.addTo(map);
       const path=layer.getElement();
       if(path) path.dataset.osmId=id;
       drawn.set(id,{layer,dark,feature});
     }
     for (const [id,{layer}] of drawn) if (!keep.has(id)) { layer.remove(); drawn.delete(id); }
-    refreshNumbers(nearby,enabled && z>=18 && p.showsPlatformNumbers,p.uiScale);
+    refreshNumbers(nearby,enabled && z>=StationLayoutOSM.minimumZoom.entrance,p);
     if (credited !== !!(drawn.size || numbers.size)) {
       credited=!!(drawn.size || numbers.size);
       map.attributionControl?.[credited?"addAttribution":"removeAttribution"](attribution);
@@ -137,7 +152,7 @@ const StationLayoutLayer = (() => {
     for (const visit of visits.values()) remember(visit.features);
   }
   function currentCell(enabled,p) {
-    if (!enabled || p.mode!=="online" || !(p.showsPlatformNumbers || Object.values(switches).some(key=>p[key]))) return null;
+    if (!enabled || p.mode!=="online" || !(p.showsPlatformNumbers || p.showsPassageSigns || Object.values(switches).some(key=>p[key]))) return null;
     const {lat,lng}=map.getCenter().wrap();
     if (Math.abs(lat)>85) return null;
     const y=Math.round(lat*250), x=Math.round(lng*250);
@@ -145,7 +160,7 @@ const StationLayoutLayer = (() => {
   }
   function resultMessage(features) {
     return features.length ? `已读取地图中心附近的 ${features.length} 个站区要素。` :
-      "已查询，OSM 暂无这片站区可绘制的站台、站厅、站体或通道。";
+      "已查询，OSM 暂无这片站区的可绘制资料。";
   }
   function schedule(cell,force=false) {
     const key=cell?.key ?? null, now=Date.now(), visit=visits.get(key);
@@ -204,7 +219,7 @@ const StationLayoutLayer = (() => {
   }
   function supplement() {
     if (!map) return;
-    const p=AtlasPrefs.value, cell=currentCell(p.showsStationLayouts && map.getZoom()>=16,p);
+    const p=AtlasPrefs.value, cell=currentCell(p.showsStationLayouts && map.getZoom()>=StationLayoutOSM.minimumZoom.outline,p);
     if (cell) { schedule(cell,true); refresh(); }
   }
   function addFocusButton(parent,coordinate) {
@@ -220,7 +235,7 @@ const StationLayoutLayer = (() => {
         if (toggle) toggle.checked=true;
       }
       if (window.matchMedia("(max-width: 900px)").matches) $("infoPanel").hidden=true;
-      map.setView(coordinate,Math.max(18,map.getZoom()),{animate:false});
+      map.setView(coordinate,Math.max(StationLayoutOSM.minimumZoom.entrance,map.getZoom()),{animate:false});
       refresh();
     };
     parent.prepend(button);

@@ -15,6 +15,8 @@ const previousDates=new Map(prior?.sources.map(s=>[s.sha256,s.date || prior.date
 const features=new Map(), sources=[];
 // Detailed station windows retain richer relation and platform-number information on overlap.
 const isCity=path=>basename(path).endsWith(".overpass.json");
+const accessInputs=new Map(files.filter(path=>path.endsWith("-access.overpass.json"))
+  .map(path=>[basename(path,"-access.overpass.json"),path]));
 for (const path of files.toSorted((a,b)=>Number(isCity(b))-Number(isCity(a)))) {
   const raw=fs.readFileSync(path), doc=JSON.parse(raw);
   let source;
@@ -28,9 +30,18 @@ for (const path of files.toSorted((a,b)=>Number(isCity(b))-Number(isCity(a)))) {
     const bounds=[minlon,minlat,maxlon,maxlat];
     source={bounds,url:"https://api.openstreetmap.org/api/0.6/map.json?bbox="+bounds.join(",")};
   }
-  const part=StationLayoutOSM.extract(doc);
+  const sidecar=accessInputs.get(source.city);
+  if (sidecar) {
+    const extra=fs.readFileSync(sidecar);
+    const access=JSON.parse(extra);
+    if (access.remark || !access.elements?.length) throw Error("Incomplete station entrance extract: "+sidecar);
+    doc.elements.push(...access.elements);
+    source.entranceSourceSHA256=createHash("sha256").update(extra).digest("hex");
+  }
+  const part=StationLayoutOSM.extract(doc).filter(f=>!source.city?.endsWith("-access") || f.kind==="entrance");
   const sha256=createHash("sha256").update(raw).digest("hex");
   sources.push({...source,date:previousDates.get(sha256) || date,sha256,features:part.length});
+  if (source.city?.endsWith("-access") && files.some(file=>basename(file)===source.city.slice(0,-7)+".overpass.json")) continue;
   for (const feature of part) features.set(feature.id,feature);
 }
 const identity=s=>s.city ?? s.url;

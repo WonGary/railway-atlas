@@ -11,6 +11,7 @@ const AtlasPrefs = (() => {
   const defaults = {
     automaticDetail:true,showsNationalMetroOverview:true,showsStations:true,showsStationLayouts:true,showsLabels:true,showsMetroColors:true,prioritizesUrbanTransit:false,
     showsStationOutlines:true,showsConcourses:true,showsPlatforms:true,showsPassengerPassages:true,showsPlatformNumbers:true,
+    showsStationEntrances:true,showsPassageSigns:true,
     categories:Object.keys(categories),networks:Object.keys(networks),forcedCategories:[],forcedNetworks:[],hiddenRoutes:[],
     metroWidthScale:1,railwayWidthScale:1,stationRadiusMultiplier:1.25,depotBrightness:.5,railwayPattern:true,viewportBuffer:.2,
     basemapDarkness:0,mapAppearance:"system",mode:"online",uiScale:1,panelWidth:320,inspectorWidth:380,panelSize:"medium",panelLayout:"floating",
@@ -151,8 +152,9 @@ const AtlasPrefs = (() => {
     toggle(vis,"prioritizesUrbanTransit","优先显示都市轨道");toggle(station,"showsStations","车站位置");toggle(station,"showsLabels","放大后显示站名");
     toggle(station,"showsStationLayouts","站区细节",false);
     const detailControls=make("div");detailControls.id="stationDetailOptions";station.append(detailControls);
-    for (const [key,title] of [["showsStationOutlines","车站轮廓 · Z16"],["showsConcourses","站厅轮廓 · Z17"],["showsPlatforms","站台（面、线或点）· Z17"],
-      ["showsPassengerPassages","乘客通道 · Z18"],["showsPlatformNumbers","站台号 · Z18"]]) toggle(detailControls,key,title,false);
+    for (const [key,title] of [["showsStationOutlines","车站轮廓 · Z14"],["showsConcourses","站厅轮廓 · Z15"],["showsPlatforms","站台（面、线或点）· Z15"],
+      ["showsPassengerPassages","乘客通道 · Z16"],["showsPlatformNumbers","站台号 · Z16"],
+      ["showsStationEntrances","出入口与方向 · Z16"],["showsPassageSigns","通道标识 · Z16"]]) toggle(detailControls,key,title,false);
     const load=make("button","重新查询当前站区");load.className="text-button";load.type="button";load.id="loadStationLayouts";load.hidden=true;
     load.onclick=StationLayoutLayer.supplement;station.append(load);
     const detailStatus=make("p");detailStatus.className="panel-note";detailStatus.id="stationLayoutStatus";detailStatus.hidden=true;

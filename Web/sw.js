@@ -1,4 +1,4 @@
-const VERSION = "0.8.3";
+const VERSION = "0.8.4";
 const SHELL = `railway-atlas-web-${VERSION}-station-layouts-1`;
 // City snapshots still carry the same 2026-11-05 edition. Reuse downloads on upgrade.
 const DETAILS = "railway-atlas-detail-0.7.0";

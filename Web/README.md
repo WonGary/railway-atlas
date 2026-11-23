@@ -1,4 +1,4 @@
-# 铁道漫游 0.8.3 网页地图
+# 铁道漫游 0.8.4 网页地图
 
 [打开地图](https://wongary.github.io/railway-atlas/) ｜ [下载安装包](https://github.com/WonGary/railway-atlas/releases/latest)
 
@@ -8,7 +8,7 @@
 
 放大地图，站名会直接显示在站点旁边。浅色底图用深灰字，深色底图和卫星影像用浅灰字。站点密集时优先显示换乘站和大站。地图外观默认跟随系统，也可以在「设置 → 地图绘制 → 地图外观」手动切换。
 
-点车站资料里的「查看站区细节」即可放大到本站。在「图层 → 底图与站点 → 站区细节」分别开关车站轮廓（Z16）、站厅与站台（Z17）、乘客通道与站台号（Z18）。北京育新有站体轮廓，广州沙河有地面站厅，磨碟沙有换乘通道。在线地图会自动查询屏幕中心附近的站区，查询成功后也可离线查看。不同楼层的通道在俯视图中可能重叠。[图层资料和许可](data/station-layouts.json)
+点车站资料里的「查看站区细节」即可放大到本站。Z14 显示车站轮廓，Z15 加上站厅和站台，Z16 再显示乘客通道、站台号、蓝色出入口圆标和紫色通道标识。打开「图层 → 底图与站点 → 站区细节」可分别开关。在线查询会补充地图中心附近的资料，成功后也可离线查看。[图层资料和许可](data/station-layouts.json)
 
 ## 使用本机资料
 
@@ -38,4 +38,4 @@ python3 -m http.server 8080 --directory Web
 
 随后访问 `http://127.0.0.1:8080/`。自行部署时把 `Web/` 的内容放到同一 HTTPS 路径，保留目录结构。重建桌面 ZIP 使用 `python3 Portable/package.py <新的输出目录>`，需要 macOS、Go 和 Command Line Tools。
 
-[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.3.md)
+[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.4.md)

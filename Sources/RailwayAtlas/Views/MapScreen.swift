@@ -353,7 +353,7 @@ struct OfflineRailwayMap: View {
                     let path = Path(group.path).applying(projection.transform)
                     draw(path, appearance: group.appearance, context: &context)
                 }
-                for feature in details where feature.kind == .platform || feature.kind == .passage {
+                for feature in details where feature.kind == .platform || feature.kind == .passage || feature.kind == .entrance {
                     feature.draw(&context, projection: projection, dark: scheme == .dark)
                 }
                 if !store.historyMapActive, let selected = store.visibleLines.first(where: { $0.id == store.selection?.id }) {
@@ -362,9 +362,18 @@ struct OfflineRailwayMap: View {
                     context.stroke(path, with: .color(.orange.opacity(0.25)), style: StrokeStyle(lineWidth: 11, lineCap: .round))
                     draw(path, appearance: store.appearance(selected), context: &context)
                 }
-                let numbers = store.platformNumbers(in: projection.visibleBounds, zoom: store.displayZoom + log2(magnification),
+                let numbers = store.layoutLabels(in: projection.visibleBounds, zoom: zoom,
                     screen: CGRect(origin: .zero, size: size), project: projection.screen)
                 for number in numbers {
+                    if number.kind != .platform {
+                        let ink = number.kind.ink(dark: scheme == .dark)
+                        let circle = Path(ellipseIn: number.frame)
+                        context.fill(circle, with: .color(scheme == .dark ? Color(red: 0.10, green: 0.13, blue: 0.18) : .white))
+                        context.stroke(circle, with: .color(ink), lineWidth: 1.5 * uiScale)
+                        let text = Text(verbatim: number.text).font(.system(size: 10 * uiScale, weight: .bold).monospacedDigit()).foregroundStyle(ink)
+                        context.draw(context.resolve(text), at: number.point)
+                        continue
+                    }
                     let ink: Color = scheme == .dark ? .white : Color(red: 0.05, green: 0.20, blue: 0.19)
                     let glyph = Text(verbatim: number.text).font(.system(size: 11 * uiScale, weight: .semibold).monospacedDigit())
                     let edge = context.resolve(glyph.foregroundStyle(scheme == .dark ? Color.black : Color.white))
