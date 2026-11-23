@@ -1,9 +1,10 @@
 // Shared by JavaScriptCore, the web map and the snapshot builder.
 // Coordinates stay in WGS84. A point is never expanded into a footprint.
 globalThis.StationLayoutOSM = (() => {
-  const minimumZoom = {outline: 16, platform: 17, passage: 18};
+  const minimumZoom = {outline: 16, concourse: 17, platform: 17, passage: 18};
   const accessible = t => ![t.access,t.foot].some(v => /^(private|no|employees|staff|military)$/.test(v))
-    && !t.construction && !t.proposed && t.disused !== "yes" && t.abandoned !== "yes";
+    && !t.construction && !t.proposed && !t["proposed:building"] && t.landuse!=="construction" &&
+    !["construction","proposed"].includes(t.building) && t.disused !== "yes" && t.abandoned !== "yes";
   const close = (a,b) => a && b && a[0] === b[0] && a[1] === b[1];
   const ring = p => p.length >= 4 && close(p[0], p[p.length-1]);
   function inside(p, r) {
@@ -37,38 +38,76 @@ globalThis.StationLayoutOSM = (() => {
     if (t.train==="yes" || t.route==="train") return "railway";
     return null;
   }
-  const isPlatform = t => t.railway==="platform" || t.railway==="platform_edge" || t["area:railway"]==="platform" ||
-    (t.public_transport==="platform" && !!mode(t));
-  const isOutline = t => t.building==="train_station" || t.railway==="station" ||
-    (t.public_transport==="station" && (!!mode(t) || t.building==="transportation"));
+  const isPlatform = t => ["platform","platform_edge"].includes(t.railway) || t["area:railway"]==="platform" ||
+    t["railway:area"]==="platform" || (!!mode(t) && (t.public_transport==="platform" || t.highway==="platform"));
+  const isOutline = t => t.building==="train_station" || ["station","halt"].includes(t.railway) ||
+    (t.public_transport==="station" && !!mode(t));
+  const walkSurface = t => ["footway","pedestrian"].includes(t["area:highway"]) ||
+    (["footway","pedestrian"].includes(t.highway) && t.area==="yes");
+  const railHall = t => [t.railway,t.public_transport,t["railway:area"],t["area:railway"]].includes("concourse");
+  const transferWalk = t => [t.name,t["name:zh"],t["name:en"]].some(v=>v &&
+    /[换換转轉]乘(?:通道|走廊)|\b(?:transfer|interchange) (?:passage(?:way)?|corridor)\b/i.test(v));
+  const mappedTransfer = t => transferWalk(t) &&
+    (["footway","steps","corridor","pedestrian"].includes(t.highway) || !!t.building || t.indoor==="corridor");
+  const namedHall = t => [t.room,t.railway,t.public_transport,t["railway:area"],t["area:railway"]].some(
+    v=>["concourse","ticket_hall","station_hall","entrance_hall"].includes(v)) ||
+    [t.name,t["name:zh"],t["name:en"],t["level:ref"]].some(v=>v && /站[厅廳]|[票大][厅廳]层|穿堂層|コンコース|\b(concourse|ticket hall)\b/i.test(v));
+  const concourse = t => !t.shop && !t.amenity && !t.stairs && !t.conveying && (!isOutline(t) || namedHall(t)) &&
+    !["steps","elevator","corridor"].includes(t.highway) && t.indoor!=="corridor" &&
+    (namedHall(t) || (t.room==="hall" && ["room","area"].includes(t.indoor)) ||
+      (!t.room && t.indoor==="area" && (walkSurface(t) || !t.highway)));
+  const belowGround = t => t.location==="underground" || [t.level,t.layer].some(v=>
+    String(v ?? "").split(";").some(level=>parseFloat(level)<0));
+  const indoorWalk = t => ["yes","corridor"].includes(t.indoor) || t.location==="underground" ||
+    ["yes","building","building_passage"].includes(t.tunnel) || belowGround(t);
   const isPassage = t => t.indoor==="corridor" || t.highway==="corridor" || t.footway==="corridor" ||
-    (["footway","pedestrian","steps"].includes(t.highway) &&
-      (t.indoor==="yes" || t.location==="underground" || ["yes","building_passage"].includes(t.tunnel) || t.level!=null));
+    (t.indoor==="room" && t.stairs==="yes") || walkSurface(t) ||
+    (["footway","pedestrian","steps"].includes(t.highway) && (indoorWalk(t) || t.level!=null || t.covered==="yes"));
   function extract(doc) {
     if (!Array.isArray(doc.elements) || doc.remark) throw Error("车站资料不完整");
-    const nodes=new Map(), ways=new Map(), relationModes=new Map(), railMembers=new Set(), entranceNodes=new Set(), anchors=[];
+    const asOf = (doc.osm3s?.timestamp_osm_base || new Date().toISOString()).slice(0,10);
+    const unopened = t => /^\d{4}(-\d\d(-\d\d)?)?$/.test(t.start_date) && t.start_date > asOf.slice(0,t.start_date.length);
+    const nodes=new Map(), ways=new Map(), relationModes=new Map(), platformMembers=new Set(), entranceNodes=new Set(), anchors=[];
+    const key=e=>e.type+"/"+(e.ref ?? e.id);
+    const elements=new Map();
     for (const e of doc.elements) {
+      if (!elements.has(key(e)) || e.geometry) elements.set(key(e),e);
       const t=e.tags || {};
       if (e.type==="node") {
         nodes.set(e.id,e);
         if (!accessible(t)) continue;
         if (t.railway==="subway_entrance" || (t.entrance && mode(t))) entranceNodes.add(e.id);
-        if (mode(t) && (["station","halt","tram_stop","subway_entrance"].includes(t.railway) || t.public_transport==="stop_position"))
-          anchors.push({point:[e.lon,e.lat],network:mode(t)});
+        if (mode(t) && (["station","halt","tram_stop","subway_entrance"].includes(t.railway) ||
+            ["station","stop_position"].includes(t.public_transport)))
+          anchors.push({point:[e.lon,e.lat],network:mode(t),entrance:entranceNodes.has(e.id)});
       } else if (e.type==="way") ways.set(e.id,e);
     }
-    for (const e of doc.elements) {
-      const t=e.tags || {};
-      if (e.type!=="relation" || !(t.public_transport==="stop_area" || ["train","subway","tram","light_rail","monorail"].includes(t.route))) continue;
-      const members=e.members || [];
-      const network=mode(t) || members.map(m=>mode((m.type==="node"?nodes:ways).get(m.ref)?.tags || {})).find(Boolean);
+    // A route can identify the mode of a stop_area through a shared stop. Read routes first.
+    for (const stopArea of [false,true]) for (const e of elements.values()) {
+      const t=e.tags || {}, members=e.members || [];
+      if (e.type!=="relation" || !accessible(t) || (stopArea ? t.public_transport!=="stop_area" :
+          !["train","subway","tram","light_rail","monorail"].includes(t.route))) continue;
+      const network=mode(t) || members.map(m=>relationModes.get(key(m)) || mode(elements.get(key(m))?.tags || {})).find(Boolean);
       if (!network) continue;
       for (const m of members) {
-        if (!m.role?.startsWith("platform") && t.public_transport!=="stop_area") continue;
-        const id=m.type+"/"+m.ref;
-        railMembers.add(id);
+        const platform=/^platform(?:_entry_only|_exit_only)?$/.test(m.role);
+        if (!stopArea && !platform && !/^stop(?:_entry_only|_exit_only)?$/.test(m.role)) continue;
+        const id=key(m);
         if (!relationModes.has(id)) relationModes.set(id,network);
+        if (platform) platformMembers.add(id);
+        if (m.type==="node" && (m.role?.toLowerCase()==="entrance" || nodes.get(m.ref)?.tags?.entrance) &&
+            accessible(nodes.get(m.ref)?.tags || {})) entranceNodes.add(m.ref);
       }
+    }
+    function platform(e,t) {
+      // Stations and train stopping positions sometimes appear in route relations with
+      // a platform role. Their geometry and ref still describe the station or stop.
+      if (["station","stop_position"].includes(t.public_transport) ||
+          ["station","halt","stop","subway_entrance"].includes(t.railway) || t.entrance ||
+          t.railway==="tram_stop" && t.public_transport!=="platform") return false;
+      if (isPlatform(t)) return true;
+      if ((t.bus==="yes" || t.highway==="bus_stop" || t.ferry==="yes") && !mode(t)) return false;
+      return platformMembers.has(key(e)) || (t.public_transport==="platform" && relationModes.has(key(e)));
     }
     function coordinates(e) {
       const points=e.geometry || (e.nodes || []).map(n=>nodes.get(n));
@@ -100,45 +139,78 @@ globalThis.StationLayoutOSM = (() => {
       }
       return best;
     }
-    const features=[], shells=[], linked=new Set(entranceNodes), relationWays=new Set();
-    const candidates=doc.elements.filter(e=>e.type!=="node" && e.tags && accessible(e.tags));
+    const features=[], shells=[], linked=new Set(entranceNodes), relationWays=new Set(), passages=[];
+    const candidates=[...elements.values()].filter(e=>e.type==="way" || e.tags?.type==="multipolygon")
+      .filter(e=>accessible(e.tags || {}) && !unopened(e.tags || {}));
     // Process area relations first. Their member ways can carry the same tags.
     candidates.sort((a,b)=>Number(b.type==="relation")-Number(a.type==="relation") || a.id-b.id);
-    for (const kind of ["outline","platform","passage"]) {
+    const within=(pt,paths)=>inside(pt,paths[0]) && !paths.slice(1).some(h=>inside(pt,h));
+    for (const kind of ["outline","platform","concourse","passage"]) {
       for (const e of candidates) {
-        const t=e.tags, source=e.type+"/"+e.id;
+        const t=e.tags || {}, source=key(e);
         if (relationWays.has(kind+"/"+source)) continue;
-        if (kind==="outline" && !isOutline(t)) continue;
-        if (kind==="platform" && !(isPlatform(t) || (t.public_transport==="platform" && railMembers.has(source)))) continue;
-        if (kind==="passage" && (!isPassage(t) || isPlatform(t) || isOutline(t) || t.fixme)) continue;
-        if ((t.bus==="yes" || t.highway==="bus_stop") && !mode(t) && !railMembers.has(source)) continue;
+        if (kind==="outline" && ((!isOutline(t) && t.building!=="transportation") || concourse(t) || platform(e,t) || mappedTransfer(t))) continue;
+        if (kind==="platform" && !platform(e,t)) continue;
+        if (kind==="concourse" && (!concourse(t) || platform(e,t))) continue;
+        if (kind==="passage" && ((!isPassage(t) || isOutline(t)) && !mappedTransfer(t) || platform(e,t) || t.fixme)) continue;
+        if (t.amenity==="bus_station" || ((t.bus==="yes" || t.highway==="bus_stop") && !mode(t) && !platformMembers.has(source))) continue;
         for (const [part,paths] of geometries(e).entries()) {
           const p=paths[0], area=ring(p) && t.area!=="no" && t.railway!=="platform_edge" &&
-            (kind!=="passage" || t.area==="yes" || t.indoor==="corridor");
-          if (kind==="outline" && !area) continue;
-          const containing=shells.find(s=>p.every(c=>inside(c,s.paths[0]) && !s.paths.slice(1).some(h=>inside(c,h))));
-          const direct=(e.nodes || []).some(n=>linked.has(n)) || railMembers.has(source);
-          if (kind==="passage" && !containing && !direct) continue;
+            (kind!=="passage" || walkSurface(t) || t.indoor==="corridor" || t.indoor==="room" || t.area==="yes" ||
+              (mappedTransfer(t) && !!t.building));
+          if ((kind==="outline" || kind==="concourse") && !area) continue;
+          if (kind==="passage" && concourse(t) && ring(p) && t.area!=="no") continue;
+          const stationPoint=area && anchors.find(a=>!a.entrance && within(a.point,paths));
+          const containing=shells.find(s=>p.every(c=>within(c,s.paths)));
+          const vertices=e.nodes || (e.members || []).flatMap(m=>ways.get(m.ref)?.nodes || []);
+          const direct=relationModes.has(source) || vertices.some(n=>linked.has(n));
+          if (kind==="outline" && !isOutline(t) && !(mode(t) || stationPoint || relationModes.has(source))) continue;
+          // Public indoor links can emerge above a subway station. Outdoors, a covered
+          // pavement or crossing over the same footprint is not evidence of a station path.
+          const indoorLink = t.indoor==="yes" || t.indoor==="corridor" || t.highway==="corridor" || t.footway==="corridor";
+          const insideStation=containing && (!belowGround(containing) || belowGround(t) || indoorLink ||
+            (t.level==null && t.layer==null && (indoorWalk(t) || t.indoor==="area")));
+          const namedBelowStation = namedHall(t) && belowGround(t) && nearMode(p[0]);
+          if (kind==="concourse" && !railHall(t) && !insideStation && !direct && !mode(t) && !namedBelowStation &&
+              !(stationPoint && (namedHall(t) || belowGround(t)))) continue;
           const surfaceTerminal = kind==="outline" && t.building==="train_station" && t.name && Number(t.layer)>0;
           // A long platform can project beyond the terminal building at both ends.
           const namedTerminal = kind==="platform" && t.name && shells.find(s=>s.name &&
             t.name.startsWith(s.name) && p.some((c,i)=>inside(c,s.paths[0]) || i>0 &&
               inside([(c[0]+p[i-1][0])/2,(c[1]+p[i-1][1])/2],s.paths[0])));
-          const network=mode(t) || (surfaceTerminal ? "railway" : null) || relationModes.get(source) ||
-            containing?.network || namedTerminal?.network || nearMode(p[Math.floor(p.length/2)]) || "railway";
+          const hallMode = kind==="concourse" && /\b(underground station|subway station)\b/i.test(t.name || "") ? "metro" : null;
+          const network=mode(t) || (surfaceTerminal ? "railway" : null) || relationModes.get(source) || hallMode ||
+            stationPoint?.network || containing?.network || namedTerminal?.network || nearMode(p[Math.floor(p.length/2)]) || "railway";
           const feature={id:source+(part?"#"+part:""),kind,network,area,paths};
-          for (const key of ["level","layer","local_ref","ref","name"]) if (t[key]!=null) feature[key]=t[key];
-          features.push(feature);
-          if (kind==="outline") shells.push(feature);
-          if (kind==="platform") for (const n of e.nodes || []) linked.add(n);
+          for (const key of ["level","layer","location","local_ref","ref","name"]) if (t[key]!=null) feature[key]=t[key];
+          if (kind==="passage") passages.push({feature,vertices,direct:direct || insideStation ||
+            (mappedTransfer(t) && nearMode(p[Math.floor(p.length/2)])),
+            extend:indoorWalk(t) || t.highway==="corridor" || t.footway==="corridor"});
+          else features.push(feature);
+          if (kind==="outline" || kind==="concourse") shells.push(feature);
+          if (kind==="platform" || kind==="concourse") for (const n of vertices) linked.add(n);
           if (e.type==="relation") for (const m of e.members || []) if(m.type==="way") relationWays.add(kind+"/way/"+m.ref);
         }
       }
     }
+    // Paths often split at stairs. Follow mapped shared nodes inside the station; an exit
+    // may anchor a segment but does not turn a chain of covered street sidewalks into passages.
+    let pending=passages;
+    for (let depth=0;pending.length && depth<10;depth++) {
+      const next=[], added=[];
+      for (const item of pending) {
+        if (!item.direct && !item.vertices.some(n=>linked.has(n))) { next.push(item); continue; }
+        features.push(item.feature);
+        if (item.extend) added.push(...item.vertices);
+      }
+      if (added.every(n=>linked.has(n))) break;
+      for (const n of added) linked.add(n);
+      pending=next;
+    }
     for (const [id,e] of nodes) {
       const t=e.tags || {}, source="node/"+id;
-      if (!accessible(t) || !(isPlatform(t) || (t.public_transport==="platform" && railMembers.has(source))) ||
-          t.highway==="bus_stop" || (t.bus==="yes" && !mode(t)) || !platformNumber(t) ||
+      if (!accessible(t) || unopened(t) || !platform(e,t) ||
+          t.highway==="bus_stop" || (t.bus==="yes" && !mode(t)) ||
           !Number.isFinite(e.lon) || !Number.isFinite(e.lat)) continue;
       const point=[e.lon,e.lat];
       features.push({id:source,kind:"platform",network:mode(t) || relationModes.get(source) || nearMode(point) || "railway",
@@ -230,18 +302,54 @@ globalThis.StationLayoutOSM = (() => {
     }
     return features;
   }
-  // A user-requested small view; use Overpass for read-only live queries.
+  // Each parent route supplies membership, never full route or national geometry.
   function query(s,w,n,e) {
     const box=[s,w,n,e].map(Number);
-    if (!box.every(Number.isFinite) || n<=s || e<=w || n-s>0.061 || e-w>0.081) throw Error("请再放大一级");
-    const b="("+box.map(v=>v.toFixed(5)).join(",")+")";
+    if (!box.every(Number.isFinite) || s < -90 || n > 90 || w < -180 || e > 180 ||
+        n<=s || e<=w || n-s>0.061 || e-w>0.081) throw Error("请再放大一级");
+    const b=box.map(v=>v.toFixed(5)).join(",");
+    const selectors=[
+      'nwr[railway~"^(station|halt|tram_stop|subway_entrance|platform|platform_edge)$"]',
+      'node[railway=stop]',
+      'nwr[public_transport~"^(platform|station|stop_position)$"]',
+      'wr["area:railway"~"^(platform|concourse)$"]',
+      'wr["railway:area"~"^(platform|concourse)$"]',
+      'wr[railway=concourse]',
+      'wr[public_transport=concourse]',
+      'wr[building~"^(train_station|transportation)$"]',
+      'wr[indoor~"^(corridor|room|area)$"]',
+      'wr[room~"^(concourse|hall|station_hall|ticket_hall|entrance_hall)$"]',
+      'wr[name~"站[厅廳]|穿堂層|[换換转轉]乘(通道|走廊)"]',
+      'wr["area:highway"~"^(footway|pedestrian)$"]',
+      'wr[highway~"^(corridor|platform)$"]',
+      'way[footway=corridor]',
+      'way[highway~"^(footway|steps|pedestrian)$"][indoor]',
+      'way[highway~"^(footway|steps|pedestrian)$"][tunnel]',
+      'way[highway~"^(footway|steps|pedestrian)$"][covered]',
+      'way[highway~"^(footway|steps|pedestrian)$"][level]',
+      'way[highway~"^(footway|steps|pedestrian)$"][layer]',
+      'way[highway~"^(footway|steps|pedestrian)$"][location=underground]',
+      'way[highway~"^(footway|steps|pedestrian)$"][area=yes]'
+    ];
+    const parents=["bn","bw","br"].flatMap(from=>[
+      `rel(${from}.local)[public_transport=stop_area];`,
+      `rel(${from}.local)[route~"^(subway|tram|light_rail|monorail|train)$"];`
+    ]).join("");
     return `[out:json][timeout:15];(`+
-      ["nwr[railway~\"^(station|halt|tram_stop|subway_entrance|platform|platform_edge)$\"]","nwr[public_transport~\"^(platform|station|stop_position)$\"]","wr[\"area:railway\"=platform]",
-       "wr[building=train_station]","wr[indoor=corridor]","way[highway=corridor]","way[footway=corridor]",
-       ...["indoor","tunnel","level","location"].map(k=>`way[highway~"^(footway|steps|pedestrian)$"][${k}]`)].map(sel=>sel+b+";").join("")+
-      `)->.local;.local out geom;`+
-      `(`+["bn","bw","br"].map(from=>`rel(${from}.local)[public_transport=stop_area];`+
-        `rel(${from}.local)[route~"^(subway|tram|light_rail|monorail|train)$"];`).join("")+`);out body;`;
+      selectors.map(selector=>`${selector}(${b});`).join("")+
+      `)->.local;(${parents})->.parents;`+
+      // A few platforms have only a member role. Fetch their geometry only in this cell.
+      `(.local;`+["node","way","rel"].flatMap(type=>
+        ["platform","platform_entry_only","platform_exit_only"].map(role=>`${type}(r.parents:"${role}")(${b});`)
+      ).join("")+`);out geom;.parents out body;`;
   }
-  return {extract,query,minimumZoom,prepareFeatures};
+  const globalSource = "https://overpass-api.de/api/interpreter";
+  // Use a regional extract only well inside its coverage. Elsewhere query a global source.
+  function sources(lat,lon,preferred=globalSource) {
+    const host="https://ovp.dresel.systems";
+    const region = lat >= 18 && lat <= 50 && lon >= 75 && lon <= 146 ? host+"/api-as/interpreter" :
+      lat >= 39 && lat <= 58 && lon >= -9 && lon <= 28 ? host+"/api/interpreter" : null;
+    return [...new Set([region,preferred,globalSource,"https://overpass.private.coffee/api/interpreter"].filter(Boolean))].slice(0,3);
+  }
+  return {extract,query,sources,minimumZoom,prepareFeatures};
 })();

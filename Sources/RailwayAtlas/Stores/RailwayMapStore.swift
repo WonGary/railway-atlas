@@ -9,7 +9,7 @@ final class RailwayMapStore: ObservableObject {
     @Published var experienceLines: [ExperienceMapLine] = []
     @Published var experienceMarker: Coordinate?
     @Published var experienceGeometryRevision = 0
-    @Published var historyMapActive = false
+    @Published var historyMapActive = false { didSet { scheduleStationLayouts() } }
     var applyingConfiguration = false
     @Published var renderSettings = RailRenderSettings() { didSet { rebuildVisible() } }
     private var stationTrackCategories: [String: RailCategory] = [:]
@@ -57,14 +57,23 @@ final class RailwayMapStore: ObservableObject {
     @Published var searchText = ""
     @Published var categories: Set<RailCategory> = Set(RailCategory.allCases) { didSet { rebuildVisible() } }
     @Published var showsStations = true { didSet { rebuildVisible() } }
-    @Published var showsStationLayouts = true { didSet { persist(showsStationLayouts, "railway.stationLayouts") } }
-    @Published var showsStationOutlines = true { didSet { persist(showsStationOutlines, "railway.stationOutlines") } }
-    @Published var showsPlatforms = true { didSet { persist(showsPlatforms, "railway.platforms") } }
-    @Published var showsPassengerPassages = true { didSet { persist(showsPassengerPassages, "railway.passengerPassages") } }
-    @Published var showsPlatformNumbers = true { didSet { persist(showsPlatformNumbers, "railway.platformNumbers") } }
+    @Published var showsStationLayouts = true { didSet { persist(showsStationLayouts, "railway.stationLayouts"); scheduleStationLayouts() } }
+    @Published var showsStationOutlines = true { didSet { persist(showsStationOutlines, "railway.stationOutlines"); scheduleStationLayouts() } }
+    @Published var showsConcourses = true { didSet { persist(showsConcourses, "railway.stationConcourses"); scheduleStationLayouts() } }
+    @Published var showsPlatforms = true { didSet { persist(showsPlatforms, "railway.platforms"); scheduleStationLayouts() } }
+    @Published var showsPassengerPassages = true { didSet { persist(showsPassengerPassages, "railway.passengerPassages"); scheduleStationLayouts() } }
+    @Published var showsPlatformNumbers = true { didSet { persist(showsPlatformNumbers, "railway.platformNumbers"); scheduleStationLayouts() } }
     @Published var loadingLayouts = false
     @Published var layoutStatus = ""
-    var layoutStatusBounds: MapBounds?
+    var layoutStatusCell: StationLayoutCell?
+    var scheduledLayoutCell: StationLayoutCell?
+    var layoutGeneration = UUID()
+    var layoutWork: Task<Void, Never>?
+    var layoutNextRequest = Date.distantPast
+    var layoutRetry: [StationLayoutCell: Date] = [:]
+    var layoutVisits: [StationLayoutCell: StationLayoutVisit] = [:]
+    lazy var layoutBase = layoutFeatures
+    let layoutSession: URLSession
     var layoutDataRevision = 0
     @Published var layoutFeatures = RailwayMapStore.bundledLayouts() { didSet { layoutDataRevision += 1 } }
     @Published var showsLabels = true { didSet { labelRevision += 1 } }
@@ -204,7 +213,7 @@ final class RailwayMapStore: ObservableObject {
             #endif
         }
     }
-    @Published var mapMode: MapMode = .apple
+    @Published var mapMode: MapMode = .apple { didSet { scheduleStationLayouts() } }
     @Published var region = MapBounds.china.region
     @Published var cameraRevision = 0
     @Published var selectedTab = 0
@@ -288,6 +297,7 @@ final class RailwayMapStore: ObservableObject {
     private let repository: RailwayRepository
 
     init(tileSession: URLSession? = nil, metroRetryDelays: [TimeInterval] = [30, 90]) {
+        layoutSession = tileSession ?? .shared
         self.metroRetryDelays = metroRetryDelays
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         repository = RailwayRepository(directory: support.appendingPathComponent("RailwayAtlas", isDirectory: true))
@@ -306,6 +316,7 @@ final class RailwayMapStore: ObservableObject {
         if qaIndex == nil {
             showsStationLayouts = UserDefaults.standard.object(forKey: "railway.stationLayouts") as? Bool ?? true
             showsStationOutlines = UserDefaults.standard.object(forKey: "railway.stationOutlines") as? Bool ?? true
+            showsConcourses = UserDefaults.standard.object(forKey: "railway.stationConcourses") as? Bool ?? true
             showsPlatforms = UserDefaults.standard.object(forKey: "railway.platforms") as? Bool ?? true
             showsPassengerPassages = UserDefaults.standard.object(forKey: "railway.passengerPassages") as? Bool ?? true
             showsPlatformNumbers = UserDefaults.standard.object(forKey: "railway.platformNumbers") as? Bool ?? true

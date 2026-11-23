@@ -977,12 +977,15 @@ function renderStationList() {
 
 function stationInfo(name) {
   const routeIndex = state.route?.stops.findIndex(stop => stop.name === name) ?? -1;
+  const routes = state.routes.filter(route => route.stops.some(stop => stop.name === name));
+  const mappedRoute = routes.find(route => route.stops.some((stop,i) => stop.name === name && route.stopCoordinates?.[i]));
+  const mappedCoordinate = mappedRoute?.stopCoordinates[mappedRoute.stops.findIndex(stop => stop.name === name)];
   return {
     route: state.route,
     index: routeIndex,
     stop: routeIndex >= 0 ? state.route.stops[routeIndex] : null,
-    coordinate: routeIndex >= 0 ? getStopCoordinate(routeIndex) : null,
-    routes: state.routes.filter(route => route.stops.some(stop => stop.name === name))
+    coordinate: (routeIndex >= 0 ? getStopCoordinate(routeIndex) : null) ?? mappedCoordinate ?? null,
+    routes
   };
 }
 
@@ -1012,6 +1015,7 @@ function renderMetroStationInfo(city, station) {
     const route = detail?.routes.find(item => item.id === button.dataset.metroRoute);
     if (route) selectMetroRoute(city, route);
   }));
+  StationLayoutLayer.addFocusButton($("infoContent"),coordinate);
   refreshMetroDetailVisibility();
 }
 
@@ -1082,6 +1086,7 @@ function renderInfo(name) {
     <p class="station-source">随包坐标用于线路示意，站场股道不在本数据范围内。${info.coordinate ? `<br>${info.coordinate[0].toFixed(5)}, ${info.coordinate[1].toFixed(5)}` : ""}
       <br><button class="text-button" id="stationDetails">查看途经线路、线路所与本站车次</button></p>`;
   $("stationDetails").onclick = () => showStationBoard(name);
+  StationLayoutLayer.addFocusButton($("infoContent"),info.coordinate);
   $("infoContent").querySelectorAll(".station-route-link").forEach(button => button.addEventListener("click", () => {
     const route = state.routes.find(item => item.train === button.dataset.train);
     if (route) selectRoute(route.id);

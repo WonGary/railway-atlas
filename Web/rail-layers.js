@@ -24,6 +24,7 @@ const RailMapLayers = (() => {
     const raw=document.createElement("details"), summary=document.createElement("summary"), data=document.createElement("pre");
     summary.textContent="原始属性";data.textContent=JSON.stringify(tags,null,2);raw.append(summary,data);$("infoContent").append(raw);
     if (station) {
+      StationLayoutLayer.addFocusButton($("infoContent"),coordinate);
       const button = document.createElement("button");
       button.className = "text-button"; button.textContent = "查看线路与本站车次";
       button.onclick = () => showStationBoard(name); $("infoContent").append(button);

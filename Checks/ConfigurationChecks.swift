@@ -21,13 +21,14 @@ enum ConfigurationChecks {
         let restored = try AtlasConfiguration.decode(value.encoded())
         var stationDetail = try AtlasConfiguration.decode(Data(#"{"layers":{"showsStationLayouts":false}}"#.utf8))
         try check(stationDetail.layers.showsStationLayouts == false && stationDetail.layers.showsPlatforms
-                  && stationDetail.layers.showsStationOutlines && stationDetail.layers.showsPassengerPassages
+                  && stationDetail.layers.showsStationOutlines && stationDetail.layers.showsConcourses && stationDetail.layers.showsPassengerPassages
                   && stationDetail.layers.showsPlatformNumbers, "legacy station detail master and new layer defaults")
         stationDetail.layers.showsStationLayouts = true
         stationDetail.layers.showsPlatforms = false
         stationDetail.layers.showsStationOutlines = false
+        stationDetail.layers.showsConcourses = false
         let savedDetail = try AtlasConfiguration.decode(stationDetail.encoded()).layers
-        try check(!savedDetail.showsPlatforms && !savedDetail.showsStationOutlines && savedDetail.showsPassengerPassages
+        try check(!savedDetail.showsPlatforms && !savedDetail.showsStationOutlines && !savedDetail.showsConcourses && savedDetail.showsPassengerPassages
                   && savedDetail.showsPlatformNumbers, "platform numbers persist independently from platform shapes")
         try check(!value.layers.prioritizesUrbanTransit && !restored.layers.prioritizesUrbanTransit,
                   "old config defaults urban priority off without changing category/route preferences")

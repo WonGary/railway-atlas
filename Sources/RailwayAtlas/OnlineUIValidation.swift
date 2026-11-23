@@ -292,22 +292,49 @@ enum OnlineUIValidation {
             if !ok { throw DataError.invalid("\(label) Z\(store.displayZoom): \(counts())") }
         }
         try await focus(western,13)
-        try require(counts() == [0,0,0], "Z13")
+        try require(counts() == [0,0,0,0], "Z13")
         try await focus(western,16)
-        try require(counts() == [1,0,0], "Beijing West outline")
+        let westOutlineCount = counts()[0]
+        try require(westOutlineCount >= 1 && counts() == [westOutlineCount,0,0,0], "Beijing West outline")
         try await focus(western,17)
         let west = counts()
-        try require(west == [1,10,0], "Beijing West platforms")
+        try require(west[0] >= 1 && west == [west[0],0,10,0], "Beijing West platforms")
         try require(coordinator.overlays(for: .platform).allSatisfy { $0 is MKPolygon }, "Platform polygons")
         _ = try await capture("beijing-west-z17", directory: directory, window: window)
         store.showsStations = false
         store.showsStationOutlines = false
         try await Task.sleep(for: .milliseconds(220))
-        try require(counts() == [0,10,0], "Platforms independent of outlines, tracks and dots")
+        try require(counts() == [0,0,10,0], "Platforms independent of outlines, tracks and dots")
         store.showsStationOutlines = true
+        try await focus(Coordinate(25.03385,121.52885),17)
+        try require(counts() == [1,0,2,0] && coordinator.overlays(for: .platform).allSatisfy { $0 is MKPolygon },
+                    "Dongmen metro station and two stacked platform polygons")
+        _ = try await capture("dongmen-z17", directory: directory, window: window)
+        try await focus(Coordinate(25.0477,121.5171),17)
+        let taipei = counts()
+        try require(taipei[1] >= 1 && coordinator.overlays(for: .concourse).allSatisfy { $0 is MKPolygon }, "Taipei Main hall")
+        _ = try await capture("taipei-hall-z17", directory: directory, window: window)
+        store.showsConcourses = false
+        try await Task.sleep(for: .milliseconds(220))
+        try require(counts() == [taipei[0],0,taipei[2],taipei[3]], "Hall switch independent of other geometry")
+        store.showsConcourses = true
+        try await focus(Coordinate(39.9217,116.4960),18)
+        try require(counts()[0] > 0 && counts()[3] > 0, "Shilipu outline and passenger paths")
+        let passages = coordinator.overlays(for: .passage)
+        try require(passages.allSatisfy { (map.renderer(for: $0) as? MKOverlayPathRenderer)?.strokeColor != nil },
+                    "Shilipu passages have active path renderers")
+        _ = try await capture("shilipu-z18", directory: directory, window: window)
         try await focus(Coordinate(39.922,116.4555),18)
         try require(coordinator.overlays(for: .platform).count == 2 && coordinator.overlays(for: .platform).allSatisfy { $0 is MKMultiPolyline } &&
                     coordinator.platformAnnotations.isEmpty, "Hujialou two unnumbered platform lines")
+        try await focus(Coordinate(40.05829,116.3410691),18)
+        try require(coordinator.overlays(for: .outline).contains { $0 is MKPolygon }, "Yuxin station footprint")
+        try await focus(Coordinate(23.15491,113.30699),18)
+        try require(coordinator.overlays(for: .concourse).contains { $0 is MKPolygon }, "Shahe ground-level concourse")
+        try await focus(Coordinate(39.896845,116.39179),19)
+        let dots = coordinator.overlays(for: .platform).compactMap { $0 as? MKCircle }
+        try require(dots.count == 2 && dots.allSatisfy { map.renderer(for: $0) is MKCircleRenderer },
+                    "Qianmen tram point platforms")
         let admiralty = Coordinate(22.27848,114.16602)
         func texts() -> [String] { coordinator.platformAnnotations.values.map(\.style.text).sorted() }
         try await focus(admiralty,17)
@@ -334,17 +361,17 @@ enum OnlineUIValidation {
         _ = try await capture("yuen-long-z19", directory: directory, window: window)
         try await focus(metro,18)
         let xizhimen = counts()
-        try require(xizhimen.allSatisfy { $0 > 0 }, "Xizhimen passenger passages")
+        try require(xizhimen[0] > 0 && xizhimen[2] > 0 && xizhimen[3] > 0, "Xizhimen passenger passages")
         NSApp.appearance = NSAppearance(named: .darkAqua)
         try await Task.sleep(for: .milliseconds(320))
         _ = try await capture("xizhimen-z18-dark", directory: directory, window: window)
         store.showsPassengerPassages = false
         try await Task.sleep(for: .milliseconds(220))
-        try require(counts() == [xizhimen[0],xizhimen[1],0], "Passages off")
+        try require(counts() == [xizhimen[0],xizhimen[1],xizhimen[2],0], "Passages off")
         store.showsPassengerPassages = true
         store.showsStationLayouts = false
         try await Task.sleep(for: .milliseconds(150))
-        try require(counts() == [0,0,0], "Hidden detail layer")
+        try require(counts() == [0,0,0,0], "Hidden detail layer")
         store.showsStationLayouts = true
         store.showsStations = false
         try await Task.sleep(for: .milliseconds(150))
@@ -365,7 +392,43 @@ enum OnlineUIValidation {
         store.showsPlatformNumbers = false
         try await Task.sleep(for: .milliseconds(250))
         _ = try await capture("admiralty-z18-offline-no-numbers", directory: directory, window: window)
-        try "Beijing West Z17 \(west), two unnumbered Hujialou lines, Admiralty Z18 5/6, 7, 8, Yuen Long light rail 1–5, Xizhimen Z18 \(xizhimen). Independent switches passed. Online and offline renderers captured."
+        store.showsStationLayouts = false
+        store.mapMode = .offline
+        store.focusStationLayouts(at: Coordinate(39.9217,116.4960))
+        try await Task.sleep(for: .milliseconds(400))
+        let focusedProjection = RailProjection(region: store.region, size: canvasSize)
+        let focusedZoom = RailDisplayPolicy.zoom(longitudeSpan: focusedProjection.visibleRegion.span.longitudeDelta, width: canvasSize.width)
+        let shilipu = store.stationLayouts(in: focusedProjection.visibleBounds, zoom: focusedZoom)
+        try require(focusedZoom >= 18 && store.showsStationLayouts && shilipu.contains { $0.kind == .passage } &&
+                    !store.showsPlatformNumbers, "View station detail action preserves individual switches")
+        _ = try await capture("shilipu-offline-detail", directory: directory, window: window)
+        var receipt = "Dongmen Z17: 1 station, 2 metro platform polygons. Taipei Main Z17: \(taipei), hall switch passed. Yuxin Z18 station polygon. Shahe Z18 concourse polygon. Qianmen Z19 two tram platform circles with active renderers. Shilipu Z18: outlines and rendered passages, station-detail action on offline Canvas. Beijing West Z17 \(west), two unnumbered Hujialou lines, Admiralty Z18 5/6, 7, 8, Yuen Long light rail 1–5, Xizhimen Z18 \(xizhimen)."
+        if CommandLine.arguments.contains("--live-station-cell") {
+            // Remove the two bundled records from this isolated QA store so only a live query can restore them.
+            let online = RailwayMapStore()
+            online.viewportWidth = 1000
+            online.region = MKCoordinateRegion(center: Coordinate(39.94013,116.45629).location,
+                span: .init(latitudeDelta: 0.002, longitudeDelta: 0.004))
+            online.mapMode = .apple
+            guard let target = online.stationLayoutTarget else { throw DataError.invalid("Missing online test cell") }
+            let stationIDs: Set<String> = ["way/120521104","way/120521110"]
+            online.layoutBase.removeAll { stationIDs.contains($0.id) }
+            online.rebuildStationLayouts()
+            await online.layoutWork?.value
+            guard let visit = online.layoutVisits[target],
+                  stationIDs.isSubset(of: visit.features.filter { $0.network == .metro && $0.kind == .platform }.map(\.id)) else {
+                throw DataError.invalid("Live station query: \(online.currentLayoutStatus)")
+            }
+            online.mapMode = .cached
+            await online.layoutWork?.value
+            let saved = online.stationLayouts(in: target.bounds, zoom: 18)
+            guard stationIDs.isSubset(of: saved.map(\.id)) else { throw DataError.invalid("Cached map lost live platforms") }
+            online.mapMode = .apple
+            await online.layoutWork?.value
+            guard online.layoutVisits[target]?.date == visit.date else { throw DataError.invalid("Duplicate station request") }
+            receipt += "\nLive camera query at Nongye Zhanlanguan returned both metro platforms. Cached mode and revisiting the same cell retained the result."
+        }
+        try receipt
             .write(to: directory.appendingPathComponent("station-layout-check.txt"), atomically: true, encoding: .utf8)
     }
 
@@ -593,14 +656,14 @@ enum OnlineUIValidation {
     static func capture(_ name: String, directory: URL, window: NSWindow?) async throws -> CaptureMethod {
         let window = window?.attachedSheet ?? window
         // Metal-backed MapKit cannot be captured by NSView.cacheDisplay.
-        // Current-process capture is explicitly available without screen-recording
-        // consent. It captures only this app, including live glass composition.
+        // Prefer the compositor for MapKit. A locked or headless session may
+        // expose the window but decline capture; retain the view snapshot then.
         if let window {
             let content: SCShareableContent?
             if #available(macOS 14.4, *) {
-                content = try await SCShareableContent.currentProcess
+                content = try? await SCShareableContent.currentProcess
             } else if CGPreflightScreenCaptureAccess() {
-                content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+                content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
             } else {
                 content = nil
             }
@@ -609,9 +672,9 @@ enum OnlineUIValidation {
                 configuration.width = Int(target.frame.width * window.backingScaleFactor)
                 configuration.height = Int(target.frame.height * window.backingScaleFactor)
                 configuration.showsCursor = false
-                let image = try await SCScreenshotManager.captureImage(
-                    contentFilter: SCContentFilter(desktopIndependentWindow: target), configuration: configuration)
-                if let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                if let image = try? await SCScreenshotManager.captureImage(
+                    contentFilter: SCContentFilter(desktopIndependentWindow: target), configuration: configuration),
+                   let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
                     try data.write(to: directory.appendingPathComponent("\(name).png"))
                     return .compositor
                 }

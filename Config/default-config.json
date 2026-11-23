@@ -22,6 +22,7 @@
     "showsStations": true,
     "showsStationLayouts": true,
     "showsStationOutlines": true,
+    "showsConcourses": true,
     "showsPlatforms": true,
     "showsPassengerPassages": true,
     "showsPlatformNumbers": true,

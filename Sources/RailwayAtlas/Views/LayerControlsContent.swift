@@ -114,13 +114,14 @@ struct LayerControlsContent: View {
             if store.showsStationLayouts {
                 VStack(alignment: .leading, spacing: 5 * uiScale) {
                     settingToggle("车站轮廓 · Z16", isOn: $store.showsStationOutlines)
-                    settingToggle("站台轮廓 · Z17", isOn: $store.showsPlatforms)
+                    settingToggle("站厅轮廓 · Z17", isOn: $store.showsConcourses)
+                    settingToggle("站台（面、线或点）· Z17", isOn: $store.showsPlatforms)
                     settingToggle("乘客通道 · Z18", isOn: $store.showsPassengerPassages)
                     settingToggle("站台号 · Z18", isOn: $store.showsPlatformNumbers)
                 }.padding(.leading, 10 * uiScale)
                 Text(store.stationLayoutHint).atlasFont(.caption2).foregroundStyle(.secondary)
                 if store.displayZoom >= 16 && store.mapMode == .apple {
-                    Button("补充当前站区") { Task { await store.loadStationLayouts() } }.disabled(store.loadingLayouts)
+                    Button("重新查询当前站区") { store.scheduleStationLayouts(force: true) }.disabled(store.loadingLayouts || store.stationLayoutTarget == nil)
                     if store.currentLayoutStatus != "" { Text(store.currentLayoutStatus).atlasFont(.caption2) }
                 }
             }

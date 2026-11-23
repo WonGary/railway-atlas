@@ -85,6 +85,7 @@ final class ConfigurationStore: ObservableObject {
         value.layers.showsStations = map.showsStations
         value.layers.showsStationLayouts = map.showsStationLayouts
         value.layers.showsStationOutlines = map.showsStationOutlines
+        value.layers.showsConcourses = map.showsConcourses
         value.layers.showsPlatforms = map.showsPlatforms
         value.layers.showsPassengerPassages = map.showsPassengerPassages
         value.layers.showsPlatformNumbers = map.showsPlatformNumbers
@@ -160,6 +161,7 @@ final class ConfigurationStore: ObservableObject {
         map.showsStations = value.layers.showsStations
         map.showsStationLayouts = value.layers.showsStationLayouts ?? true
         map.showsStationOutlines = value.layers.showsStationOutlines
+        map.showsConcourses = value.layers.showsConcourses
         map.showsPlatforms = value.layers.showsPlatforms
         map.showsPassengerPassages = value.layers.showsPassengerPassages
         map.showsPlatformNumbers = value.layers.showsPlatformNumbers

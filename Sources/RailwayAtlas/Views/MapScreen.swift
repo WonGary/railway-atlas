@@ -344,14 +344,16 @@ struct OfflineRailwayMap: View {
                 }
                 let zoom = RailDisplayPolicy.zoom(longitudeSpan: projection.visibleRegion.span.longitudeDelta, width: size.width)
                 let details = store.stationLayouts(in: projection.visibleBounds, zoom: zoom)
-                for feature in details where feature.kind == .outline {
-                    feature.draw(&context, projection: projection, dark: scheme == .dark)
+                for kind in [StationLayoutKind.outline, .concourse] {
+                    for feature in details where feature.kind == kind {
+                        feature.draw(&context, projection: projection, dark: scheme == .dark)
+                    }
                 }
                 for group in store.historyMapActive ? [] : store.renderGroups {
                     let path = Path(group.path).applying(projection.transform)
                     draw(path, appearance: group.appearance, context: &context)
                 }
-                for feature in details where feature.kind != .outline {
+                for feature in details where feature.kind == .platform || feature.kind == .passage {
                     feature.draw(&context, projection: projection, dark: scheme == .dark)
                 }
                 if !store.historyMapActive, let selected = store.visibleLines.first(where: { $0.id == store.selection?.id }) {

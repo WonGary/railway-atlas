@@ -162,6 +162,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             // an already-coloured route. Reordering keeps vector geometry.
             let ordered: [any MKOverlay] = (coordinator.shade.map { [$0 as any MKOverlay] } ?? [])
                 + coordinator.overlays(for: .outline)
+                + coordinator.overlays(for: .concourse)
                 + displayGroups.flatMap {
                     coordinator.groups[.init(token: $0.geometryToken, alignment: store.alignment), default: []]
                         .map { $0 as any MKOverlay }
@@ -418,6 +419,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             if let kind = layoutKinds[ObjectIdentifier(overlay)] {
                 let renderer: MKOverlayPathRenderer
                 if let polygon = overlay as? MKPolygon { renderer = MKPolygonRenderer(polygon: polygon) }
+                else if let circle = overlay as? MKCircle { renderer = MKCircleRenderer(circle: circle) }
                 else if let line = overlay as? MKMultiPolyline { renderer = MKMultiPolylineRenderer(multiPolyline: line) }
                 else { return MKOverlayRenderer(overlay: overlay) }
                 paintLayout(kind, renderer)

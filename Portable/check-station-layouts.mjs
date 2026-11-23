@@ -8,7 +8,7 @@ for (const filename of ["station-layouts.json","station-layouts.js"])
 const data=JSON.parse(fs.readFileSync(new URL("station-layouts.json",native)));
 assert.equal(new Set(data.features.map(f=>f.id)).size,data.features.length);
 assert.equal(data.license,"ODbL-1.0");
-assert.deepEqual(StationLayoutOSM.minimumZoom,{outline:16,platform:17,passage:18});
+assert.deepEqual(StationLayoutOSM.minimumZoom,{outline:16,concourse:17,platform:17,passage:18});
 function inBox(x,y,r) { return data.features.filter(f=>f.paths[0].some(([lon,lat])=>Math.abs(lon-x)<r && Math.abs(lat-y)<r)); }
 const west=inBox(116.3151,39.8935,.008);
 assert.ok(west.some(f=>f.id==="way/30680817" && f.kind==="outline" && f.area && f.network==="railway"));
@@ -16,6 +16,12 @@ assert.equal(west.filter(f=>f.kind==="platform" && f.area).length,10);
 const hujialou=inBox(116.4555,39.922,.002);
 assert.equal(hujialou.filter(f=>f.kind==="platform" && f.network==="metro" && !f.area).length,2);
 assert.ok(hujialou.every(f=>!f.platformLabel));
+const dongmen=inBox(121.52885,25.03385,.003);
+assert.deepEqual(dongmen.filter(f=>f.network==="metro" && f.kind==="platform" && f.area).map(f=>f.level).sort(),["-2","-3"]);
+assert.ok(dongmen.some(f=>f.kind==="outline" && f.area));
+assert.ok(inBox(121.5171,25.0477,.003).some(f=>f.kind==="concourse" && f.area && f.name==="車站大廳"));
+assert.equal(inBox(116.4960,39.9217,.003).filter(f=>f.kind==="passage").length,4);
+assert.equal(inBox(116.4724,39.9218,.002).length,0);
 const admiralty=inBox(114.166,22.2785,.002).filter(f=>f.kind==="platform");
 assert.deepEqual(admiralty.filter(f=>f.area).map(f=>f.platformLabel).sort(),["5/6","7","8"]);
 assert.ok(admiralty.filter(f=>f.platformLabel && !f.area).every(f=>admiralty.some(a=>a.id===f.labelOwner)));
@@ -45,4 +51,33 @@ const [member]=StationLayoutOSM.extract({elements:[line,route]});
 assert.equal(member.network,"lightRail");assert.equal(member.platformLabel,undefined);
 assert.equal(StationLayoutOSM.extract({elements:[{...tramPoint,tags:{public_transport:"platform",bus:"yes",ref:"1"}}]}).length,0);
 assert.throws(()=>StationLayoutOSM.extract({elements:[],remark:"timeout"}));
+const onlyPoints=[
+  {type:"node",id:70,lat:.5,lon:.5,tags:{railway:"station",station:"subway",ref:"10"}},
+  {type:"node",id:71,lat:.5001,lon:.5,tags:{railway:"subway_entrance",ref:"B"}}
+];
+assert.deepEqual(StationLayoutOSM.extract({elements:onlyPoints}),[]);
+const rel=(id,role)=>({type:"relation",id:91,tags:{type:"route",route:"subway"},members:[{type:"node",ref:id,role}]});
+// These station and stopping-point records are listed as platforms by their relations.
+for (const [id,tags] of [[294123681,{public_transport:"stop_position",railway:"stop",subway:"yes"}],
+                          [7791605887,{public_transport:"station",railway:"station",station:"subway",ref:"A03"}],
+                          [71,{railway:"subway_entrance",ref:"B"}]]) {
+  assert.deepEqual(StationLayoutOSM.extract({elements:[{type:"node",id,lat:1,lon:2,tags},rel(id,"platform")]}),[]);
+}
+const roleOnly={type:"node",id:81,lat:1,lon:2,tags:{local_ref:"2"}};
+for (const role of ["platform","platform_entry_only","platform_exit_only"]) {
+  const [f]=StationLayoutOSM.extract({elements:[roleOnly,rel(81,role)]});
+  assert.deepEqual([f.area,f.paths,f.platformLabel],[false,[[[2,1]]],"2"]);
+  assert.ok(StationLayoutOSM.query(1,2,1.01,2.01).includes(`node(r.parents:"${role}")`));
+}
+for (const [id,name,kind] of [["way/126857011","育新","outline"],["way/152587337","长春桥站","outline"],
+                            ["way/596468270","七里堡","outline"],["way/1086183848","浮山所","outline"],
+                            ["relation/15525717","岗厦北站","outline"],["way/1343685232","沙河站地面站厅","concourse"]]) {
+  assert.ok(data.features.some(f=>f.id===id && f.name===name && f.kind===kind && f.area),name);
+}
+const qianmen=data.features.find(f=>f.id==="node/1408143367");
+assert.deepEqual([qianmen.network,qianmen.kind,qianmen.area,qianmen.paths],["tram","platform",false,[[[116.3917177,39.8968439]]]]);
+const hall=way(50,ring,{railway:"concourse"});
+assert.deepEqual(StationLayoutOSM.extract({elements:[hall]}).map(f=>[f.id,f.kind,f.area]),[["way/50","concourse",true]]);
+assert.equal(StationLayoutOSM.extract({elements:[{...hall,tags:{...hall.tags,access:"private"}}]}).length,0);
+assert.throws(()=>StationLayoutOSM.query(20,115,21,116));
 console.log(`站区检查通过，${data.features.length} 个真实要素，原生与网页资料一致。`);

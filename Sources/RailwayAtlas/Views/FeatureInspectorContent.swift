@@ -30,6 +30,13 @@ struct FeatureInspectorContent: View {
         VStack(alignment: .leading, spacing: 12 * uiScale) {
             heading(model)
             if model.isStation {
+                if !store.historyMapActive {
+                    Button("查看站区细节", systemImage: "map") {
+                        store.focusStationLayouts(at: item.coordinate)
+                    }
+                    .accessibilityIdentifier("focus-station-layouts")
+                    .help("放大到本站，查看已收录的站厅、站台和通道")
+                }
                 Button("全线站点与本站车次", systemImage: "list.bullet.rectangle") {
                     showsStationDirectory = true
                 }

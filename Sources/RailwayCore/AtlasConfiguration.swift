@@ -53,6 +53,7 @@ public struct AtlasConfiguration: Codable, Sendable {
         public var showsStations = true
         public var showsStationLayouts: Bool? = true
         public var showsStationOutlines = true
+        public var showsConcourses = true
         public var showsPlatforms = true
         public var showsPassengerPassages = true
         public var showsPlatformNumbers = true
