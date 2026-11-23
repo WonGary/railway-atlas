@@ -1,6 +1,7 @@
 const RailMapLayers = (() => {
   const prefix = "./data/rail/";
-  let map, overview, region, live, activeRegion, tileTemplate, regionGeneration = 0;
+  let map, overview, world, region, live, activeRegion, tileTemplate, regionGeneration = 0;
+  const regionalTiles = [];
   let overviewReady = false;
   const overviewGroups=[];
   const tagColor = value => /^#[0-9a-f]{6}$/i.test(value || "") ? value : null;
@@ -100,7 +101,7 @@ const RailMapLayers = (() => {
   }
   async function loadOverview() {
     const index = await loadJSON(`${prefix}index.json`);
-    const groups = await Promise.all(index.tiles.map(async ({x,y,z,file}) => {
+    const results = await Promise.allSettled(index.tiles.map(async ({x,y,z,file}) => {
       const response = await fetch(prefix + file);
       if (!response.ok) throw new Error("铁路概览瓦片读取失败。");
       const tile = AtlasVector.decode(new Uint8Array(await response.arrayBuffer()));
@@ -115,9 +116,10 @@ const RailMapLayers = (() => {
         const parts = shape.type === "LineString" ? [shape.coordinates] : shape.coordinates;
         for (const part of parts) groups.get(key).parts.push(part.map(([lon,lat]) => [lat,lon]));
       }
+      if (groups.size) regionalTiles.push([x,y]);
       return [...groups.values()];
     }));
-    for (const {parts,tags} of groups.flat()) {
+    for (const {parts,tags} of results.flatMap(result => result.status==="fulfilled" ? result.value : [])) {
       const line=L.polyline(parts,{...style(tags,true),interactive:true,pane:"railOverview"});
       const {category}=AtlasPrefs.classify(tags);
       line.on("click",e=>inspect("铁路概览 · "+AtlasPrefs.categories[category][0],{feature:"铁路概览",分类:AtlasPrefs.categories[category][0]},false,e.latlng));
@@ -125,6 +127,38 @@ const RailMapLayers = (() => {
     }
     overviewReady = true;
     toggle();
+    world.repaint();
+  }
+  async function timedResponse(url, parentSignal) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (parentSignal?.aborted) controller.abort();
+    parentSignal?.addEventListener("abort",abort,{once:true});
+    const timer = setTimeout(abort,6500);
+    try {
+      const response = await fetch(url,{signal:controller.signal,credentials:"omit"});
+      if (!response.ok) throw new Error(`地图资料 HTTP ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+    } finally {
+      clearTimeout(timer);
+      parentSignal?.removeEventListener("abort",abort);
+    }
+  }
+  async function onlineTile({x,y,z}, signal) {
+    tileTemplate ??= timedResponse("https://tiles.openfreemap.org/planet").then(bytes => {
+      const template = JSON.parse(new TextDecoder().decode(bytes)).tiles?.[0];
+      if (!template?.startsWith("https://tiles.openfreemap.org/")) throw new Error("铁路瓦片地址不可用");
+      return template;
+    }).catch(error => { tileTemplate = null; throw error; });
+    try {
+      const template = await tileTemplate;
+      const url = template.replace("{x}",x).replace("{y}",y).replace("{z}",z);
+      return AtlasVector.decode(await timedResponse(url,signal));
+    } catch (error) {
+      if (signal.aborted) throw error;
+      const url = `https://tiles.versatiles.org/tiles/osm-vector/${z}/${x}/${y}`;
+      return AtlasVector.decode(await timedResponse(url,signal));
+    }
   }
   // Detail tiles are painted independently. Leaflet retains the previous zoom's
   // tiles while the next view loads. The bundled Z4 layer remains underneath.
@@ -138,24 +172,13 @@ const RailMapLayers = (() => {
         const controller = new AbortController();
         canvas.abortTile = () => controller.abort();
         (async () => {
-          let sources = await LocalRailCache.read(coords);
-          if (!sources.length) {
-          if(AtlasPrefs.value.mode!=="online") return;
-          if (!tileTemplate) tileTemplate = loadJSON("https://tiles.openfreemap.org/planet").then(info => {
-            const template = info.tiles?.[0];
-            if (!template?.startsWith("https://tiles.openfreemap.org/")) throw new Error("铁路瓦片地址不可用");
-            return template;
-          }).catch(error => { tileTemplate = null; throw error; });
-          const url = (await tileTemplate).replace("{x}",x).replace("{y}",y).replace("{z}",z);
-          const response = await fetch(url,{signal:controller.signal});
-          if (!response.ok) throw new Error(`地图资料 HTTP ${response.status}`);
-          sources = [new Uint8Array(await response.arrayBuffer())];
-          }
+          const local = (await LocalRailCache.read(coords)).map(bytes => AtlasVector.decode(bytes));
+          if (!local.length && AtlasPrefs.value.mode!=="online") return;
+          const tiles = local.length ? local : [await onlineTile(coords,controller.signal)];
           if (controller.signal.aborted) return;
           canvas.hits = [];
           canvas.stationNames = [];
-          for (const source of sources) {
-          const tile = AtlasVector.decode(source);
+          for (const tile of tiles) {
           for (const layerName of Object.keys(tile.layers).filter(name =>
             ["transportation","poi","streets","public_transport","railway_line_high","speed_railway_line_low"].includes(name) ||
             name.startsWith("standard_railway_text_stations"))) {
@@ -164,10 +187,11 @@ const RailMapLayers = (() => {
               const feature = layer.feature(i), tags = feature.properties;
               const line = feature.type === 2 && (["railway_line_high","speed_railway_line_low"].includes(layerName) ||
                 (["rail","transit"].includes(tags.class) && /^(rail|subway|light_rail|tram|monorail|narrow_gauge|funicular)$/.test(tags.subclass)) ||
-                (layerName === "streets" && /^(rail|light_rail|subway|tram)$/.test(tags.kind)));
+                (layerName === "streets" && (tags.rail===true || /^(rail|light_rail|subway|tram|monorail|narrow_gauge|funicular)$/.test(tags.kind))));
               const station = feature.type === 1 && z >= 9 && (layerName.startsWith("standard_railway_text_stations") ||
                 ["railway","railway_station"].includes(tags.class) ||
-                /^(station|halt|tram_stop|subway)$/.test(tags.subclass));
+                /^(station|halt|tram_stop|subway)$/.test(tags.subclass) ||
+                (layerName === "public_transport" && /^(station|halt|tram_stop|subway_station|railway_station)$/.test(tags.kind)));
               if (!line && !station) continue;
               const visual = style(tags,false,station,map.getZoom());
               if (!visual.visible) continue;
@@ -193,6 +217,7 @@ const RailMapLayers = (() => {
                   const points=path.map(p=>[p.x*factor,p.y*factor]);
                   points.forEach(([x,y],i)=>i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
                   canvas.hits.push({points,tags});
+                  if (path.length > 1 && !AtlasPrefs.classify(tags).urban) canvas.hasTracks = true;
                 }
                 ctx.stroke();
                 if(line && !visual.dashArray && AtlasPrefs.value.railwayPattern && !AtlasPrefs.classify(tags).urban && z>=11){
@@ -208,8 +233,12 @@ const RailMapLayers = (() => {
       }
     });
     const grid = new Grid({pane:"railDetail",minZoom:7,maxNativeZoom:14,maxZoom:19,keepBuffer:2,updateWhenIdle:true,
-      attribution:AtlasVectorBasemap.openFreeMapAttribution});
-    grid.on("tileunload",event => event.tile.abortTile?.());
+      attribution:AtlasVectorBasemap.openFreeMapAttribution+' · <a href="https://versatiles.org/">VersaTiles</a>'});
+    grid.on("tileunload",event => {
+      event.tile.abortTile?.();
+      world.showDetail(event.coords,false);
+    });
+    grid.on("tileload",event => world.showDetail(event.coords,!!event.tile.hasTracks));
     grid.on("tileload tileunload add remove", StationLabels.schedule);
     grid.on("load",()=>toggle());
     map.on("click",event => {
@@ -242,6 +271,7 @@ const RailMapLayers = (() => {
     if (!map) return;
     const rail = $("showRail").checked;
     const mode=AtlasPrefs.value.mode;
+    setLayerVisible(world,style(WorldRail.tags,true).visible && mode!=="offline");
     if(overviewReady){
       for(const {line,tags} of overviewGroups){
         const visual=style(tags,true);
@@ -252,12 +282,17 @@ const RailMapLayers = (() => {
       setLayerVisible(overview,mode!=="offline" && (rail || state.showMetro));
     }
     setLayerVisible(live,mode!=="offline" && (rail || state.showMetro));
-    if (redraw) { live.redraw(); renderRegion(); }
+    if (redraw) { world.repaint(); live.redraw(); renderRegion(); }
   }
   function setup(target) {
     map = target;
-    for (const [pane,z] of [["railOverview",380],["railDetail",390]]) map.createPane(pane).style.zIndex = z;
+    for (const [pane,z] of [["worldRail",375],["railOverview",380],["railDetail",390]]) map.createPane(pane).style.zIndex = z;
     region = L.layerGroup().addTo(map); overview = L.layerGroup();
+    world = WorldRail.create(map,regionalTiles,style,inspect);
+    world.on("tileload", event => {
+      const {x,y,z} = event.coords;
+      world.showDetail(event.coords,!!live?._tiles?.[`${x}:${y}:${z}`]?.el.hasTracks);
+    });
     live = detailGrid(); toggle();
     LocalRailCache.setup();
     map.on("zoomend",() => { toggle(); renderRegion(); });

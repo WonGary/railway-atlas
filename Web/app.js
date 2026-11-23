@@ -804,7 +804,8 @@ function refreshMetroDetailVisibility() {
       weight: (construction ? 1.6 : 1.6 + Math.max(0, Math.min(1, (zoom - 4) / 5)) * 1.3)*prefs.metroWidthScale
     });
   });
-  $("zoomStatus").textContent = `Z${zoom} · 城市轨道 ${activeCities.size ? `细节 ${activeCities.size} 城` : "概览"}`;
+  const worldOverview = zoom < 7 && prefs.mode !== "offline" && $("showRail").checked;
+  $("zoomStatus").textContent = `Z${zoom} · ${worldOverview ? "铁路干线概览" : `城市轨道 ${activeCities.size ? `细节 ${activeCities.size} 城` : "概览"}`}`;
   StationLabels.schedule();
 }
 

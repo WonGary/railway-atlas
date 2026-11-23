@@ -1,4 +1,6 @@
-# 铁道漫游 0.8.5 网页地图
+# 铁道漫游 0.8.6 网页地图
+
+缩到世界视图（Z2）就能看各洲铁路干线。放大后会逐步显示更多线路，Z7 起在线加载当前视野的轨道。小比例尺采用 Natural Earth 的概化线位，东亚有速度资料的线路保留原来的颜色。
 
 地铁站区资料按视野下载。首次放大某座城市会读取当地数据，在线模式还会查询周围站点的室内细节。支持离线缓存的浏览器可再次查看访问过的区域。全球站区采用 OpenStreetMap 资料，新加坡另有陆路交通管理局的出口坐标和编号。各份资料的来源和日期见[全球站区索引](data/world-stations/index.json)。
 
@@ -40,4 +42,4 @@ python3 -m http.server 8080 --directory Web
 
 随后访问 `http://127.0.0.1:8080/`。自行部署时把 `Web/` 的内容放到同一 HTTPS 路径，保留目录结构。重建桌面 ZIP 使用 `python3 Portable/package.py <新的输出目录>`，需要 macOS、Go 和 Command Line Tools。
 
-[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.5.md)
+[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.6.md)

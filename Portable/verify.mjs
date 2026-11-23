@@ -32,6 +32,23 @@ for (const city of index.cities) {
   for (const route of detail.routes) assert.ok(route.stops.every(s=>stations.has(s.id)));
 }
 const tiles = json("data/rail/index.json").tiles;
+for (const z of [2,4,6]) {
+  const path=`data/rail/world-z${z}.json`, data=json(path);
+  assert.ok(files.includes(path), `Offline world map Z${z}`);
+  assert.equal(data.zoom,z);
+  for (const [key,paths] of Object.entries(data.tiles)) {
+    assert.ok(key.split("/").every(n=>Number.isInteger(+n) && +n>=0 && +n<2**z));
+    assert.ok(paths.length && paths.every(line=>line.length>=4 && line.length%2===0 &&
+      line.every(v=>Number.isInteger(v) && v>=0 && v<=data.extent)),key);
+  }
+  for (const [name,lat,lon] of [["Paris",48.86,2.35],["Chicago",41.88,-87.63],["Buenos Aires",-34.6,-58.4],
+    ["Johannesburg",-26.20,28.05],["Sydney",-33.87,151.21],["Delhi",28.64,77.21]]) {
+    const side=2**z,x=(lon+180)/360*side,y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*side;
+    const paths=data.tiles[`${Math.floor(x)}/${Math.floor(y)}`] || [];
+    const px=(x%1)*data.extent,py=(y%1)*data.extent;
+    assert.ok(paths.some(line=>line.some((v,i)=>i%2===0 && Math.hypot(v-px,line[i+1]-py)<data.extent/3)),`${name} Z${z}`);
+  }
+}
 const policy={};vm.createContext(policy);vm.runInContext(text("map-preferences.js"),policy);
 for (const [tags,expected] of [
   [{railway:"construction","construction:railway":"subway"},["metro","construction"]],
