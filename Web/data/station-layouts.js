@@ -69,15 +69,26 @@ globalThis.StationLayoutOSM = (() => {
     !/员工|職員|应急|應急|消防|停车场|停車場|货运|貨運/.test(t["name:zh"] || t.name || "");
   const signedGate = name => /[进進出]站[口門门]|[进進出]站通道/.test(name || "");
   function accessSign(t,kind,role="") {
-    const name = String(t["name:zh"] || t.name || "").trim();
+    const name = String(t["name:zh"] || t.name || t["name:en"] || "").trim();
+    const normalized = value => String(value ?? "").normalize("NFKC")
+      .replace(/[٠-٩]/g,c=>String(c.charCodeAt(0)-0x660)).replace(/[۰-۹]/g,c=>String(c.charCodeAt(0)-0x6f0)).trim();
     const code = /^[A-Z]{1,2}(?:[-.]?\d{1,3}[A-Z]?)?$|^\d{1,3}[A-Z]?$/i;
-    const short = v => typeof v==="string" && code.test(v.trim()) ? v.trim().toUpperCase() : "";
+    const short = v => typeof v==="string" && code.test(normalized(v)) ? normalized(v).toUpperCase() : "";
     const isGate = kind==="entrance";
     const fromName = isGate
       ? /(?:^|[^A-Za-z0-9])([A-Z]{1,2}(?:[-.]?\d{1,3}[A-Z]?)?|\d{1,3}[A-Z]?)\s*(?:号|號)?\s*(?:出入口|[进進出入]站口|出口|入口|口)|\b(?:exit|entrance|gate)\s+([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)\b/i
       : /(?:^|[^A-Za-z0-9])([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)\s*(?:号|號)?\s*(?:通道|走廊)|(?:通道|走廊|\bpassage(?:way)?|\bcorridor)\s*([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)(?:号|號)?(?:$|[^A-Za-z0-9])/i;
-    const matched = fromName.exec(name);
-    const number = short(t.local_ref) || short(t.ref) || short(matched?.[1] || matched?.[2]) || (isGate ? short(name) : "");
+    const names = [name,t.name,t["name:en"],t["name:ja"],t["name:ko"]].filter(Boolean).map(normalized);
+    const signedInternational = /(?:sortie|entrée|ausgang|eingang|salida|saída|uscita|wyjście|výstup|выход|вихід|خروج|مخرج|출구|出口)\s*(?:n[°ºo.]?|№|#)?\s*([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)(?=$|[\s、,()–-])/i;
+    const signedEastAsian = /(?:^|[^A-Za-z0-9])([A-Z]{1,2}\d{0,3}|\d{1,3}[A-Z]?)\s*(?:番(?:号)?\s*出口|번\s*출구)/i;
+    let signed="";
+    for (const text of names) {
+      const match=fromName.exec(text) || (isGate && (signedEastAsian.exec(text) || signedInternational.exec(text)));
+      const token=match?.[1] || match?.[2] || "";
+      signed=/^[A-Za-z]+$/.test(token) && token!==token.toUpperCase() ? "" : short(token);
+      if (signed) break;
+    }
+    const number = short(t.local_ref) || short(t.ref) || signed || (isGate ? short(name) : "");
     const dir = /([东東西南北]{1,2})(?:侧|側|广场|廣場)?\s*(?:[进進出]站(?:口|通道)|出入口|出口|入口|门|門)/.exec(name)?.[1];
     const flow = /[进進]站/.test(name) || t.entrance==="entrance" || t.entrance==="entrance_only" || ["entry_only","entrance_only"].includes(role) ? "进" :
       /出站/.test(name) || ["exit","exit_only"].includes(t.entrance) || ["exit","exit_only"].includes(role) ? "出" : "";
@@ -412,11 +423,15 @@ globalThis.StationLayoutOSM = (() => {
         role=>`node(r.parents:"${role}")(${b});`).join("")+`);out geom;.parents out body;`;
   }
   const globalSource = "https://overpass-api.de/api/interpreter";
-  // Use a regional extract only well inside its coverage. Elsewhere query a global source.
+  // The coarse bounds pick a preferred mirror, never decide whether a station exists.
   function sources(lat,lon,preferred=globalSource) {
     const host="https://ovp.dresel.systems";
-    const region = lat >= 18 && lat <= 50 && lon >= 75 && lon <= 146 ? host+"/api-as/interpreter" :
-      lat >= 39 && lat <= 58 && lon >= -9 && lon <= 28 ? host+"/api/interpreter" : null;
+    const regionName = [
+      ["api-oc",-49,-10,110,180],["api-sa",-57,11,-82,-34],["api-ca",7,18,-93,-76],
+      ["api-na",18,72,-169,-52],["api-af",-36,36,-18,52],["api",36,71,-24,37],
+      ["api-as",-11,57,53,150]
+    ].find(([,s,n,w,e])=>lat>=s && lat<=n && lon>=w && lon<=e)?.[0];
+    const region = regionName ? host+"/"+regionName+"/interpreter" : null;
     return [...new Set([region,preferred,globalSource,"https://overpass.private.coffee/api/interpreter"].filter(Boolean))].slice(0,3);
   }
   return {extract,query,sources,minimumZoom,prepareFeatures};

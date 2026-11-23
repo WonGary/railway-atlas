@@ -6,16 +6,24 @@ const StationLayoutLayer = (() => {
   const switches = {outline:"showsStationOutlines",concourse:"showsConcourses",platform:"showsPlatforms",passage:"showsPassengerPassages",entrance:"showsStationEntrances"};
   const colors = {outline:["#536981","#B9C8DA"], concourse:["#925216","#FFCD8F"], platform:["#216B62","#7FD3C4"], passage:["#864097","#E4ACF3"],entrance:["#12558A","#A9D6FF"]};
   const visits = new Map(), failures = new Map();
+  const worldTiles = new Map();
+  let worldIndex, worldView = "", worldRows = [], worldGeneration = 0, worldRetry = 0;
   let map, snapshot, baseFeatures = [], activeKey, pending, timer, nextRequest = 0, message = "";
   let snapshotError = false;
   const attribution = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>';
-  let credited = false;
+  const ltaCredit = '<a href="https://data.gov.sg/datasets/d_b39d3a0871985372d7e1637193335da5/view" target="_blank" rel="noopener">LTA MRT Station Exit</a> · <a href="https://data.gov.sg/open-data-licence" target="_blank" rel="noopener">Singapore Open Data Licence</a>';
+  let credited = false, ltaCredited = false;
+  let worldAliases = new Set();
 
+  function entryFor(feature) {
+    if (!colors[feature.kind] || !Array.isArray(feature.paths) || !feature.paths[0]?.length) return null;
+    const paths = feature.paths.map(path=>path.map(([lon,lat])=>[lat,lon]));
+    return {feature,paths,bounds:L.latLngBounds(paths[0])};
+  }
   function remember(features) {
     for (const feature of StationLayoutOSM.prepareFeatures(features)) {
-      if (!colors[feature.kind] || !Array.isArray(feature.paths) || !feature.paths[0]?.length) continue;
-      const paths = feature.paths.map(path=>path.map(([lon,lat])=>[lat,lon]));
-      byID.set(feature.id,{feature,paths,bounds:L.latLngBounds(paths[0])});
+      const entry=entryFor(feature);
+      if (entry) byID.set(feature.id,entry);
     }
   }
   function style(feature,dark) {
@@ -23,6 +31,46 @@ const StationLayoutLayer = (() => {
     const point=feature.paths[0].length===1;
     return {color:colors[kind][dark?1:0], weight:kind==="outline"?1.4:2.2,
       fill:feature.area || point, fillOpacity:kind==="outline"?0.17:kind==="concourse"?0.22:0.34, dashArray:kind==="passage"?"4 3":null};
+  }
+  function showWorldTiles(bounds, enabled) {
+    const keys = [];
+    if (enabled && bounds.getEast()-bounds.getWest()<2 && bounds.getNorth()-bounds.getSouth()<2) {
+      for (let y=Math.floor(bounds.getSouth()*4); y<=Math.floor(bounds.getNorth()*4); y++)
+        for (let x=Math.floor(bounds.getWest()*4); x<=Math.floor(bounds.getEast()*4); x++)
+          keys.push(`${y}_${((x+720)%1440+1440)%1440-720}`);
+    }
+    const view=keys.join("/");
+    if (view===worldView && (!worldRetry || Date.now()<worldRetry)) return;
+    worldView=view; worldRetry=0;
+    const version=++worldGeneration;
+    if (!keys.length) {
+      worldRows=[]; worldAliases.clear();
+      return;
+    }
+    const folder="./data/world-stations/";
+    worldIndex ??= loadJSON(folder+"index.json").catch(error=>{ worldIndex=null; throw error; });
+    worldIndex.then(async index=>{
+      if (version!==worldGeneration) return;
+      const layers=[index,...(index.supplements || [])];
+      const files=keys.flatMap(key=>layers.map(layer=>layer.tiles[key]).filter(Boolean));
+      const parts=await Promise.allSettled(files.map(file=>{
+        let tile=worldTiles.get(file);
+        if (tile) worldTiles.delete(file);
+        else tile=loadJSON(folder+file).then(rows=>rows.map(entryFor).filter(Boolean))
+          .catch(error=>{ worldTiles.delete(file); throw error; });
+        worldTiles.set(file,tile);
+        return tile;
+      }));
+      if (version!==worldGeneration) return;
+      if (parts.some(part=>part.status==="rejected")) worldRetry=Date.now()+10000;
+      while (worldTiles.size>12) worldTiles.delete(worldTiles.keys().next().value);
+      const unique=new Map();
+      for (const part of parts) if (part.status==="fulfilled")
+        for (const entry of part.value) unique.set(entry.feature.id,entry);
+      worldRows=[...unique.values()];
+      worldAliases=new Set(worldRows.map(entry=>entry.feature.matchedOSM).filter(Boolean));
+      refresh();
+    }).catch(()=>{ if(version===worldGeneration) worldRetry=Date.now()+10000; });
   }
   function setup(leafletMap) {
     map = leafletMap;
@@ -51,41 +99,61 @@ const StationLayoutLayer = (() => {
       f.kind==="passage" ? 4 : f.area ? 2 : 3;
     candidates.sort((a,b)=>rank(a.feature)-rank(b.feature) || a.feature.id.localeCompare(b.feature.id));
     const screen=L.bounds([0,0],map.getSize());
-    for (const {feature} of candidates) {
-      if (ids.has(feature.labelOwner)) continue;
+    function place(feature, displaced=false) {
+      if (ids.has(feature.labelOwner)) return false;
       const badge=feature.kind!=="platform", text=feature.accessLabel || feature.platformLabel;
       const textWidth=Array.from(text).reduce((sum,ch)=>sum+(ch.codePointAt(0)>255?10.5:6.7),0);
       const width=(badge?Math.max(18,textWidth+6):Math.max(13,text.length*7.5+5))*scale, height=badge?width:17*scale;
+      const offsets=displaced?[width+4,(width+4)*1.6].flatMap(radius=>
+        [[1,0],[-1,0],[0,-1],[0,1],[.71,-.71],[-.71,.71],[-.71,-.71],[.71,.71]].map(([x,y])=>[x*radius,y*radius])):[[0,0]];
       for (const [lon,lat] of feature.labelAnchors) {
-        const position=L.latLng(lat,lon), p=map.latLngToContainerPoint(position);
+        const position=L.latLng(lat,lon), origin=map.latLngToContainerPoint(position);
+        if (!screen.contains(origin)) continue;
+        for (const [dx,dy] of offsets) {
+        const p=origin.add([dx,dy]);
         const box=L.bounds([p.x-width/2,p.y-height/2],[p.x+width/2,p.y+height/2]);
         if (!screen.contains(box) || occupied.some(old=>old.intersects(box))) continue;
         occupied.push(L.bounds(box.min.subtract([2,1]),box.max.add([2,1])));keep.add(feature.id);
         const previous=numbers.get(feature.id);
-        if (previous && previous.text===text && previous.scale===scale && previous.title===feature.accessTitle) {
+        if (previous && previous.text===text && previous.scale===scale && previous.title===feature.accessTitle &&
+            previous.dx===dx && previous.dy===dy) {
           if (!previous.marker.getLatLng().equals(position)) previous.marker.setLatLng(position);
         } else {
           previous?.marker.remove();
           const glyph=document.createElement("span");glyph.textContent=text;
-          const icon=L.divIcon({className:badge?"access-badge "+feature.kind:"platform-number",html:glyph,iconSize:[width,height],iconAnchor:[width/2,height/2]});
+          const icon=L.divIcon({className:badge?"access-badge "+feature.kind:"platform-number",html:glyph,iconSize:[width,height],iconAnchor:[width/2-dx,height/2-dy]});
           const marker=L.marker(position,{icon,pane:"station-layout-number",interactive:badge,keyboard:badge,
             title:feature.accessTitle || "",alt:feature.accessTitle || text}).addTo(map);
           if (badge) {
             const title=document.createElement("span");title.textContent=feature.accessTitle || text;
             marker.bindTooltip(title,{direction:"top"}).on("click",()=>marker.openTooltip());
           }
-          marker.getElement().dataset.osmId=feature.id;
-          numbers.set(feature.id,{marker,scale,text,title:feature.accessTitle});
+          const el=marker.getElement();
+          el.dataset.osmId=feature.id;
+          if (displaced) {
+            el.classList.add("offset-badge");
+            el.style.setProperty("--leader-angle",`${Math.atan2(-dy,-dx)}rad`);
+            el.style.setProperty("--leader-inset",`${width/2}px`);
+            el.style.setProperty("--leader-length",`${Math.hypot(dx,dy)-width/2}px`);
+          }
+          numbers.set(feature.id,{marker,scale,text,title:feature.accessTitle,dx,dy});
         }
-        break;
+        return true;
+        }
       }
+      return false;
     }
+    const exits=candidates.filter(({feature})=>feature.kind==="entrance");
+    const crowded=exits.filter(({feature})=>!place(feature));
+    for (const {feature} of crowded) place(feature,true);
+    for (const {feature} of candidates) if (feature.kind!=="entrance") place(feature);
     for (const [id,{marker}] of numbers) if (!keep.has(id)) {marker.remove();numbers.delete(id);}
   }
   function refresh() {
     if (!map) return;
     const p=AtlasPrefs.value, z=map.getZoom();
     const enabled=p.showsStationLayouts && z>=StationLayoutOSM.minimumZoom.outline;
+    showWorldTiles(map.getBounds(),enabled);
     const cell=currentCell(enabled,p);
     const button=$("loadStationLayouts"), status=$("stationLayoutStatus");
     const options=$("stationDetailOptions");
@@ -110,7 +178,9 @@ const StationLayoutLayer = (() => {
     schedule(cell);
     if (button) { button.hidden=!enabled || p.mode!=="online"; button.disabled=!cell || !!pending; }
     const bounds=map.getBounds(), keep=new Set(), dark=map.getContainer().dataset.stationInk==="light";
-    const nearby=enabled ? [...byID.values()].filter(entry=>bounds.intersects(entry.bounds)) : [];
+    const inView=entry=>bounds.intersects(entry.bounds) && !worldAliases.has(entry.feature.id);
+    const nearby=enabled ? [...byID.values()].filter(inView)
+      .concat(worldRows.filter(entry=>!byID.has(entry.feature.id) && inView(entry))) : [];
     if (status) {
       status.hidden=!p.showsStationLayouts;
       const counts={outline:0,concourse:0,platform:0,passage:0,entrance:0};
@@ -144,6 +214,11 @@ const StationLayoutLayer = (() => {
     if (credited !== !!(drawn.size || numbers.size)) {
       credited=!!(drawn.size || numbers.size);
       map.attributionControl?.[credited?"addAttribution":"removeAttribution"](attribution);
+    }
+    const ltaVisible=nearby.some(({feature})=>feature.id.startsWith("sg-lta/") && keep.has(feature.id));
+    if (ltaCredited!==ltaVisible) {
+      ltaCredited=ltaVisible;
+      map.attributionControl?.[ltaVisible?"addAttribution":"removeAttribution"](ltaCredit);
     }
   }
   function rebuild() {
@@ -191,7 +266,8 @@ const StationLayoutLayer = (() => {
         if (controller.signal.aborted) return;
         const attempt=new AbortController(), cancel=()=>attempt.abort();
         controller.signal.addEventListener("abort",cancel,{once:true});
-        const deadline=setTimeout(cancel,20000);
+        const regional=url.startsWith("https://ovp.dresel.systems/");
+        const deadline=setTimeout(cancel,regional?8000:16000);
         try {
           const response=await fetch(url,{method:"POST",body:new URLSearchParams({data:q}),signal:attempt.signal,credentials:"omit"});
           if (!response.ok || Number(response.headers.get("content-length"))>8_000_000) continue;
@@ -199,6 +275,7 @@ const StationLayoutLayer = (() => {
           if (blob.size>8_000_000) continue;
           const features=StationLayoutOSM.extract(JSON.parse(await blob.text()));
           if (controller.signal.aborted) return;
+          if (!features.length && regional) continue;
           failures.delete(key);
           visits.delete(key);
           visits.set(key,{key,date:Date.now(),features});

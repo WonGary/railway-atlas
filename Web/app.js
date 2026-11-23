@@ -1849,7 +1849,7 @@ function saveLayerPreferences() {
 
 function setBaseLayer(name) {
   if (!state.map) return;
-  const baseID = Object.hasOwn(state.baseLayers, name) ? name : "osm";
+  const baseID = Object.hasOwn(state.baseLayers, name) ? name : "versatiles-vector";
   $("baseLayer").value = baseID;
   const selected = AtlasPrefs.value.mode === "online" ? state.baseLayers[baseID] : null;
   for (const layer of Object.values(state.baseLayers)) {

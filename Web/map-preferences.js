@@ -44,7 +44,9 @@ const AtlasPrefs = (() => {
     return result;
   }
   function restore() {
-    try { p = validated(readStored(key,{})); } catch { p = {...defaults}; }
+    const saved = readStored(key,null);
+    try { p = validated(saved || {}); } catch { p = {...defaults}; }
+    if (!saved && !readStored(STORAGE.layers,null)) p.mapAppearance = "dark";
   }
   function persist() { writeStored(key,p); }
   function classify(t, urbanHint = false) {
@@ -105,6 +107,8 @@ const AtlasPrefs = (() => {
     const status=document.querySelector(".map-status");status.hidden=!p.statusVisible;
     status.style.transform=`translate(${p.statusX}px,${p.statusY}px)`;
     if (!state.map) return;
+    $("basemapModeNote").hidden=p.mode==="online";
+    $("baseLayer").disabled=$("darkStreetPreset").disabled=p.mode!=="online";
     updateBasemapAppearance();
     StationLabels.schedule();
     $("assistantPanel").classList.toggle("floating",p.assistantPresentation==="floating");
@@ -135,6 +139,8 @@ const AtlasPrefs = (() => {
   }
   function controls() {
     const l=$("mapLayers"),s=$("mapSettings");l.replaceChildren();s.replaceChildren();
+    const basemap=$("basemapDisplayControls"), station=$("stationDisplayControls");
+    basemap.replaceChildren();station.replaceChildren();
     const toggle=(parent,k,title,redraw)=>check(parent,k,title,p[k],on=>change(k,on,redraw));
     function range(parent,k,title,step,redraw=true){
       const label=make("label",title+" "),output=make("output",String(p[k])),input=make("input");
@@ -146,7 +152,8 @@ const AtlasPrefs = (() => {
       for (const [v,n] of Object.entries(values)) el.add(new Option(n,v));el.value=p[k];
       el.onchange=()=>{change(k,el.value,k==="mode");callback?.();};label.append(el);parent.append(label);
     }
-    const station=section(l,"stationDetails","底图与站点");
+    select(basemap,"mapAppearance","地图外观",{system:"跟随系统",light:"浅色",dark:"深色"});
+    range(basemap,"basemapDarkness","底图暗化",.05,false);
     const vis=section(l,"visibility","线路显示");
     toggle(vis,"automaticDetail","随缩放调整图层");toggle(vis,"showsNationalMetroOverview","全国城市轨道概览");
     toggle(vis,"prioritizesUrbanTransit","优先显示都市轨道");toggle(station,"showsStations","车站位置");toggle(station,"showsLabels","放大后显示站名");
@@ -176,8 +183,7 @@ const AtlasPrefs = (() => {
     const list=make("div");list.id="routeVisibility";lines.append(list);routeList();
     const source=section(s,"source","地图模式");select(source,"mode","数据来源",{online:"在线与本机缓存",cached:"仅随包与本机缓存",offline:"仅区域地图"});
     const render=section(s,"render","地图绘制");
-    select(render,"mapAppearance","地图外观",{system:"跟随系统",light:"浅色",dark:"深色"});
-    range(render,"basemapDarkness","底图暗化",.05,false);
+    button(render,"调整底图与站点",openBasemap);
     range(render,"railwayWidthScale","铁路线宽",.05);range(render,"metroWidthScale","地铁线宽",.05);range(render,"stationRadiusMultiplier","站点半径",.05);
     toggle(render,"railwayPattern","铁路轨枕纹理");range(render,"depotBrightness","站场轨道亮度",.05);range(render,"viewportBuffer","视野边缘预绘制比例",.05);
     const ui=section(s,"ui","界面与面板",false);range(ui,"uiScale","界面缩放",.05,false);
@@ -187,8 +193,19 @@ const AtlasPrefs = (() => {
     range(ui,"inspectorBackgroundOpacity","右栏浮窗不透明度",.05,false);toggle(ui,"statusVisible","显示地图状态",false);
     select(ui,"assistantPresentation","地图问答位置",{sidebar:"右侧面板",floating:"地图浮窗",window:"独立窗口"});
   }
+  function openBasemap(){
+    setWorkspaceView("layers");
+    $("basemapPanel").open=true;
+    $("basemapPanel").scrollIntoView({block:"start"});
+    $("baseLayer").focus({preventScroll:true});
+  }
   function setup(){
     controls();apply(false);
+    $("goToBasemap").onclick=openBasemap;
+    $("darkStreetPreset").onclick=()=>{
+      p.mapAppearance="dark";p.basemapDarkness=0;persist();
+      setBaseLayer("versatiles-vector");controls();apply(false);
+    };
     $("exportMapSettings").onclick=()=>downloadFile("铁道漫游-地图设置.json",new Blob([JSON.stringify({version:1,mapPreferences:p,baseLayer:$("baseLayer").value},null,2)],{type:"application/json"}));
     $("importMapSettings").onchange=async e=>{
       const file=e.target.files[0];e.target.value="";if(!file)return;
@@ -199,7 +216,8 @@ const AtlasPrefs = (() => {
         const native=!data.mapPreferences;
         const settings=native?{...data.layers,...data.rendering,...data.interface,basemapDarkness:data.map?.basemapDarkness ?? 0,mode:({apple:"online",cached:"cached",offline:"offline"})[data.map?.mode] || "online"}:data.mapPreferences;
         const next=validated(settings);
-        const base=native?({satellite:"satellite",hybrid:"hybrid",standard:"osm"})[data.map?.basemapStyle]:data.baseLayer;
+        const standard=({versaTiles:"versatiles-vector",openFreeMap:"openfreemap-vector",openStreetMap:"osm"})[data.map?.standardBasemapSource] || "osm";
+        const base=native?({satellite:"satellite",hybrid:"hybrid",standard})[data.map?.basemapStyle]:data.baseLayer;
         p=next;if(base && Object.hasOwn(state.baseLayers,base))$("baseLayer").value=base;
         persist();controls();apply();showToast("地图设置已导入。");
       }catch(error){showToast(error.message);}

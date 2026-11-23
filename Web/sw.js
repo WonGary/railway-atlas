@@ -1,12 +1,12 @@
-const VERSION = "0.8.4";
-const SHELL = `railway-atlas-web-${VERSION}-station-layouts-1`;
+const VERSION = "0.8.5";
+const SHELL = `railway-atlas-web-${VERSION}-world-stations-2`;
 // City snapshots still carry the same 2026-11-05 edition. Reuse downloads on upgrade.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
 const address = path => new URL(path, base).href;
 const files = [
   "index.html","styles.css","app.js","library.js","timetable-package.mjs","map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js","cache-worker.mjs",
-  "station-layout-layer.js","data/station-layouts.js","data/station-layouts.json",
+  "station-layout-layer.js","data/station-layouts.js","data/station-layouts.json","data/world-stations/index.json",
   "vendor/sqlite/index.mjs","vendor/sqlite/sqlite3.wasm","vendor/sqlite/sqlite3-opfs-async-proxy.js",
   "manifest.webmanifest","touch.png","icon-192.png","icon-512.png",
   "vendor/leaflet.js","vendor/leaflet.css","vendor/vector.js","vendor/vector.mjs","track-match.mjs",
@@ -48,7 +48,7 @@ self.addEventListener("fetch", event => {
       // manual redirect mode rejects that cached redirect chain when offline.
       return page.redirected ? new Response(page.body, {headers:page.headers, status:page.status}) : page;
     })());
-  } else if (/^data\/(?:metro\/[a-z]+\.json|regions\/[a-z-]+\.railmap)$/.test(path)) {
+  } else if (/^data\/(?:metro\/[a-z]+\.json|regions\/[a-z-]+\.railmap|world-stations\/(?:sg-lta-)?-?\d+_-?\d+\.[0-9a-f]{12}\.json)$/.test(path)) {
     event.respondWith((async () => {
       const cache = await caches.open(DETAILS);
       const hit = await cache.match(request);

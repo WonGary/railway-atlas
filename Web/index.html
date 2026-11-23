@@ -19,7 +19,7 @@
       <div class="brand-mark" aria-hidden="true">R</div>
       <div>
         <h1>铁道漫游</h1>
-      <p>铁路地图 <span id="versionBadge">0.8.4</span></p>
+      <p>铁路地图 <span id="versionBadge">0.8.5</span></p>
       </div>
     </div>
     <div class="top-actions">
@@ -165,6 +165,28 @@
           </section>
         </section>
         <section class="workspace-page" data-page="layers">
+          <details id="basemapPanel" open><summary>底图与站点</summary>
+            <label>地图底图
+              <select id="baseLayer">
+                <optgroup label="矢量底图">
+                  <option value="versatiles-vector" selected>VersaTiles · 矢量</option>
+                  <option value="openfreemap-vector">OpenFreeMap · 矢量</option>
+                </optgroup>
+                <optgroup label="栅格底图">
+                  <option value="osm">OpenStreetMap</option>
+                  <option value="railway">OpenRailwayMap</option>
+                </optgroup>
+                <optgroup label="卫星影像">
+                  <option value="satellite">卫星影像 · NASA Blue Marble</option>
+                  <option value="hybrid">卫星与地名 · NASA / CARTO</option>
+                </optgroup>
+              </select>
+            </label>
+            <div id="basemapDisplayControls"></div>
+            <button type="button" id="darkStreetPreset" class="text-button">使用深色街道底图</button>
+            <p id="basemapModeNote" class="panel-note" hidden>在线底图已关闭。可在「设置 → 地图模式」选择「在线与本机缓存」。</p>
+            <div id="stationDisplayControls"></div>
+          </details>
           <div id="mapLayers"></div>
           <details><summary>数据来源与区域地图</summary>
           <label class="toggle-row"><input id="showMetro" type="checkbox" checked>城市轨道线路</label>
@@ -177,20 +199,7 @@
           <p id="regionStatus" class="panel-note" role="status"></p>
           <label class="file-button">导入原生 .railcache 瓦片库<input id="railCacheFile" type="file" accept=".railcache"></label>
           <p id="cacheStatus" class="panel-note" role="status">只读取你选择的文件，瓦片副本占用本机浏览器空间。</p>
-          <label>地图底图
-            <select id="baseLayer">
-              <optgroup label="矢量底图">
-                <option value="openfreemap-vector">OpenFreeMap · 矢量</option>
-                <option value="versatiles-vector">VersaTiles · 矢量</option>
-              </optgroup>
-              <optgroup label="栅格底图">
-                <option value="osm" selected>OpenStreetMap</option>
-                <option value="railway">OpenRailwayMap</option>
-              </optgroup>
-              <option value="satellite">卫星影像 · NASA Blue Marble</option>
-              <option value="hybrid">卫星与地名 · NASA / CARTO</option>
-            </select>
-          </label>
+          <button type="button" id="goToBasemap" class="text-button">调整底图与站点</button>
           <p class="panel-note">矢量底图需联网。铁路概览随包提供，区域地图首次打开后可离线查看。</p>
           </details>
         </section>
