@@ -1,0 +1,67 @@
+[
+  {
+    "legs" : 20,
+    "ms" : 478.255042,
+    "status" : "full",
+    "train" : "Z336"
+  },
+  {
+    "legs" : 22,
+    "ms" : 382.08387499999998,
+    "status" : "full",
+    "train" : "N147"
+  },
+  {
+    "legs" : 13,
+    "ms" : 384.477959,
+    "status" : "full",
+    "train" : "Z58"
+  },
+  {
+    "legs" : 7,
+    "ms" : 339.08141699999999,
+    "status" : "full",
+    "train" : "C273"
+  },
+  {
+    "legs" : 23,
+    "ms" : 361.91079100000002,
+    "status" : "full",
+    "train" : "D2236"
+  },
+  {
+    "ms" : 55.235624999999999,
+    "status" : "absent",
+    "train" : "V6461"
+  },
+  {
+    "legs" : 4,
+    "ms" : 327.50045899999998,
+    "status" : "full",
+    "train" : "S8140"
+  },
+  {
+    "legs" : 9,
+    "ms" : 335.57454200000001,
+    "status" : "full",
+    "train" : "G3703"
+  },
+  {
+    "legs" : 3,
+    "ms" : 343.472375,
+    "status" : "full",
+    "train" : "C2730"
+  },
+  {
+    "legs" : 3,
+    "ms" : 293.897875,
+    "status" : "full",
+    "train" : "C442"
+  },
+  {
+    "legs" : 15,
+    "ms" : 369.25229100000001,
+    "status" : "full",
+    "train" : "G3888"
+  }
+]
