@@ -34,14 +34,14 @@ iconutil -c icns Design/RailwayAtlas.iconset -o Design/RailwayAtlas.icns
 # volume and preserve the project's familiar launch path with a symlink.
 ATLAS_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/railway-atlas-build.XXXXXX")"
 ATLAS_APP="$ATLAS_STAGE/Railway Atlas.app"
-ATLAS_INSTALLED="$HOME/Applications/Railway Atlas.app"
-mkdir -p "$HOME/Applications"
+ATLAS_INSTALLED="${ATLAS_INSTALL_DIR:-$HOME/Applications}/Railway Atlas.app"
+mkdir -p "$(dirname "$ATLAS_INSTALLED")"
 # Never replace an unrelated application or a user-managed link.
 if [[ -L "$ATLAS_INSTALLED" ]]; then
     printf 'Install target is a symbolic link; leaving it unchanged: %s\n' "$ATLAS_INSTALLED" >&2
     exit 1
 fi
-if [[ -L "$ATLAS_ROOT/dist/Railway Atlas.app"
+if [[ -z "${ATLAS_INSTALL_DIR:-}" && -L "$ATLAS_ROOT/dist/Railway Atlas.app"
       && "$(readlink "$ATLAS_ROOT/dist/Railway Atlas.app")" != "$ATLAS_INSTALLED" ]]; then
     printf 'Project launch link points elsewhere; leaving it unchanged.\n' >&2
     exit 1
@@ -58,6 +58,8 @@ done
 mkdir -p "$ATLAS_APP/Contents/MacOS" "$ATLAS_APP/Contents/Resources"
 cp "$ATLAS_BIN/RailwayAtlas" "$ATLAS_APP/Contents/MacOS/RailwayAtlas"
 cp Config/Info.plist "$ATLAS_APP/Contents/Info.plist"
+ditto --norsrc --noextattr Web/station-directory "$ATLAS_APP/Contents/Resources/station-directory"
+cp Web/library.js "$ATLAS_APP/Contents/Resources/library.js"
 cp Design/RailwayAtlas.icns "$ATLAS_APP/Contents/Resources/RailwayAtlas.icns"
 # App bundles read their resources directly, independent of the source checkout.
 ditto --norsrc --noextattr Sources/RailwayAtlas/Resources "$ATLAS_APP/Contents/Resources/Resources"
@@ -70,6 +72,16 @@ cp Config/default-config.json "$ATLAS_APP/Contents/Resources/Resources/"
 strip_bundle_metadata "$ATLAS_APP"
 codesign --force --sign - "$ATLAS_APP"
 codesign --verify --deep --strict "$ATLAS_APP"
+if [[ -n "${ATLAS_INSTALL_DIR:-}" ]]; then
+    if [[ -e "$ATLAS_INSTALLED" ]]; then
+        printf 'The candidate destination already exists: %s\n' "$ATLAS_INSTALLED" >&2
+        exit 1
+    fi
+    mv "$ATLAS_APP" "$ATLAS_INSTALLED"
+    rmdir "$ATLAS_STAGE"
+    printf 'Candidate: %s\n' "$ATLAS_INSTALLED"
+    exit 0
+fi
 if [[ -e "$ATLAS_INSTALLED" ]]; then
     ATLAS_BACKUP="$(mktemp -d "$HOME/Applications/.railway-atlas-previous.XXXXXX")"
     mv "$ATLAS_INSTALLED" "$ATLAS_BACKUP/"

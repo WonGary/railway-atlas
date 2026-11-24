@@ -1,110 +1,128 @@
-function showStationBoard(name) {
-  name = name.trim();
-  if (!name) { showToast("请先输入站名。"); return; }
-  const dialog = $("stationDialog");
-  const date = $("libraryDate").value || todayLocal();
-  $("dialogTitle").textContent = `${name} · 线路与车次`;
-  const content = $("dialogContent");
-  content.innerHTML = "";
-  const section = document.createElement("div");
-  content.append(section);
-  const link = "http://cnrail.geogv.org/zhcn/" + (name === "北京西" ? "geo/c66921b087bc48879016d166036aa861" : "");
-  section.innerHTML = `<p><a target="_blank" rel="noopener noreferrer" href="${link}">打开中国铁路地图原站</a></p>`;
-  const library = RailLibrary.current;
-  const entries = library ? (library.stations.get(name) || []).filter(({row}) => RailLibrary.runsOn(row, date)) :
-    state.routes.flatMap(row => row.stops.flatMap((stop, i) => stop.name === name ? [{row,i}] : []));
-  const lines = library?.lines.get(name) || [];
-  function boardRows(parent, rows, title) {
-    const wrapper = document.createElement("section");
-    parent.append(wrapper);
-    wrapper.innerHTML = `<h3>${escapeHTML(title)}</h3><label>筛选车次<input type="search" placeholder="例如 G337"></label><p class="panel-note" role="status"></p><div class="table-wrap"></div>`;
-    const filter = wrapper.querySelector("input");
-    const render = () => {
-      const found = rows.filter(row => row[0].toUpperCase().includes(filter.value.trim().toUpperCase()));
-      wrapper.querySelector("p").textContent = `${found.length} / ${rows.length} 条`;
-      wrapper.querySelector(".table-wrap").innerHTML = `<table><thead><tr><th>车次</th><th>起点</th><th>终点</th><th>到达</th><th>出发</th></tr></thead><tbody>${found.map(row => `<tr>${row.map(cell => `<td>${escapeHTML(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-    };
-    filter.oninput = render;
-    render();
-  }
-  const nearby = library ? lines.map(line => ({
-    name: line.name, stops: line.stations.map(stop => [stop.name, stop.kilometre])
-  })) : [];
-  if (!nearby.length && state.corridor?.nodes.some(node => node.name === name)) {
-    const nodes = state.corridor.nodes;
-    const i = nodes.findIndex(node => node.name === name);
-    const names = unique([nodes[i - 1]?.line, nodes[i]?.line]);
-    for (const line of names) nearby.push({name: `${line} · 随包经由区段`, stops: nodes.flatMap((node, j) =>
-      node.line === line || nodes[j - 1]?.line === line ? [[node.name, node.km]] : [])});
-  }
-  function lineItem(parent, title, getStops) {
-    const item = document.createElement("details");
-    item.innerHTML = `<summary>${escapeHTML(title)}</summary><div></div>`;
-    parent.append(item);
-    item.ontoggle = async () => {
-      if (!item.open || item.dataset.busy) return;
-      item.dataset.busy = "1";
-      const panel = item.querySelector("div");
-      panel.textContent = "正在读取站序…";
-      try {
-        const stops = await getStops();
-        panel.innerHTML = `<ol>${stops.map(([station, km, note]) => `<li>${escapeHTML(station)}　${km != null && km !== "" ? `${escapeHTML(km)} km` : ""} ${escapeHTML(note || "")}</li>`).join("")}</ol>`;
-      } catch { panel.textContent = "暂时未能读取站序。收起后可重试。"; delete item.dataset.busy; }
-    };
-  }
-  for (const line of nearby) lineItem(section, line.name, () => line.stops);
-  boardRows(section, entries.map(({row,i}) => [row.train, row.stops[0].station || row.stops[0].name,
-    row.stops.at(-1).station || row.stops.at(-1).name, formatClock(row.stops[i].arrival), formatClock(row.stops[i].departure)]),
-    library ? `本机排图 · ${date}` : "随包经停快照");
-  if (location.origin === "http://127.0.0.1:18763") {
-    const online = document.createElement("section");
-    content.prepend(online);
-    online.innerHTML = `<button class="text-button">查询中国铁路地图站表</button><div></div>`;
-    const button = online.querySelector("button"), result = online.querySelector("div");
-    const get = async path => {
-      const response = await fetch(`/station-feed/${path}`, {cache:"no-store"});
-      if (!response.ok) throw new Error("中国铁路地图暂时无法连接。");
-      return response.json();
-    };
-    async function display(id) {
-      result.textContent = "正在读取原站资料…";
-      try {
-        const poi = await get(`poi/${id}`);
-        const fields = poi.exd?.find(item => !item.view || item.view === "station")?.data;
-        result.replaceChildren();
-        for (const line of fields?.connection || []) {
-          if (!/^[a-f0-9]{32}$/.test(line.eid)) continue;
-          lineItem(result, line.linename, async () => {
-            const {data} = await get(`feature/${line.eid}`);
-            const diagram = (data.diagram || []).filter(row => row[1]?.station || row[1]?.poi || row[1]?.info);
-            return diagram.length ? diagram.map(([,node,km]) => [node.station || node.poi || node.info, km, node.station ? node.info || node.poi : ""]) :
-              (data.stations || []).map(stop => [stop.name, stop.mileage]);
-          });
-        }
-        const board = await get(`stationroute/${id}`);
-        boardRows(result, board.list.map(row => [row.opid, board.hash[row.from].name, board.hash[row.to].name,
-          board.hash[row.from].kid === id ? "始发" : row.arr || "—", board.hash[row.to].kid === id ? "终到" : row.dep || "—"]),
-          `中国铁路地图 · 更新 ${board.update || "日期未注明"}`);
-      } catch (err) { result.append(document.createTextNode(err.message)); }
+const StationMapBoard = (() => {
+  let coordinates, points, overlay;
+  function positions() {
+    if (!coordinates) {
+      coordinates=new Map();
+      const {names,coordinates:locations}=globalThis.atlasRailDirectory;
+      names.forEach((name,i)=>{
+        const p=locations[i];
+        if (p && Math.abs(p[0])>1 && Math.abs(p[1])>1) coordinates.set(name,p);
+      });
     }
-    button.onclick = async () => {
-      button.disabled = true;
-      result.textContent = "正在查询站名…";
-      try {
-        const choices = (await get(`search?keyword=${encodeURIComponent(name)}`)).filter(item => /^geo\/[a-f0-9]{32}$/.test(item.query));
-        const exact = choices.filter(item => item.name === name);
-        if (exact.length === 1 || choices.length === 1) await display((exact[0] || choices[0]).query.slice(4));
-        else {
-          result.textContent = choices.length ? "选择车站 " : "原站未找到这个站名。";
-          for (const choice of choices) {
-            const select = document.createElement("button");
-            select.className = "text-button"; select.textContent = choice.name;
-            select.onclick = () => display(choice.query.slice(4)); result.append(select);
-          }
-        }
-      } catch (err) { result.textContent = err.message; }
-      finally { button.disabled = false; }
+    for (const node of state.corridor?.nodes || []) {
+      if (node.vertex==null || coordinates.has(node.name)) continue;
+      const p=state.corridor.points[node.vertex];
+      if (p) coordinates.set(node.name,[p[1],p[0]]);
+    }
+    return coordinates;
+  }
+  function railPoint(name,p,group) {
+    const marker=L.circleMarker(p,{radius:4.5,weight:2,color:"#764322",fillColor:"#ffe1a4",fillOpacity:1,bubblingMouseEvents:false});
+    const title=document.createElement("span");title.textContent=name;
+    marker.bindTooltip(title); marker.on("click",()=>selectStation(name,{pan:false})); marker.addTo(group);
+  }
+  function setup(map) {
+    points=L.layerGroup().addTo(map); overlay=L.layerGroup().addTo(map);
+    map.on("moveend zoomend",refresh);
+    refresh();
+  }
+  function refresh() {
+    if (!points) return;
+    points.clearLayers();
+    if (!AtlasPrefs.value.showsStations || !$("showRail").checked) { overlay.clearLayers(); return; }
+    if (state.map.getZoom()<10) return;
+    const bounds=state.map.getBounds();
+    for (const [name,p] of positions()) if (bounds.contains(p)) railPoint(name,p,points);
+  }
+  function locate(rows) {
+    overlay.clearLayers();
+    for (const [name,p] of rows) railPoint(name,p,overlay);
+    state.map.fitBounds(rows.map(entry=>entry[1]),{padding:[30,30],maxZoom:13});
+  }
+  function mount(parent,name) {
+    if (!name) return;
+    const root=document.createElement("section");root.dataset.stationDirectory=name; parent.prepend(root);
+    StationPanel.mount(root,name,{library:RailLibrary.current,coordinate:n=>positions().get(n),locate});
+    if (location.origin==="http://127.0.0.1:18763") appendOriginalStationLookup(root,name);
+  }
+  function focus(name) {
+    const p=positions().get(name);
+    if (p) state.map.setView(p,Math.max(11,state.map.getZoom()),{animate:false});
+  }
+  function reload() {
+    const old=document.querySelector("#infoContent [data-station-directory]");
+    if (old) { const parent=old.parentNode, name=old.dataset.stationDirectory;old.remove();mount(parent,name); }
+  }
+  return {setup,mount,focus,refresh,reload};
+})();
+
+function showStationBoard(raw) {
+  const name=raw.trim();
+  if (!name) { showToast("请先输入站名。");return; }
+  selectStation(StationCatalog.resolve(name,StationPanel.national));
+}
+
+// The user's desktop companion supplies same-origin access to the original HTTP feeds.
+function appendOriginalStationLookup(parent, name) {
+  const section=document.createElement("section"), start=document.createElement("button"), result=document.createElement("div");
+  start.textContent="查询中国铁路地图原站"; section.append(start,result);parent.append(section);
+  const get=async path=>{
+    const response=await fetch("/station-feed/"+path,{cache:"no-store"});
+    if (!response.ok) throw Error("原站暂时无法连接。");
+    return response.json();
+  };
+  function row(parent,label,load) {
+    const details=document.createElement("details"), summary=document.createElement("summary");
+    summary.textContent=label;details.append(summary);parent.append(details);
+    details.ontoggle=async()=>{
+      if (!details.open || details.childElementCount>1) return;
+      const text=document.createElement("div");text.style.whiteSpace="pre-line";details.append(text);
+      try { text.textContent=await load(); }
+      catch (error) { text.remove(); summary.title=error.message; }
     };
   }
-  if (!dialog.open) dialog.showModal();
+  async function select(id) {
+    const pane=document.createElement("div");
+    result.replaceChildren(pane);pane.textContent="正在读取原站资料…";
+    try {
+      const poi=await get("poi/"+id);
+      pane.replaceChildren();
+      const links=poi.exd?.find(item=>!item.view || item.view==="station")?.data?.connection || [];
+      for (const line of links) if (/^[a-f0-9]{32}$/.test(line.eid)) row(pane,line.linename,async()=>{
+        const {data}=await get("feature/"+line.eid);
+        const diagram=(data.diagram || []).flatMap(([,n,km])=>{
+          const label=n?.station || n?.poi || n?.info;return label ? [`${label}　${km ?? ""}`] : [];
+        });
+        return (diagram.length ? diagram : (data.stations || []).map(s=>`${s.name}　${s.mileage ?? ""}`)).join("\n");
+      });
+      const board=await get("stationroute/"+id);
+      const note=document.createElement("p");note.textContent=`原站班表 ${board.update || ""} · ${board.list?.length || 0} 条`;pane.append(note);
+      for (const train of board.list || []) {
+        const label=`${train.opid}　${board.hash[train.from].name} → ${board.hash[train.to].name}　${train.arr || "—"} / ${train.dep || "—"}`;
+        row(pane,label,async()=>{
+          if (!/^CN\/[A-Z0-9]+$/.test(train.route)) return "原站未提供这趟列车的详情编号。";
+          const data=await get("train/"+train.route.slice(3));
+          function clock(code) {
+            const m=/^([1-9])(\d\d)(\d\d)$/.exec(code);
+            return m ? `${Number(m[1])>1 ? `+${Number(m[1])-1}日 ` : ""}${m[2]}:${m[3]}` : code || "—";
+          }
+          return (data.sections || []).flatMap(s=>s.stops.map(call=>`${call.name}　${clock(call.arr)} / ${clock(call.dep)}`)).join("\n");
+        });
+      }
+    } catch(error) { pane.append(document.createTextNode(error.message)); }
+  }
+  start.onclick=async()=>{
+    start.disabled=true;
+    try {
+      const query=StationCatalog.resolve(name,StationPanel.national);
+      const choices=(await get("search?keyword="+encodeURIComponent(query))).filter(c=>/^geo\/[a-f0-9]{32}$/.test(c.query));
+      const exact=choices.filter(c=>c.name===query);
+      if (exact.length===1) await select(exact[0].query.slice(4));
+      else {
+        result.textContent=choices.length ? "选择原站记录　" : "原站未收录这个站名。";
+        for (const choice of choices) { const b=document.createElement("button");b.textContent=choice.name;b.onclick=()=>select(choice.query.slice(4));result.append(b); }
+      }
+    } catch(error) { result.textContent=error.message; }
+    finally { start.disabled=false; }
+  };
 }

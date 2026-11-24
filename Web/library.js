@@ -32,13 +32,21 @@ const RailLibrary = (() => {
       for (const name of new Set(line.stations.map(stop => stop.name))) add(lines, name, line);
     }
     const trackByID = new Map((archive.routing?.lines || []).map(line => [line.id, line]));
-    const routeByTrain = new Map();
+    const routeByTrain = new Map(), trainsByLine = new Map(), servicesByTrain = new Map();
+    for (const row of services) {
+      for (const name of trainNames(row.train)) add(servicesByTrain, name, row);
+    }
     for (const route of archive.routing?.routes || []) {
       if (typeof route.id !== "string" || !Array.isArray(route.parts)) continue;
       const train = route.id.slice(5,10).replace(/^0+/,"");
       add(routeByTrain,train,route);
+      for (const id of new Set(route.parts.map(part => part.lineID))) {
+        if (!trainsByLine.has(id)) trainsByLine.set(id, new Set());
+        trainsByLine.get(id).add(train);
+      }
     }
-    return { services, stations, lines, trackByID, routeByTrain, edition: String(archive.edition || ""), native };
+    return { services, stations, lines, trackByID, routeByTrain, trainsByLine, servicesByTrain,
+      edition: String(archive.edition || ""), native };
   }
   function storage() {
     if (!database) database = new Promise((resolve, reject) => {
@@ -97,14 +105,15 @@ const RailLibrary = (() => {
       title: `本机时刻库 · ${current.edition}`, note: `排图有效期 ${row.validFrom} 至 ${row.validThrough}。${row.flags && (row.flags[2] || row.flags[4] || row.flags[0]>=48) ? "含条件开行标记。" : ""}实际开行请核对 12306。`
     } };
   }
-  function plan(row) {
+  function plan(row, library = current) {
+    if (!library) return null;
     if (row.kilometreMarks?.length !== row.stops.length) return null;
     const matches = [];
     for (const train of trainNames(row.train)) {
-      for (const route of current.routeByTrain.get(train) || []) {
+      for (const route of library.routeByTrain.get(train) || []) {
         const nodes = [], edges = [];
         for (let i=0; i<route.parts.length; i++) {
-          const part = route.parts[i], line = current.trackByID.get(part.lineID);
+          const part = route.parts[i], line = library.trackByID.get(part.lineID);
           const end = route.parts[i+1]?.from || route.end;
           const first = line?.stations.findIndex(s=>s.name === part.from) ?? -1;
           const last = line?.stations.findIndex(s=>s.name === end) ?? -1;
@@ -136,5 +145,5 @@ const RailLibrary = (() => {
     }
     return matches.length===1 ? matches[0] : null;
   }
-  return { index, install, restore, search, runsOn, timetable, get current() { return current; } };
+  return { index, install, restore, search, runsOn, timetable, plan, trainNames, get current() { return current; } };
 })();

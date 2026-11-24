@@ -1,0 +1,19 @@
+.station-directory { font: inherit; overflow-wrap:anywhere; text-align:start; }
+.station-directory h3 { margin: .9em 0 .4em; font-size: 1.04em; }
+.station-directory p { margin:.45em 0; }
+.station-directory small { display:block; opacity:.78; font-size:.88em; }
+.station-directory details { margin:.3em 0; }
+.station-directory details > div { padding:.35em .55em .55em; }
+.station-directory summary { cursor:pointer; padding:.4em 0; border-bottom:1px solid color-mix(in srgb,currentColor 15%,transparent); }
+.station-directory summary span,.station-directory summary small { display:block; padding-inline-start:1.05em; }
+.station-directory summary span { font-size:.92em; }
+.station-directory summary small,.station-directory .rail-sequence small { font-variant-numeric:tabular-nums; }
+.station-directory input,.station-directory select { display:block; margin:.35em 0; max-width:100%; width:100%; box-sizing:border-box; font:inherit; }
+.station-directory button { cursor:pointer; font:inherit; }
+.station-directory button:disabled { cursor:default; opacity:.45; }
+.station-directory .directory-controls { display:grid; gap:.3em; }
+.station-directory .directory-pager { display:flex; flex-wrap:wrap; gap:.3em; }
+.station-directory a { display:inline-block; margin:.3em .2em .3em 0; }
+.station-directory .rail-sequence { margin:.4em 0; padding-left:2.2em; }
+.station-directory .rail-sequence li { padding:.2em .3em; border-inline-start:2px solid color-mix(in srgb,currentColor 35%,transparent); }
+.station-directory .rail-sequence .here { background:color-mix(in srgb,#d38837 24%,transparent); font-weight:600; }

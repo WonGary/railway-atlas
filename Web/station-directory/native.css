@@ -1,0 +1,4 @@
+:root { color-scheme:light dark; font:13px -apple-system,BlinkMacSystemFont,sans-serif; }
+body { margin:2px 6px 8px 1px; color:CanvasText; background:Canvas; }
+a { color:LinkText; }
+input,select,button { padding:.24em; }

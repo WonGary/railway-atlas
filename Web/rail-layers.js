@@ -26,9 +26,8 @@ const RailMapLayers = (() => {
     summary.textContent="原始属性";data.textContent=JSON.stringify(tags,null,2);raw.append(summary,data);$("infoContent").append(raw);
     if (station) {
       StationLayoutLayer.addFocusButton($("infoContent"),coordinate);
-      const button = document.createElement("button");
-      button.className = "text-button"; button.textContent = "查看线路与本站车次";
-      button.onclick = () => showStationBoard(name); $("infoContent").append(button);
+      if (!urbanType(tags.station || tags.subclass || tags.railway))
+        StationMapBoard.mount($("infoContent"),tags["name:zh-Hans"] || tags["name:zh"] || name);
     }
     $("infoPanel").hidden = false;
     if (window.matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
@@ -305,6 +304,7 @@ const RailMapLayers = (() => {
     }
   }
   function toggle(redraw=false) {
+    StationMapBoard.refresh();
     if (!map) return;
     const rail = $("showRail").checked;
     const mode=AtlasPrefs.value.mode;

@@ -21,6 +21,27 @@ public actor GeoGVStations {
     }
     public struct Train: Sendable {
         public let number: String, from: String, to: String, arrival: String, departure: String
+        public let route: String?
+    }
+    public struct Run: Decodable, Sendable {
+        public struct Section: Decodable, Sendable {
+            public struct Call: Decodable, Sendable { public let name: String; public let arr: String?, dep: String? }
+            public let stops: [Call]
+            public let timezone: String?, opid: String?
+        }
+        public let sections: [Section]
+    }
+    public static func clock(_ code: String?) -> String {
+        guard let code, code.count == 5, let day = Int(code.prefix(1)), day > 0,
+              let hh = Int(code.dropFirst().prefix(2)), hh < 24, let mm = Int(code.suffix(2)), mm < 60 else { return code ?? "—" }
+        return (day > 1 ? "+\(day-1)日 " : "") + String(format:"%02d:%02d",hh,mm)
+    }
+    public func run(_ route: String) async throws -> Run {
+        let parts = route.components(separatedBy: "/")
+        guard parts.count == 2, parts.allSatisfy({ $0.range(of: #"^[A-Za-z0-9_-]{1,32}$"#, options: .regularExpression) != nil }) else {
+            throw DataError.invalid("原站车次编号无效。")
+        }
+        return try JSONDecoder().decode(Run.self, from: try await get("route/" + parts.joined(separator: "%2F")))
     }
     public struct Board: Sendable {
         public let update: String, trains: [Train]
@@ -82,11 +103,13 @@ public actor GeoGVStations {
         struct Response: Decodable {
             struct Endpoint: Decodable { var kid: String?; var name: String }
             struct Call: Decodable {
-                var from: Int; var to: Int; var arr: String?; var dep: String?; var opid: String
+                var from: Int; var to: Int; var arr: String?; var dep: String?; var opid: String; var route: String?
             }
             var hash: [Endpoint]; var list: [Call]; var update: String?
         }
-        let board = try JSONDecoder().decode(Response.self, from: try await get("stationroute", id: id))
+        let data = try await get("stationroute", id: id)
+        if data.isEmpty { return Board(update: "未注明", trains: []) }
+        let board = try JSONDecoder().decode(Response.self, from: data)
         let trains = try board.list.map { row in
             guard board.hash.indices.contains(row.from), board.hash.indices.contains(row.to) else {
                 throw DataError.invalid("原站时刻表有一条记录缺少起终点，请在原网页查看。")
@@ -94,7 +117,7 @@ public actor GeoGVStations {
             let a = board.hash[row.from], b = board.hash[row.to]
             return Train(number: row.opid, from: a.name, to: b.name,
                          arrival: a.kid == id ? "始发" : row.arr ?? "—",
-                         departure: b.kid == id ? "终到" : row.dep ?? "—")
+                         departure: b.kid == id ? "终到" : row.dep ?? "—", route: row.route)
         }
         return Board(update: board.update ?? "未注明", trains: trains)
     }

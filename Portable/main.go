@@ -27,7 +27,7 @@ import (
 
 const feedHost = "cnrail.geogv.org"
 
-var feedPath = regexp.MustCompile(`^(search|(?:poi|feature|stationroute)/[0-9a-f]{32})$`)
+var feedPath = regexp.MustCompile(`^(search|(?:poi|feature|stationroute)/[0-9a-f]{32}|train/[A-Z0-9]{1,12})$`)
 var client = &http.Client{
 	Timeout: 12 * time.Second,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -110,6 +110,11 @@ func stationFeed(w http.ResponseWriter, r *http.Request) {
 		path += "/"
 	}
 	endpoint := url.URL{Scheme: "http", Host: feedHost, Path: "/api/" + path, RawQuery: query.Encode()}
+	if strings.HasPrefix(path, "train/") {
+		number := strings.TrimPrefix(path, "train/")
+		endpoint.Path = "/api/route/CN/" + number
+		endpoint.RawPath = "/api/route/CN%2F" + number
+	}
 	req, err := http.NewRequestWithContext(r.Context(), "GET", endpoint.String(), nil)
 	if err != nil {
 		http.Error(w, "invalid upstream", 502)
@@ -146,6 +151,9 @@ func stationFeed(w http.ResponseWriter, r *http.Request) {
 			payload[i] -= units[1+i%n]
 		}
 		data = []byte(string(utf16.Decode(payload)))
+	}
+	if len(data) == 0 && strings.HasPrefix(path, "stationroute/") {
+		data = []byte(`{"hash":[],"list":[]}`)
 	}
 	if !json.Valid(data) {
 		http.Error(w, "invalid station data", 502)

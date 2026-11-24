@@ -1080,13 +1080,9 @@ function renderInfo(name) {
     <div class="info-block"><div class="info-label">本地路线快照</div>
       <div class="info-value">${trainList.length ? escapeHTML(unique(trainList).join("、")) : "随包资料中没有该站的车次记录。"}</div></div>
     ${line ? `<div class="info-block"><div class="info-label">线路与里程</div><div class="info-value">${escapeHTML(line.line || "未记录线路名")}${Number.isFinite(line.km) ? ` · ${line.km} km` : ""}</div></div>` : ""}
-    <div class="info-block"><div class="info-label">本站车次表</div>
-      ${info.routes.length ? `<div class="station-route-list">${unique(trainList).map(train => `<button class="station-route-link" data-train="${escapeHTML(train)}">${escapeHTML(train)} 经停</button>`).join("")}</div>` : ""}
-      <p class="muted">${info.routes.length ? "仅列出随包时刻快照。" : "完整途经线路和本站车次请在原站核对。"}</p>
-    </div>
     <p class="station-source">随包坐标用于线路示意，站场股道不在本数据范围内。${info.coordinate ? `<br>${info.coordinate[0].toFixed(5)}, ${info.coordinate[1].toFixed(5)}` : ""}
-      <br><button class="text-button" id="stationDetails">查看途经线路、线路所与本站车次</button></p>`;
-  $("stationDetails").onclick = () => showStationBoard(name);
+    </p>`;
+  StationMapBoard.mount($("infoContent"),name);
   StationLayoutLayer.addFocusButton($("infoContent"),info.coordinate);
   $("infoContent").querySelectorAll(".station-route-link").forEach(button => button.addEventListener("click", () => {
     const route = state.routes.find(item => item.train === button.dataset.train);
@@ -1115,6 +1111,7 @@ function selectStation(name, { pan = true } = {}) {
   else if (pan && !state.playbackVisible) {
     const sample=state.routes.find(r=>r.stops.some((s,i)=>s.name===name && r.stopCoordinates[i]));
     if(sample)state.map.setView(sample.stopCoordinates[sample.stops.findIndex(s=>s.name===name)],12);
+    else StationMapBoard.focus(name);
   }
 }
 
@@ -1125,10 +1122,10 @@ function renderDirectory() {
   const localLibrary = RailLibrary.current;
   const sampled = new Map();
   for (const route of state.routes) for (const name of new Set(route.stops.map(stop=>stop.name))) sampled.set(name,(sampled.get(name)||0)+1);
-  const railwayStations = (selectedCityID ? [] : [...new Set([...sampled.keys(),...(localLibrary?.stations.keys()||[]),...(localLibrary?.lines.keys()||[])])])
+  const railwayStations = (selectedCityID ? [] : [...new Set([...sampled.keys(),...StationPanel.national.stations,...(localLibrary?.stations.keys()||[]),...(localLibrary?.lines.keys()||[])])])
     .filter(name => !query || name.toLocaleLowerCase().includes(query))
     .map(name => ({name, railwayLabel:localLibrary?.stations.has(name) ? `${localLibrary.stations.get(name).length} 条排图记录` :
-      localLibrary?.lines.has(name) ? `${localLibrary.lines.get(name).length} 条途经线路` : `${sampled.get(name)} 趟随包车次`}));
+      localLibrary?.lines.has(name) ? `${localLibrary.lines.get(name).length} 条途经线路` : sampled.has(name) ? `${sampled.get(name)} 趟随包车次` : "全国铁路站表"}));
   const metroDetails = [...state.metroDetails.values()].filter(detail => !selectedCityID || detail.id === selectedCityID);
   const metroStations = metroDetails.flatMap(detail =>
     (detail.stations || []).filter(station => !query || station.name.toLocaleLowerCase().includes(query))
@@ -1930,7 +1927,7 @@ function setupLibrary() {
   async function install(file) {
     input.disabled = sync.disabled = true;
     $("libraryStatus").textContent = file ? "正在检查时刻库…" : "正在从路路通读取时刻与径路资料…";
-    try { await RailLibrary.install(file); render(); renderDirectory(); }
+    try { await RailLibrary.install(file); render(); renderDirectory(); StationMapBoard.reload(); }
     catch (error) { $("libraryStatus").textContent = `导入失败。${error.message}`; }
     finally { input.disabled = sync.disabled = false; }
   }
@@ -1939,7 +1936,7 @@ function setupLibrary() {
     const file=input.files[0]; input.value="";
     if (file) install(file);
   };
-  RailLibrary.restore().then(()=>{render(); renderDirectory();}).catch(() => { $("libraryStatus").textContent = "浏览器无法读取本机时刻库存储。"; });
+  RailLibrary.restore().then(()=>{render(); renderDirectory(); if(RailLibrary.current) StationMapBoard.reload();}).catch(() => { $("libraryStatus").textContent = "浏览器无法读取本机时刻库存储。"; });
 }
 
 async function loadData() {
@@ -2397,6 +2394,7 @@ function initializeMap() {
   StationLabels.setup(state.map, RailMapLayers.eachVisibleStation);
   systemDarkMap.addEventListener("change", updateBasemapAppearance);
   RailMapLayers.setup(state.map);
+  StationMapBoard.setup(state.map);
   StationLayoutLayer.setup(state.map);
 }
 

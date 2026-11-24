@@ -5,6 +5,7 @@ import MapKit
 import RailwayCore
 import ScreenCaptureKit
 import SwiftUI
+import WebKit
 
 /// Explicit QA mode with an isolated cache. It never runs in a normal launch.
 @MainActor
@@ -27,8 +28,18 @@ enum OnlineUIValidation {
             window?.setContentSize(NSSize(width: 1240, height: 820))
             window?.center()
             window?.title = "铁道图鉴 · 本地验证"
+            if arguments.contains("--station-directory-check") {
+                try await checkStationDirectory(store, window: window, directory: directory)
+                NSApp.terminate(nil)
+                return
+            }
             if arguments.contains("--station-layout-check") {
                 try await checkStationLayouts(store, directory: directory)
+                NSApp.terminate(nil)
+                return
+            }
+            if arguments.contains("--world-stations-check") {
+                try await checkWorldStationTiles(RailwayMapStore(), directory: directory)
                 NSApp.terminate(nil)
                 return
             }
@@ -248,6 +259,158 @@ enum OnlineUIValidation {
             print(report)
             exit(1)
         }
+    }
+
+    private static func checkStationDirectory(_ store: RailwayMapStore, window: NSWindow?, directory: URL) async throws {
+        guard let root = window?.contentView else { throw DataError.invalid("验证窗口未打开") }
+        func child<T: NSView>(_ view: NSView, _ type: T.Type) -> T? {
+            (view as? T) ?? view.subviews.lazy.compactMap { child($0,type) }.first
+        }
+        store.changeMode(.apple); store.panelVisible = false; store.inspectorVisible = false
+        store.showsStations = true; store.automaticDetail = false; store.networks.insert(.railway)
+        var verified: [String] = []
+        for (name, count) in [("北京西",350),("虎门",132),("杜家坎所",0)] {
+            guard let station = NationalDirectoryPins.all.first(where: { $0.name == name }) else {
+                throw DataError.invalid("缺少全国站点 \(name)")
+            }
+            store.region = MKCoordinateRegion(center: station.coordinate.location,
+                span: MKCoordinateSpan(latitudeDelta: 0.045, longitudeDelta: 0.06))
+            store.cameraRevision += 1
+            var picked = false
+            for _ in 0..<80 {
+                try await Task.sleep(for:.milliseconds(200))
+                if let map = child(root,MKMapView.self),
+                   let pin = map.annotations.compactMap({ $0 as? StationAnnotation }).first(where: {
+                       $0.station.name == name && map.view(for: $0) != nil
+                   }) {
+                    map.selectAnnotation(pin, animated:false); picked = true; break
+                }
+            }
+            guard picked else { throw DataError.invalid("地图上未找到 \(name) 的可选标记") }
+            var contents = ""
+            for _ in 0..<100 {
+                try await Task.sleep(for:.milliseconds(200))
+                guard store.selection?.name == name, let web = child(root,WKWebView.self),
+                      let text = try? await web.evaluateJavaScript("""
+                    (() => { const d=document.querySelector('input[type=date]'); if (!d) return '';
+                      if(d.value!=='2026-11-24'){d.value='2026-11-24';d.dispatchEvent(new Event('change'));}
+                      return document.body.innerText; })()
+                    """) as? String, text.contains("本站车次") else { continue }
+                contents = text; break
+            }
+            guard store.inspectorVisible, contents.contains(count == 0 ? "没有匹配的车次记录" : "\(count) 条记录") else {
+                throw DataError.invalid("\(name) 右栏未显示预期站表 \(contents.prefix(200))")
+            }
+            if name == "北京西", let web = child(root,WKWebView.self) {
+                let result = try await web.callAsyncJavaScript("""
+                    const select = document.querySelector('select'), filter = document.querySelector('input[type=search]');
+                    [...document.querySelectorAll('button')].find(b=>b.textContent==='末页').click();
+                    if(!document.body.innerText.includes('第 12 / 12 页')) return false;
+                    filter.value='G337';filter.dispatchEvent(new Event('input'));
+                    [...document.querySelectorAll('summary')].find(s=>s.textContent.startsWith('G337')).click();
+                    await new Promise(r=>setTimeout(r,120));
+                    if(!document.body.innerText.includes('7 个停站')) return false;
+                    select.value='original';select.dispatchEvent(new Event('change'));
+                    [...document.querySelectorAll('summary')].find(s=>s.textContent.includes('京西联络线')).click();
+                    await new Promise(r=>setTimeout(r,120));
+                    return document.body.innerText.includes('杜家坎所') && document.body.innerText.includes('426 条记录');
+                    """, arguments:[:],in:nil,contentWorld:.page)
+                guard result as? Bool == true else { throw DataError.invalid("车次全表或原站线路缺失") }
+            }
+            verified.append("\(name) · \(count) 条 · 地图标记 → 右栏")
+        }
+        try verified.joined(separator:"\n").write(to: directory.appendingPathComponent("station-directory-check.txt"), atomically:true, encoding:.utf8)
+    }
+
+    private static func checkWorldStationTiles(_ store: RailwayMapStore, directory: URL) async throws {
+        store.mapMode = .cached
+        store.showsStationLayouts = true
+        store.showsPlatforms = true
+        store.showsPassengerPassages = true
+        store.showsStationEntrances = true
+        store.viewportWidth = 1050
+        store.viewportHeight = 700
+        let sites: [(String, Coordinate, StationLayoutKind, String?)] = [
+            ("巴黎 Vavin", Coordinate(48.8422,2.3288), .passage,"node/790499201"),
+            ("纽约 Astor Place", Coordinate(40.7301,-73.9910), .platform,"way/907561796"),
+            ("东京银座", Coordinate(35.6719,139.7643), .passage,"node/1195197149"),
+            ("悉尼 Crows Nest", Coordinate(-33.8268,151.201), .platform,"way/1245422813"),
+            ("圣保罗 Ana Rosa", Coordinate(-23.5815,-46.6388), .entrance,nil),
+            ("开罗 Sadat", Coordinate(30.04446,31.23568), .entrance,nil),
+            ("新加坡 Queenstown", Coordinate(1.29485,103.80592), .entrance,"sg-lta/25149")
+        ]
+        var lines = ["缓存地图模式。计时从设置车站视野到图层几何可用，单位为毫秒。"]
+        for visit in 1...2 {
+            for (name,point,kind,id) in sites {
+                let start = ProcessInfo.processInfo.systemUptime
+                store.region = MKCoordinateRegion(center: point.location, span: .init(latitudeDelta: 0.0028, longitudeDelta: 0.0042))
+                store.scheduleStationLayouts()
+                await store.worldStationWork?.value
+                let features = store.stationLayouts(in: store.viewportBounds, zoom: 18)
+                guard store.stationLayoutTarget == nil, features.contains(where: { $0.kind == kind }),
+                      id.map({ sample in features.contains { $0.id == sample } && !store.layoutIDs.contains(sample) }) ?? true else {
+                    throw DataError.invalid("站区读取失败 \(name) \(store.worldStationKeys) \(features.count)")
+                }
+                let milliseconds = (ProcessInfo.processInfo.systemUptime-start)*1000
+                let drawables = features.map { $0.overlay(alignment: .wgs84) }
+                guard drawables.allSatisfy({ !$0.boundingMapRect.isNull }) else { throw DataError.invalid("地图形状缺失 \(name)") }
+                lines.append("\(visit)\t\(name)\t\(String(format:"%.1f",milliseconds))\t\(drawables.count)")
+            }
+        }
+        store.showsStationEntrances = false
+        guard !store.stationLayouts(in: store.viewportBounds, zoom: 18).contains(where: { $0.kind == .entrance }) else {
+            throw DataError.invalid("出入口开关")
+        }
+        store.mapMode = .offline
+        store.showsStationEntrances = true
+        store.uiScale = 1
+        let size = CGSize(width: 1000, height: 680)
+        let screen = CGRect(origin: .zero, size: size)
+        let point = sites[0].1
+        let span = size.width * 360 / (256 * exp2(17.0))
+        let latSpan = span * size.height / size.width * cos(point.latitude * .pi / 180)
+        store.viewportChanged(MKCoordinateRegion(center: point.location, span: .init(latitudeDelta: latSpan*16, longitudeDelta: span*16)),
+                              width: size.width, height: size.height)
+        // Enter the detail zoom using the real offline zoom command, without a manual tile refresh.
+        guard store.worldStationKeys.isEmpty else { throw DataError.invalid("低倍视野应关闭站区读取") }
+        store.zoom(1/16)
+        await store.worldStationWork?.value
+        let projection = RailProjection(region: store.region, size: size)
+        let actualZoom = RailDisplayPolicy.zoom(longitudeSpan: projection.visibleRegion.span.longitudeDelta, width: size.width)
+        guard abs(actualZoom - 17) < 0.1 else { throw DataError.invalid("巴黎画布实际比例尺 Z\(actualZoom)") }
+        let placements = store.layoutLabels(in: projection.visibleBounds, zoom: actualZoom,
+                                           screen: screen, project: projection.screen)
+        let vavin: Set<String> = ["node/790498979","node/790499201","node/790499285","node/790499310"]
+        let exits = placements.filter { vavin.contains($0.id) }
+        guard Set(exits.map(\.text)) == Set(["1","2","3","4"]),
+              exits.contains(where: { $0.leaderStart != nil }),
+              exits.allSatisfy({ a in exits.allSatisfy { b in a.id == b.id || !a.frame.intersects(b.frame) } })
+        else { throw DataError.invalid("Vavin 出口标签 \(exits.map(\.text))") }
+        let window = NSWindow(contentRect: screen, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = NSHostingView(rootView: OfflineRailwayMap().environmentObject(store))
+        window.makeKeyAndOrderFront(nil)
+        try await Task.sleep(for: .milliseconds(300))
+        _ = try await capture("vavin-z17-offline", directory: directory, window: window)
+        window.contentView = NSHostingView(rootView: AppleRailwayMap(store: store))
+        try await Task.sleep(for: .milliseconds(350))
+        func findMap(_ view: NSView) -> MKMapView? {
+            if let map = view as? MKMapView { return map }
+            return view.subviews.lazy.compactMap(findMap).first
+        }
+        guard let map = window.contentView.flatMap(findMap),
+              let coordinator = map.delegate as? AppleRailwayMap.Coordinator else { throw DataError.invalid("缺少 MapKit 视图") }
+        map.setRegion(store.displayRegion, animated:false)
+        try await Task.sleep(for: .milliseconds(350))
+        coordinator.updateStationLabels(map)
+        guard vavin.allSatisfy({ id in
+            guard let item = coordinator.platformAnnotations[id] else { return false }
+            return map.view(for:item)?.image != nil
+        }) else { throw DataError.invalid("MapKit 未绘出 Vavin 的四个出口圆标") }
+        _ = try await capture("vavin-mapkit", directory: directory, window: window)
+        lines.append("巴黎 Vavin，离线画布 Z17 和 MapKit 均显示 1、2、3、4 号出口。")
+        try lines.joined(separator:"\n").write(to:directory.appendingPathComponent("world-stations.txt"),atomically:true,encoding:.utf8)
     }
 
     private static func checkStationLayouts(_ store: RailwayMapStore, directory: URL) async throws {

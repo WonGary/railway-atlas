@@ -4,6 +4,7 @@ import WebKit
 
 struct StationDirectoryView: View {
     let name: String
+    var inline = false
     @Environment(\.dismiss) private var dismiss
     @State private var choices: [GeoGVStations.Choice] = []
     @State private var stationID = ""
@@ -13,11 +14,11 @@ struct StationDirectoryView: View {
     @State private var searching = true
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            if !inline { HStack {
                 Text(name).font(.title2.bold())
                 Spacer()
                 Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
+            } }
             if searching { ProgressView("查找车站…") }
             else if let lookupError {
                 Text(lookupError)
@@ -47,9 +48,9 @@ struct StationDirectoryView: View {
                 Link("CC BY-SA 4.0", destination: URL(string: "https://creativecommons.org/licenses/by-sa/4.0/deed.zh-hans")!)
             }.font(.caption)
         }
-        .padding()
+        .padding(inline ? 2 : 16)
         #if os(macOS)
-        .frame(minWidth: 610, idealWidth: 680, minHeight: 450, idealHeight: 565)
+        .frame(minWidth: inline ? 0 : 610, idealWidth: inline ? nil : 680, minHeight: inline ? 390 : 450, idealHeight: inline ? nil : 565)
         #endif
         .task(id: "\(name)/\(attempt)") {
             searching = true; lookupError = nil; stationID = ""
@@ -257,17 +258,10 @@ private struct StationBoardView: View {
                     $0.from.contains(filter) || $0.to.contains(filter) }
                 Text("原站 \(board.update) 更新 · 显示 \(rows.count) / \(board.trains.count) 条 · 出行请核对 12306")
                     .font(.caption).foregroundStyle(.secondary)
-                HStack { Text("车次").frame(width: 65, alignment: .leading); Text("始发 → 终到"); Spacer(); Text("到达 / 开出") }
-                    .font(.caption).foregroundStyle(.secondary)
                 ScrollView {
                     LazyVStack(spacing: 7) {
                         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                            HStack {
-                                Text(row.number).frame(width: 65, alignment: .leading)
-                                Text("\(row.from) → \(row.to)")
-                                Spacer()
-                                Text("\(row.arrival) / \(row.departure)").monospacedDigit()
-                            }.font(.callout)
+                            StationRunRow(row: row)
                         }
                     }.textSelection(.enabled)
                 }
@@ -276,6 +270,43 @@ private struct StationBoardView: View {
         }.task(id: retry) {
             failure = nil
             do { let result = try await GeoGVStations.shared.board(id); try Task.checkCancellation(); board = result }
+            catch { if !Task.isCancelled { failure = error.localizedDescription } }
+        }
+    }
+}
+
+private struct StationRunRow: View {
+    let row: GeoGVStations.Train
+    @State private var expanded = false
+    @State private var run: GeoGVStations.Run?
+    @State private var failure: String?
+    @State private var attempt = 0
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            if let run {
+                ForEach(Array(run.sections.enumerated()), id: \.offset) { _, section in
+                    if let label = section.opid { Text(label).font(.caption.bold()) }
+                    ForEach(Array(section.stops.enumerated()), id: \.offset) { _, stop in
+                        Text("\(stop.name)　\(GeoGVStations.clock(stop.arr)) / \(GeoGVStations.clock(stop.dep))")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else if let failure {
+                Text(failure)
+                if row.route != nil { Button("重试") { attempt += 1 } }
+            } else { ProgressView("读取全程时刻…") }
+        } label: {
+            VStack(alignment: .leading) {
+                Text(row.number).font(.callout.weight(.medium))
+                Text("\(row.from) → \(row.to)")
+                Text("\(row.arrival) / \(row.departure)").foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption).task(id: "\(expanded)-\(attempt)-\(row.route ?? "")") {
+            guard expanded, run == nil else { return }
+            guard let route = row.route else { failure = "原站未提供全程时刻。"; return }
+            failure = nil
+            do { let result = try await GeoGVStations.shared.run(route); try Task.checkCancellation(); run = result }
             catch { if !Task.isCancelled { failure = error.localizedDescription } }
         }
     }

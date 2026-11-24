@@ -15,7 +15,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.7</span></div>
+    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.8</span></div>
     <div class="top-actions">
       <button id="toggleWorkspace" class="text-button" aria-controls="workspacePanel" title="打开图层与工作区">图层</button>
       <button id="homeMap" class="text-button" title="返回全国视野">全国</button>
@@ -88,7 +88,7 @@
             <button id="shuffleDiscovery" class="text-button">换一批</button>
             <div id="discoveryList" class="directory-list"></div>
           </details>
-          <p class="panel-note">铁路目录列出网页随包路线的经停站；城市轨道目录按城市加载详细线路和站点。查询全网途经线路和本站车次时，可打开中国铁路地图原站。</p>
+          <p class="panel-note">选择铁路车站可在右栏查线路、线路所和本站车次。城市轨道站表按城市加载。</p>
         </section>
         <section class="workspace-page" data-page="favorites" hidden>
           <div class="section-heading"><div><span class="eyebrow">本机保存</span><h2>我的收藏</h2></div></div>
@@ -381,6 +381,11 @@
   <script src="./station-layout-layer.js"></script>
   <script src="./world-rail.js"></script>
   <script src="./rail-layers.js"></script>
+  <link rel="stylesheet" href="./station-directory/panel.css">
+  <script src="./station-directory/national.js"></script>
+  <script src="./station-directory/cnrail.js"></script>
+  <script src="./station-directory/catalog.js"></script>
+  <script src="./station-directory/panel.js"></script>
   <script src="./station-board.js"></script>
   <script src="./app.js"></script>
   <script>

@@ -16,7 +16,9 @@ struct FeatureInspectorContent: View {
     @Environment(\.openWindow) private var openWindow
     #endif
     @State private var showsInformation = false
+    #if !os(macOS)
     @State private var showsStationDirectory = false
+    #endif
     @State private var showsRawFields = false
     let item: RailwaySelection
 
@@ -37,12 +39,16 @@ struct FeatureInspectorContent: View {
                     .accessibilityIdentifier("focus-station-layouts")
                     .help("放大到本站，查看已收录的站厅、站台和通道")
                 }
-                Button("全线站点与本站车次", systemImage: "list.bullet.rectangle") {
-                    showsStationDirectory = true
-                }
-                .accessibilityIdentifier("geo-station-directory")
-                .sheet(isPresented: $showsStationDirectory) {
-                    StationDirectoryView(name: model.tags["name:zh-Hans"] ?? model.tags["name:zh"] ?? model.name)
+                if !["subway", "tram", "light_rail", "monorail"].contains(model.tags["station"] ?? model.tags["railway"] ?? "") {
+                    let name = model.tags["name:zh-Hans"] ?? model.tags["name:zh"] ?? model.name
+                    #if os(macOS)
+                    StationInspectorBoard(name: name).id(item.id)
+                    #else
+                    Button("全线站点与本站车次", systemImage: "list.bullet.rectangle") {
+                        showsStationDirectory = true
+                    }
+                    .sheet(isPresented: $showsStationDirectory) { StationDirectoryView(name: name) }
+                    #endif
                 }
             }
             Divider()

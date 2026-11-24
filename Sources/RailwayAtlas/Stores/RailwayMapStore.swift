@@ -77,7 +77,20 @@ final class RailwayMapStore: ObservableObject {
     lazy var layoutBase = layoutFeatures
     let layoutSession: URLSession
     var layoutDataRevision = 0
-    @Published var layoutFeatures = RailwayMapStore.bundledLayouts() { didSet { layoutDataRevision += 1 } }
+    @Published var layoutFeatures = RailwayMapStore.bundledLayouts() { didSet { layoutDataRevision += 1; layoutIDs = Set(layoutFeatures.map(\.id)) } }
+    lazy var layoutIDs = Set(layoutFeatures.map(\.id))
+    let worldStationTiles = WorldStationTiles()
+    var worldStationKeys: [String] = []
+    var worldStationWork: Task<Void, Never>?
+    private(set) var worldStationAliases: Set<String> = []
+    private(set) var worldLTAExits: [StationLayout] = []
+    @Published var worldStationRows: [StationLayout] = [] {
+        didSet {
+            worldStationAliases = Set(worldStationRows.compactMap(\.matchedOSM))
+            worldLTAExits = worldStationRows.filter { $0.id.hasPrefix("sg-lta/") }
+            layoutDataRevision += 1
+        }
+    }
     @Published var showsLabels = true { didSet { labelRevision += 1 } }
     @Published var basemapDarkness = 0.0 {
         didSet { persist(basemapDarkness, "railway.basemapDarkness") }
@@ -87,7 +100,34 @@ final class RailwayMapStore: ObservableObject {
         set { basemapDarkness = newValue ? 0.42 : 0 }
     }
     @Published var basemapStyle: BasemapStyle = .standard {
-        didSet { persist(basemapStyle.rawValue, "railway.basemapStyle") }
+        didSet {
+            persist(basemapStyle.rawValue, "railway.basemapStyle")
+            let oldSource = source(for: oldValue)
+            let newSource = activeBasemapSource
+            adjustAlignmentIfNeeded(from: oldSource, to: newSource)
+        }
+    }
+    @Published var standardBasemapSource: BasemapSource = .apple {
+        didSet {
+            persist(standardBasemapSource.rawValue, "railway.standardBasemapSource")
+            if basemapStyle == .standard {
+                adjustAlignmentIfNeeded(from: oldValue, to: standardBasemapSource)
+            }
+        }
+    }
+    @Published var satelliteBasemapSource: BasemapSource = .apple {
+        didSet {
+            persist(satelliteBasemapSource.rawValue, "railway.satelliteBasemapSource")
+            if basemapStyle != .standard {
+                adjustAlignmentIfNeeded(from: oldValue, to: satelliteBasemapSource)
+            }
+        }
+    }
+    @Published var customStandardTileTemplate = "" {
+        didSet { persist(customStandardTileTemplate, "railway.customStandardTileTemplate") }
+    }
+    @Published var customSatelliteTileTemplate = "" {
+        didSet { persist(customSatelliteTileTemplate, "railway.customSatelliteTileTemplate") }
     }
     @Published var uiScale = 1.0 { didSet { persist(uiScale, "railway.uiScale") } }
     @Published var panelWidth = 320.0 { didSet { persist(panelWidth, "railway.panelWidth") } }
@@ -182,6 +222,9 @@ final class RailwayMapStore: ObservableObject {
             cameraRevision += 1
         }
     }
+    @Published var automaticAlignment = true {
+        didSet { persist(automaticAlignment, "railway.automaticAlignment") }
+    }
     @Published var hiddenRoutes: Set<String> = [] {
         didSet {
             if !CommandLine.arguments.contains("--ui-smoke") { UserDefaults.standard.set(Array(hiddenRoutes), forKey: "railway.hiddenRoutes") }
@@ -255,6 +298,40 @@ final class RailwayMapStore: ObservableObject {
     @Published var activeProviders = ""
     @Published var placeResults: [RailwaySelection] = []
     @Published var isSearchingPlaces = false
+
+    var activeBasemapSource: BasemapSource {
+        source(for: basemapStyle)
+    }
+
+    var activeBasemapTemplate: String? {
+        activeBasemapSource.template(for: basemapStyle,
+                                     customStandard: customStandardTileTemplate,
+                                     customSatellite: customSatelliteTileTemplate)
+    }
+
+    var activeBasemapNeedsNetwork: Bool {
+        activeBasemapSource != .apple || basemapStyle != .standard
+    }
+
+    var activeBasemapStatus: String {
+        if activeBasemapSource == .custom && activeBasemapTemplate == nil { return "请填写瓦片地址，当前显示 Apple 底图。" }
+        if basemapStyle == .hybrid && activeBasemapSource != .apple { return "此来源显示卫星影像，铁道漫游的站名叠加在影像上。" }
+        return "\(activeBasemapSource.title) · \(activeBasemapSource.detail)"
+    }
+
+    var activeBasemapOfflineStatus: String {
+        activeBasemapSource == .apple && basemapStyle != .standard
+            ? "卫星影像需要联网，MapKit 可能显示系统缓存"
+            : "\(activeBasemapSource.title)需要联网，已缓存的瓦片仍可继续显示"
+    }
+
+    var activeBasemapAttributionTitle: String {
+        activeBasemapSource.attributionTitle
+    }
+
+    var activeBasemapAttributionURL: URL? {
+        activeBasemapSource.attributionURL
+    }
 
     let tileRepository: RailwayTileRepository
     var viewportWork: Task<Void, Never>?
@@ -330,6 +407,12 @@ final class RailwayMapStore: ObservableObject {
                 ? (UserDefaults.standard.bool(forKey: "railway.dimBasemap") ? 0.42 : 0)
                 : min(1, max(0, UserDefaults.standard.double(forKey: "railway.basemapDarkness")))
             basemapStyle = BasemapStyle(rawValue: UserDefaults.standard.string(forKey: "railway.basemapStyle") ?? "") ?? .standard
+            standardBasemapSource = BasemapSource(
+                rawValue: UserDefaults.standard.string(forKey: "railway.standardBasemapSource") ?? "") ?? .apple
+            satelliteBasemapSource = BasemapSource(
+                rawValue: UserDefaults.standard.string(forKey: "railway.satelliteBasemapSource") ?? "") ?? .apple
+            customStandardTileTemplate = UserDefaults.standard.string(forKey: "railway.customStandardTileTemplate") ?? ""
+            customSatelliteTileTemplate = UserDefaults.standard.string(forKey: "railway.customSatelliteTileTemplate") ?? ""
             uiScale = Self.preferenceNumber("railway.uiScale", default: 1, range: 0.75...1.6)
             panelWidth = Self.preferenceNumber("railway.panelWidth", default: 320, range: 250...560)
             statusVisible = UserDefaults.standard.object(forKey: "railway.statusVisible") as? Bool ?? true
@@ -344,6 +427,8 @@ final class RailwayMapStore: ObservableObject {
                 nationalMetroStatus = "全国城市轨道概览 · 已关闭"
             }
             alignment = MapAlignment(rawValue: UserDefaults.standard.string(forKey: "railway.alignment") ?? "") ?? .mainlandGCJ
+            automaticAlignment = UserDefaults.standard.object(forKey: "railway.automaticAlignment") as? Bool
+                ?? (alignment == activeBasemapSource.defaultAlignment)
         }
         if qaIndex == nil, let saved = UserDefaults.standard.string(forKey: "railway.tileSource"),
            let value = try? RailwayTileRepository.normalizeSource(saved) {
@@ -358,6 +443,15 @@ final class RailwayMapStore: ObservableObject {
     }
     func persist(_ value: Any, _ key: String) {
         if !CommandLine.arguments.contains("--ui-smoke") { UserDefaults.standard.set(value, forKey: key) }
+    }
+
+    private func source(for style: BasemapStyle) -> BasemapSource {
+        style == .standard ? standardBasemapSource : satelliteBasemapSource
+    }
+
+    private func adjustAlignmentIfNeeded(from oldSource: BasemapSource, to newSource: BasemapSource) {
+        guard oldSource != newSource, automaticAlignment, !applyingConfiguration else { return }
+        alignment = newSource.defaultAlignment
     }
 
     func start() async {
@@ -517,6 +611,7 @@ final class RailwayMapStore: ObservableObject {
 
     func rebuildVisible(in transientBounds: MapBounds? = nil) {
         guard !applyingConfiguration else { return }
+        if mapMode == .offline && transientBounds == nil { scheduleWorldStationTiles() }
         let view = transientBounds ?? viewportBounds
         let state = VisibilityState(level: Int(displayZoom), categories: categories, networks: networks,
             forcedCategories: forcedCategories, forcedNetworks: forcedNetworks, hiddenRoutes: hiddenRoutes,
@@ -581,9 +676,18 @@ final class RailwayMapStore: ObservableObject {
             grouped[style, default: []].append(line)
         }
         visibleLines = visible
-        visibleStations = showsStations ? candidateStations.compactMap { i in
+        var displayedStations = showsStations ? candidateStations.compactMap { i in
             policy.visible(sourceStations[i], facts: prepared.stationDisplay[i])
         } : []
+        #if os(macOS)
+        if mapMode != .offline, showsStations, displayZoom >= 10, networks.contains(.railway), let bounds = renderBounds {
+            let existing = Set(displayedStations.map { $0.name.hasSuffix("站") ? String($0.name.dropLast()) : $0.name })
+            for station in NationalDirectoryPins.all where bounds.contains(station.coordinate) && !existing.contains(station.name) {
+                if let visible = policy.visible(station) { displayedStations.append(visible) }
+            }
+        }
+        #endif
+        visibleStations = displayedStations
         renderGroups = grouped.map { style, lines in
             let ids = lines.map(\.id)
             if groupedPaths[style]?.ids != ids {
