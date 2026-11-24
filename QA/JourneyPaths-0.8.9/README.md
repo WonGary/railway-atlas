@@ -1,0 +1,27 @@
+# 车次出图验收
+
+样本的始发日期为 2026-11-25。指定车号为 Z336、N147、Z58、C273、D2236、V6461。其余四趟按 `SHA-256("atlas-20261125:" + 车号)` 对当天开行的其他车号排序，取前四个，即 S8140、G3703、C2730、C442。V6461 在两份本机时刻资料中均无记录，保留这一条，另取排序第五的 G3888 补测。
+
+网页地图已打开并导入路路通时刻库。每趟使用独立浏览器上下文，计时从点击车次开始，到主地图加载全部区间的折线并经过下一绘制帧为止。随后立即重选同一车次测第二次。明信片使用另一个空浏览器上下文，通过全国快照匹配，计时从填完车号、日期和上下车站开始，直到浏览器收到有效 PNG。两种测试都把首次路线文件下载计入耗时。
+
+`Portable/benchmark-journeys.cjs` 接收站点 URL 和输出 JSON 路径。`local.json` 记录本机网页每趟用时和请求文件。`Portable/check-journey-postcards.cjs` 从北京西站右栏选择 G337，检查石家庄至武汉两段轨迹，切换地图车次后再次导出，逐字节比较 PNG，并检查反向填站和跨夜上车。八款导出图片在 `postcards/`。
+
+Mac 测试使用已安装的 Railway Atlas。主窗口打开并读入时刻库后，测试选择车次，经过正常的径路匹配和主地图播放器，读取窗口画面。隔离运行参数为 `--ui-smoke <输出目录> --journey-frame-benchmark <本机路路通 JSON>`。
+
+## 路线资料
+
+全国车次按 2026-11-24 版 GTFS 编译。`Scripts/export-route-plans.cjs` 对比车次别名、停站和时间，`Scripts/build-route-atlas.py` 切分原轨迹并建立车号索引。`Scripts/build-osm-route-legs.py` 用经由线路、站序和里程匹配其余区间，铁路轮渡读取 OSM 的航道。网页在打开车次前已拥有站名与日历，另读约 11 KB 的文件索引。Mac 安装包包含所有分组。
+
+本次构建使用的输入摘要如下。区域摘录可从 OpenStreetMap France 的 `extracts/asia/china/` 获取。日期化的开行资料和许可见[本版更新](../../Web/RELEASE_NOTES_0.8.9.md)。
+
+| 输入 | SHA-256 |
+| --- | --- |
+| 2026-11-24 GTFS | `b464bcd22711aad44023cbfd381d612246c22a20749a994dac05566058be29e0` |
+| HOT 中国铁路 GeoJSON | `d1bfb82dd0cf1dded399391a858f7d1b2a722c5a9e3ab6b9c6de91f653c03137` |
+| 江西 | `6b2480f46c50bd224d65f9cee952ff21d5e79da56a1e09061fbe8caa1a10f027` |
+| 海南 | `1228dabce642a8aaf683f2a50baafcc59dcaa504832bdf2fc9a61b59ede01805` |
+| 广西 | `055aa1d7b77fd2e684ee21234df6fb98fdd2b00fc3778d066e59c6afec4adc38` |
+| 内蒙古 | `812378c4c4f8b8a9a13cd51e9d7f41d966d01a7cadbbbbb0b2638c64ca3ca219` |
+| 北京 | `063e5eaec17c861e337090a91c8f939e203ce471ac1b85fc06e869ce0a93f426` |
+| 河北 | `7b07936165558493f2077111861685b97f5a790b881eeb7dfb1420559f3778cc` |
+| 广东 | `6eabec7c269aa42d24dd084887c04e2346794eff7b3173626d2fa4d2968f0da2` |

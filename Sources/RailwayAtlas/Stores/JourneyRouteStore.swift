@@ -2,14 +2,25 @@ import Foundation
 import RailwayCore
 
 extension ExperienceStore {
-    func prepareRoute(_ input: RailTimetable, allowNetwork: Bool = true) async throws -> RailTrackJourney {
+    func prepareRoute(_ input: RailTimetable, allowNetwork: Bool = true, retryMissing: Bool = false) async throws -> RailTrackJourney {
         let online = allowNetwork && map?.mapMode != .offline
         try Task.checkCancellation()
         // Existing full-geometry snapshots remain usable without a download.
         if input.routing == nil, input.routingIssue == nil, let known = trackJourneys.first(where: {
             $0.train == input.train && $0.serviceDate == input.serviceDate && $0.stations == input.stops.map(\.station)
         }) { try known.validate(for: input); return known }
-        let timetable = try await routedTimetable(input, allowNetwork: online)
+        do {
+            if let result = try await NationalJourneyPaths.shared.journey(input) { return result }
+        } catch {
+            try Task.checkCancellation()
+            if let saved = await routeRepository.savedRoute(input) { return saved }
+            if !retryMissing { throw error }
+        }
+        let timetable = try await routedTimetable(input, allowNetwork: online && retryMissing)
+        if !retryMissing {
+            if let saved = await routeRepository.savedRoute(timetable) { return saved }
+            throw DataError.invalid("这份时刻表还没有连续轨迹。可用「重新匹配」从地图补查。")
+        }
         let result = try await routeRepository.route(timetable, allowNetwork: online)
         try Task.checkCancellation()
         return result
@@ -61,17 +72,32 @@ extension ExperienceStore {
         return results[0]
     }
 
-    func passengerRoute(_ journey: RailJourney, allowNetwork: Bool = true) async throws -> RailTrackJourney {
+    func passengerRoute(_ journey: RailJourney, allowNetwork: Bool = true, retryMissing: Bool = false) async throws -> RailTrackJourney {
         let online = allowNetwork && map?.mapMode != .offline
-        if journey.timetable?.routing == nil, library.lulu?.routing == nil, library.lulu != nil, online {
-            await library.synchronizeLulu()
+        let train: RailTimetable
+        do { train = try timetable(for: journey) }
+        catch {
+            guard let found = try await NationalJourneyPaths.shared.timetable(train:journey.train,date:journey.date,
+                from:journey.from,to:journey.to,boarding:true,departure:journey.departure) else { throw error }
+            train = found
         }
-        let train = try timetable(for: journey)
         if train.routing == nil, train.routingIssue == nil, let known = trackJourneys.first(where: {
             $0.train == train.train && $0.serviceDate == train.serviceDate && $0.stations == train.stops.map(\.station)
         }) { try known.validate(for: train); return try known.slice(from: journey.from, to: journey.to) }
-        let routed = try await routedTimetable(train, allowNetwork: online)
+        do {
+            if let result = try await NationalJourneyPaths.shared.journey(train,from:journey.from,to:journey.to) { return result }
+        } catch {
+            try Task.checkCancellation()
+            if let section = try? train.passengerSection(from:journey.from,to:journey.to),
+               let saved = await routeRepository.savedRoute(section) { return saved }
+            if !retryMissing { throw error }
+        }
+        let routed = try await routedTimetable(train, allowNetwork: online && retryMissing)
         let section = try routed.passengerSection(from: journey.from, to: journey.to)
+        if !retryMissing {
+            if let saved = await routeRepository.savedRoute(section) { return saved }
+            throw DataError.invalid("该乘车区间还没有连续轨迹。可用「重新匹配乘车路线」补查。")
+        }
         return try await routeRepository.route(section, allowNetwork: online)
     }
 }

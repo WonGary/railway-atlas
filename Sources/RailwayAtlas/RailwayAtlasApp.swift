@@ -105,7 +105,7 @@ struct RailwayAtlasApp: App {
         #endif
         #if os(macOS)
         Window("铁道漫游", id: "railway-experiences") {
-            ExperienceRootView(map: store)
+            ExperienceRootView(model:store.journeyWorkspace, map: store)
         }
         .defaultSize(width: 1080, height: 830)
         #endif

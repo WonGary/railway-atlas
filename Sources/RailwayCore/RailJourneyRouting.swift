@@ -235,6 +235,16 @@ public actor RailJourneyRouteRepository {
         self.tiles = RailwayTileRepository(directory: directory.appendingPathComponent("Tiles"))
     }
     private struct Cached: Codable { var timetable: RailTimetable; var journey: RailTrackJourney }
+    private func cacheFile(_ timetable: RailTimetable) -> URL {
+        let key = timetable.id.utf8.map { String(format: "%02x", $0) }.joined()
+        return directory.appendingPathComponent("route-" + String(key.prefix(180)) + ".json")
+    }
+    public func savedRoute(_ timetable: RailTimetable) -> RailTrackJourney? {
+        if let data = try? Data(contentsOf: cacheFile(timetable)), data.count <= 20_000_000,
+           let cached = try? JSONDecoder().decode(Cached.self, from: data), cached.timetable == timetable,
+           (try? cached.journey.validate(for: timetable)) != nil { return cached.journey }
+        return RailCorridor.journey(timetable)
+    }
     public func route(_ timetable: RailTimetable, allowNetwork: Bool = true) async throws -> RailTrackJourney {
         guard allowNetwork else { return try await resolve(timetable, allowNetwork: false) }
         return try await withThrowingTaskGroup(of: RailTrackJourney.self) { group in
@@ -253,15 +263,8 @@ public actor RailJourneyRouteRepository {
         guard let plan = timetable.routing else {
             throw DataError.invalid(timetable.routingIssue ?? "该时刻快照未含列车径路，请同步路路通离线库后重新选择车次")
         }
-        let key = timetable.id.utf8.map { String(format: "%02x", $0) }.joined()
-        let file = directory.appendingPathComponent("route-" + String(key.prefix(180)) + ".json")
-        if let data = try? Data(contentsOf: file), data.count <= 20_000_000,
-           let cached = try? JSONDecoder().decode(Cached.self, from: data), cached.timetable == timetable,
-           (try? cached.journey.validate(for: timetable)) != nil { return cached.journey }
-        if let route = RailCorridor.journey(timetable) {
-            try Task.checkCancellation()
-            return route
-        }
+        let file = cacheFile(timetable)
+        if let saved = savedRoute(timetable) { return saved }
         let journeyTiles = directory.appendingPathComponent("Tiles/railways.railcache")
         if stationCache == nil {
             var stored: [RailStation] = []

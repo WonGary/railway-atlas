@@ -15,7 +15,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.8</span></div>
+    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.9</span></div>
     <div class="top-actions">
       <button id="toggleWorkspace" class="text-button" aria-controls="workspacePanel" title="打开图层与工作区">图层</button>
       <button id="homeMap" class="text-button" title="返回全国视野">全国</button>
@@ -133,15 +133,20 @@
             <label>出发站<input id="postcardFrom" type="text"></label>
             <label>到达站<input id="postcardTo" type="text"></label>
             <label>车次<input id="postcardTrain" type="text"></label>
+            <label>乘车日期<input id="postcardDate" type="date"></label>
             <label>寄语<textarea id="postcardCaption" rows="3">山川迢迢，来日方长。</textarea></label>
             <label>样式
               <select id="postcardStyle">
                 <option value="red">暖红</option>
                 <option value="blue">铁路蓝</option>
                 <option value="map">地图绿</option>
+                <option value="paper">旧式红纸票</option><option value="magnetic">蓝色磁介票</option>
+                <option value="voucher">铁路报销凭证纪念版</option>
+                <option value="night">夜行线路卡</option><option value="ink">黑白线路卡</option>
               </select>
             </label>
             <canvas id="postcardPreview" class="postcard-preview" width="640" height="360"></canvas>
+            <p id="postcardStatus" role="status" class="panel-note"></p>
             <button id="downloadPostcard" class="primary-button wide-button">导出 PNG 明信片</button>
           </section>
           <section class="experience-page" data-experience-page="history" hidden>
@@ -385,6 +390,9 @@
   <script src="./station-directory/national.js"></script>
   <script src="./station-directory/cnrail.js"></script>
   <script src="./station-directory/catalog.js"></script>
+  <script src="./station-directory/paths/manifest.js"></script>
+  <script src="./station-directory/paths.js"></script>
+  <script src="./ticket-face.js"></script>
   <script src="./station-directory/panel.js"></script>
   <script src="./station-board.js"></script>
   <script src="./app.js"></script>

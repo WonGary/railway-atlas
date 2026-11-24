@@ -481,6 +481,7 @@ function closeJourney() {
 }
 
 function leaveJourney() {
+  ++journeyRequest;
   setPlaybackVisible(false);
   setLayerVisible(state.routeLayer,false);
   if (state.journeyCamera && state.map) state.map.setView(state.journeyCamera.center,state.journeyCamera.zoom,{animate:false});
@@ -516,8 +517,9 @@ function getStopCoordinate(index) {
 }
 
 function routeBounds() {
-  const points = state.routePolylines.flatMap(line => line?.getLatLngs() || []);
-  return points.length ? L.latLngBounds(points) : null;
+  const bounds = L.latLngBounds([]);
+  for (const line of state.routePolylines) if (line) bounds.extend(line.getBounds());
+  return bounds.isValid() ? bounds : null;
 }
 
 function fitRoute() {
@@ -592,6 +594,7 @@ function updatePlaybackBounds() {
 }
 
 function selectRoute(id, { fit = true, from = 0, to } = {}) {
+  ++journeyRequest;
   const full = state.routes.find(item => item.id === id);
   if (!full) return;
   state.selectedMapFeature=null;
@@ -603,7 +606,8 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
     const plan = full.routing, first = plan?.stopIndices?.[from], last = plan?.stopIndices?.[to];
     const legs = full.legs.slice(from, to);
     route = {...full, stops:full.stops.slice(from,to+1), stopCoordinates:full.stopCoordinates.slice(from,to+1), legs,
-      geometryAvailable:legs.length===to-from && legs.every(leg=>leg?.length>=2),
+      geometryAvailable:legs.length===to-from && legs.every((leg,i)=>leg?.length>=2 && (!i ||
+        L.latLng(legs[i-1].at(-1)).distanceTo(leg[0])<=120)),
       cacheMatched:full.cacheMatched || full.matchedSections?.slice(from,to).filter(Boolean).length===to-from,
       routing:Number.isInteger(first) && Number.isInteger(last) && plan.nodes?.[first] && plan.nodes?.[last] && Array.isArray(plan.edges) ? {
         ...plan, nodes:plan.nodes.slice(first,last+1).map(node=>({...node,kilometre:node.kilometre-plan.nodes[first].kilometre})),
@@ -622,6 +626,11 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   $("matchTracks").disabled = false;
   $("matchStatus").hidden = !route.cacheMatched;
   if (route.cacheMatched) $("matchStatus").textContent = `已用本机瓦片匹配 ${route.legs.length} 个经停区间。`;
+  if (route.indexed) {
+    $("matchStatus").hidden=false;
+    $("matchStatus").textContent=route.geometryAvailable ? route.source.title :
+      `缺少连续轨迹：${(route.gaps || []).join("、") || "请核对所选区间"}`;
+  }
   $("routeSelect").value = route.id;
   $("routeSummary").innerHTML = `
     <span class="route-code">${escapeHTML(route.train)}</span>
@@ -636,7 +645,7 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   renderStationList();
   renderInfo(state.selectedStation);
   setRouteStatus();
-  if (fit && route.geometryAvailable) fitRoute();
+  if (fit && state.routePolylines.some(Boolean)) fitRoute();
   saveLayerPreferences();
 }
 
@@ -1815,10 +1824,12 @@ function setupPanels() {
   $("exportPassport").addEventListener("click", exportPassportJSON);
   $("exportPassportCSV").addEventListener("click", exportPassportCSV);
   $("downloadPostcard").addEventListener("click", downloadPostcard);
-  ["postcardFrom", "postcardTo", "postcardTrain", "postcardCaption", "postcardStyle"].forEach(id => {
-    $(id).addEventListener("input", drawPostcard);
-    $(id).addEventListener("change", drawPostcard);
+  $("postcardDate").value=todayLocal();
+  ["postcardFrom", "postcardTo", "postcardTrain", "postcardDate"].forEach(id => {
+    $(id).addEventListener("input", refreshPostcard);
+    $(id).addEventListener("change", refreshPostcard);
   });
+  for (const id of ["postcardCaption","postcardStyle"]) $(id).oninput=drawPostcard;
   $("historyDate").addEventListener("input", renderHistoryEvent);
   $("nextQuiz").addEventListener("click", nextQuiz);
   $("quizChoices").addEventListener("click", chooseQuizAnswer);
@@ -1828,7 +1839,7 @@ function setExperiencePage(page) {
   document.querySelectorAll(".experience-tab").forEach(tab => tab.classList.toggle("selected", tab.dataset.experience === page));
   document.querySelectorAll(".experience-page").forEach(panel => { panel.hidden = panel.dataset.experiencePage !== page; });
   if (page === "passport") renderPassport();
-  if (page === "postcard") drawPostcard();
+  if (page === "postcard") void refreshPostcard();
   if (page === "history") renderHistoryEvent();
   if (page === "quiz" && !state.quiz) nextQuiz();
   setLayerVisible(state.historyLayer,page==="history" && state.workspaceView==="experiences");
@@ -1896,15 +1907,47 @@ function populateRoutePicker() {
     <option value="${escapeHTML(route.id)}">${escapeHTML(route.train)} · ${escapeHTML(route.serviceDate || "日期未记录")}</option>`).join("");
 }
 
+let journeyRequest = 0;
+function displayTimetableJourney(route) {
+  if (!journeyOpen()) state.journeyCamera={center:state.map.getCenter(),zoom:state.map.getZoom()};
+  state.routes=[...state.routes.filter(item=>item.id!==route.id),route];
+  populateRoutePicker(); setWorkspaceView("route"); setWorkspaceOpen(true); setPlaybackVisible(true); selectRoute(route.id);
+}
+async function openTimetableJourney(timetable, trip) {
+  const serial=++journeyRequest;
+  const base=buildRouteFromTimetable(timetable,state.bundledJourneys);
+  let route=base;
+  if (!base.geometryAvailable) {
+    try {
+      const record=await RailPaths.find({train:base.train,date:base.serviceDate,stops:base.stops,routing:base.routing,trip});
+      route={...base,...record,id:base.id};
+    } catch (error) { route={...base,indexed:true,gaps:[error.message]}; }
+  }
+  if (serial!==journeyRequest) return;
+  displayTimetableJourney(route);
+}
+
+function openStationTrain(data,origin,mode,station) {
+  const stops=data.stops.map(([station,arrival,departure])=>({station,arrival,departure}));
+  const trip=typeof data.id==="string" && /^[0-9a-zA-Z]{12}$/.test(data.id) ? data.id : undefined;
+  const tt={id:`board:${data.id}:${origin}`,train:data.number,serviceDate:origin,stops,routing:data.plan};
+  if (mode==="journey") { void openTimetableJourney(tt,trip); return; }
+  const index=Math.max(0,stops.findIndex(s=>s.station===station));
+  const start=index===stops.length-1 ? 0 : index;
+  setWorkspaceView("experiences"); setWorkspaceOpen(true);
+  fillPostcard({from:stops[start].station,to:stops.at(-1).station,train:data.number,
+    date:StationCatalog.day(origin,Math.floor((stops[start].departure||0)/1440))},tt);
+}
+
 function setupLibrary() {
   const date = $("libraryDate"), query = $("libraryTrain"), list = $("libraryResults");
   date.value = todayLocal();
   function render() {
     list.replaceChildren();
     const library = RailLibrary.current;
-    if (!library) return;
-    const matches = RailLibrary.search(query.value.trim(),date.value);
-    $("libraryStatus").textContent = `${library.edition} · ${library.services.length.toLocaleString()} 条排图记录` +
+    const text=query.value.trim().toUpperCase();
+    const matches = library ? RailLibrary.search(text,date.value) : [];
+    $("libraryStatus").textContent = (library ? `${library.edition} · ${library.services.length.toLocaleString()} 条排图记录` : "全国快照 · 输入完整车次即可出图") +
       (query.value.trim() ? ` · 找到 ${matches.length} 条，显示前 ${Math.min(40,matches.length)} 条` : "");
     for (const row of matches.slice(0,40)) {
       const button = document.createElement("button");
@@ -1912,11 +1955,20 @@ function setupLibrary() {
       button.textContent = `${row.train} · ${row.stops[0].station} → ${row.stops.at(-1).station}`;
       button.onclick = () => {
         const timetable = RailLibrary.timetable(row,date.value);
-        const route = buildRouteFromTimetable(timetable,state.bundledJourneys);
-        state.routes = [...state.routes.filter(r => !String(r.id).startsWith("library:")),route];
-        populateRoutePicker(); selectRoute(route.id); setPlaybackVisible(true);
+        void openTimetableJourney(timetable);
       };
       list.append(button);
+    }
+    if (/^[A-Z]?\d+$/.test(text) && !matches.some(row=>RailLibrary.trainNames(row.train).includes(text))) {
+      const button=document.createElement("button"); button.textContent=`在全国快照查 ${text}`; list.prepend(button);
+      button.onclick=async()=>{
+        const day=date.value, serial=++journeyRequest;
+        try {
+          const r=await RailPaths.find({train:text,date:day});
+          if (serial!==journeyRequest || query.value.trim().toUpperCase()!==text || date.value!==day) return;
+          displayTimetableJourney(r);
+        } catch(error) { if(serial===journeyRequest) $("libraryStatus").textContent=error.message; }
+      };
     }
   }
   let timer;
@@ -2078,12 +2130,7 @@ function renderPassport() {
   }));
   $("passportList").querySelectorAll(".postcard-from-record").forEach(button => button.addEventListener("click", () => {
     const journey = state.journeys[Number(button.dataset.index)];
-    $("postcardFrom").value = journey.from;
-    $("postcardTo").value = journey.to;
-    $("postcardTrain").value = journey.train;
-    $("postcardCaption").value = journey.note || "山川迢迢，来日方长。";
-    setExperiencePage("postcard");
-    drawPostcard();
+    fillPostcard(journey,journey.timetable);
   }));
 }
 
@@ -2157,6 +2204,44 @@ async function importPassportFile(event) {
   }
 }
 
+let cardRequest=0, cardRoute=null, cardContext=null;
+function fillPostcard(journey,timetable) {
+  cardContext={timetable,departure:journey.departure,train:journey.train,from:journey.from,date:journey.date};
+  for (const field of ["From","To","Train","Date"]) $("postcard"+field).value=journey[field.toLowerCase()]||"";
+  $("postcardCaption").value=journey.note || "山川迢迢，来日方长。";
+  setExperiencePage("postcard");
+}
+async function refreshPostcard() {
+  const serial=++cardRequest, from=$("postcardFrom").value.trim(), to=$("postcardTo").value.trim(),
+    train=$("postcardTrain").value.trim().toUpperCase(), date=$("postcardDate").value;
+  cardRoute=null; $("downloadPostcard").disabled=true;
+  const status=$("postcardStatus"); status.textContent=""; drawPostcard();
+  if (!from || !to || !train || !date) { status.textContent="填写车次、乘车日期与上下车站。";return; }
+  status.textContent="正在读取乘车区间…";
+  try {
+    const ctx=cardContext?.train===train && cardContext.date===date ? cardContext : null;
+    // A full geometry imported by the user must also be bound to its own origin date and clocks.
+    const candidates=state.routes.filter(r=>r.geometryAvailable && RailLibrary.trainNames(r.train).includes(train) ||
+      r.geometryAvailable && r.train===train).flatMap(r=>{
+        const pairs=[];
+        r.stops.forEach((s,a)=>{ if(s.name!==from || StationCatalog.day(r.serviceDate,Math.floor(s.departure/1440))!==date) return;
+          if(ctx?.departure && ctx.from===from && parseMinutes(ctx.departure)!==s.departure%1440) return;
+          r.stops.forEach((e,b)=>{ if(b>a && e.name===to) pairs.push({...r,legs:r.legs.slice(a,b),stops:r.stops.slice(a,b+1)}); });
+        });return pairs;
+      });
+    const route=candidates.length===1 && (!ctx?.timetable || candidates[0].train===ctx.timetable.train && candidates[0].serviceDate===ctx.timetable.serviceDate &&
+      state.routes.find(r=>r.id===candidates[0].id)?.stops.every((s,i)=>s.name===(ctx.timetable.stops[i]?.station??ctx.timetable.stops[i]?.name) &&
+        s.departure===(ctx.timetable.stops[i]?.departure??null) && s.arrival===(ctx.timetable.stops[i]?.arrival??null))) ? candidates[0] :
+      await RailPaths.find({train,date,from,to,boarding:true,stops:ctx?.timetable?.stops,routing:ctx?.timetable?.routing,
+        departure:ctx?.from===from ? ctx.departure : null});
+    if(serial!==cardRequest) return;
+    if(!route.geometryAvailable) throw Error(`缺少连续轨迹：${route.gaps.join("、")}`);
+    cardRoute=route; $("downloadPostcard").disabled=false;
+    status.textContent=`${from} → ${to} · ${route.stops.length} 站 · ${route.source?.title || "随包轨迹"}`;
+  } catch(error) { if(serial===cardRequest) status.textContent=error.message; }
+  if(serial===cardRequest) drawPostcard();
+}
+
 function drawPostcard() {
   const canvas = $("postcardPreview");
   if (!canvas) return;
@@ -2168,9 +2253,14 @@ function drawPostcard() {
   const palettes = {
     red: { paper: "#f5d5cc", ink: "#372727", accent: "#a6313c" },
     blue: { paper: "#c7dce8", ink: "#142d3c", accent: "#28678c" },
-    map: { paper: "#e8eee9", ink: "#172d2b", accent: "#267c73" }
+    map: { paper: "#e8eee9", ink: "#172d2b", accent: "#267c73" },
+    paper:{paper:"#f3c3b8",ink:"#2e1a1c",accent:"#902b38"}, magnetic:{paper:"#c3deed",ink:"#19252f",accent:"#345b77"},
+    voucher:{paper:"#e4eced",ink:"#232d31",accent:"#5a7379"}, night:{paper:"#182d3d",ink:"#f6e9ca",accent:"#ffc87a"},
+    ink:{paper:"#f2efe7",ink:"#272824",accent:"#454840"}
   };
   const palette = palettes[style] || palettes.red;
+  if (["paper","magnetic","voucher"].includes(style)) {drawTicketFace(context,style,palette,cardRoute);return;}
+  context.lineWidth=1;
   context.fillStyle = palette.paper;
   context.fillRect(0, 0, width, height);
   context.strokeStyle = `${palette.accent}20`;
@@ -2186,44 +2276,26 @@ function drawPostcard() {
   context.font = "600 18px Menlo, monospace";
   context.fillText("RAILWAY ATLAS", 36, 42);
   context.textAlign = "right";
-  context.font = "600 18px sans-serif";
+  context.font = '600 18px "Songti SC","SimSun",serif';
   context.fillText("铁道漫游", width - 36, 42);
   context.textAlign = "left";
   context.fillStyle = palette.ink;
-  context.font = "600 38px sans-serif";
+  context.font = `600 38px ${style==="paper" || style==="red" ? '"Songti SC","SimSun",serif' : '"Heiti SC","Microsoft YaHei",sans-serif'}`;
   context.fillText(($("postcardFrom").value || "出发站").slice(0, 10), 36, 128);
   context.fillStyle = palette.accent;
   context.font = "26px sans-serif";
   context.fillText("→", width / 2 - 13, 128);
   context.fillStyle = palette.ink;
   context.textAlign = "right";
-  context.font = "600 38px sans-serif";
+  context.font = `600 38px ${style==="paper" || style==="red" ? '"Songti SC","SimSun",serif' : '"Heiti SC","Microsoft YaHei",sans-serif'}`;
   context.fillText(($("postcardTo").value || "到达站").slice(0, 10), width - 36, 128);
   context.textAlign = "left";
   context.font = "20px Menlo, monospace";
-  context.fillText($("postcardTrain").value || state.route?.train || "车次", 36, 174);
-  const routePoints = state.route?.legs.flatMap(leg => leg) || [];
-  const preview = routePoints.filter((_, index) => index % Math.max(1, Math.floor(routePoints.length / 80)) === 0);
-  if (preview.length > 1) {
-    const lats = preview.map(point => point[0]), lngs = preview.map(point => point[1]);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats), minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    context.strokeStyle = palette.accent;
-    context.lineWidth = 5;
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    context.beginPath();
-    preview.forEach((point, index) => {
-      const x = 48 + ((point[1] - minLng) / Math.max(0.0001, maxLng - minLng)) * (width - 96);
-      const y = 220 + (1 - (point[0] - minLat) / Math.max(0.0001, maxLat - minLat)) * 145;
-      if (!index) context.moveTo(x, y); else context.lineTo(x, y);
-    });
-    context.stroke();
+  context.fillText($("postcardTrain").value || "车次", 36, 174);
+  if (cardRoute) {
+    drawCardTrack(context,cardRoute,[48,196,width-96,100],palette.accent,5);
   } else {
-    context.strokeStyle = palette.accent;
-    context.setLineDash([10, 9]);
-    context.lineWidth = 4;
-    context.beginPath(); context.moveTo(50, 290); context.lineTo(width - 50, 290); context.stroke();
-    context.setLineDash([]);
+    context.font="15px sans-serif"; context.fillText("乘车区间待匹配",36,245);
   }
   context.fillStyle = palette.ink;
   context.font = "20px sans-serif";
@@ -2231,11 +2303,13 @@ function drawPostcard() {
   context.fillText(caption.slice(0, 38), 36, height - 42);
   context.font = "13px sans-serif";
   context.textAlign = "right";
-  context.fillText(`${state.route?.serviceDate || todayLocal()} · 纪念设计`, width - 36, height - 42);
+  context.fillText(`${$("postcardDate").value || ""} · 纪念设计`, width - 36, height - 42);
+  if (cardRoute) {context.font="10px sans-serif";context.fillText("Jeremy Gao · China Railway GTFS / © OpenStreetMap contributors",width-24,height-16);}
   context.textAlign = "left";
 }
 
 function downloadPostcard() {
+  if (!cardRoute?.geometryAvailable) return;
   drawPostcard();
   $("postcardPreview").toBlob(blob => {
     if (blob) downloadFile("铁道漫游-明信片.png", blob);

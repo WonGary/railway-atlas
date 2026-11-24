@@ -12,6 +12,7 @@ struct RailwaySimulationView: View {
     @State private var routeTimetableID = ""
     @State private var preparing = false
     @State private var retry = 0
+    @State private var retryTrainID = ""
     private var timetable: RailTimetable? { model.timetables.first { $0.id == selectedID } ?? model.timetables.first }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -58,7 +59,7 @@ struct RailwaySimulationView: View {
                         ExperienceSourceView(source: route.source)
                     } else {
                         if preparing { ProgressView("正在按列车径路匹配沿线轨道…").font(.caption) }
-                        else { Button("匹配径路并准备沿线旅行", systemImage: "arrow.clockwise") { retry += 1 } }
+                        else { Button("用沿线瓦片补查轨迹", systemImage: "arrow.clockwise") { retryTrainID=timetable.id; retry += 1 } }
                     }
                 }.padding(20).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 14))
                 VStack(alignment: .leading, spacing: 0) {
@@ -90,7 +91,7 @@ struct RailwaySimulationView: View {
             guard let timetable else { return }
             matchedRoute = nil; error = nil; preparing = true
             do {
-                let result = try await model.prepareRoute(timetable)
+                let result = try await model.prepareRoute(timetable,retryMissing:retryTrainID==timetable.id)
                 try Task.checkCancellation()
                 matchedRoute = result; routeTimetableID = timetable.id; preparing = false
             } catch {

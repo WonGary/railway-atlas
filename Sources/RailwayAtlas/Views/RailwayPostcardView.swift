@@ -8,16 +8,20 @@ import UIKit
 #endif
 
 enum PostcardStyle: String, CaseIterable, Identifiable {
-    case red, blue, map
+    case red, blue, map, paper, magnetic, voucher, night, inkMap
     var id: String { rawValue }
     var title: String {
-        switch self { case .red: "经典红票"; case .blue: "磁介蓝票"; case .map: "路线明信片" }
+        switch self {
+        case .red: "经典红票"; case .blue: "磁介蓝票"; case .map: "路线明信片"
+        case .paper: "旧式红纸票"; case .magnetic: "蓝色磁介票"; case .voucher: "报销凭证纪念版"
+        case .night: "夜行线路卡"; case .inkMap: "黑白线路卡"
+        }
     }
 }
 
 enum TicketTypography {
     static func chinese(_ style: PostcardStyle, size: Double) -> Font {
-        let name = style == .red ? "STSongti-SC-Bold" : "STHeitiSC-Medium"
+        let name = [.red,.paper,.voucher].contains(style) ? "STSongti-SC-Bold" : "STHeitiSC-Medium"
         let font = CTFontCreateWithName(name as CFString, size, nil)
         if CTFontCopyPostScriptName(font) as String == name { return .custom(name, fixedSize: size) }
         return .system(size: size, weight: .medium, design: style == .red ? .serif : .default)
@@ -47,7 +51,7 @@ struct RailwayPostcardView: View {
             HStack {
                 Picker("样式", selection: $model.postcardStyle) {
                     ForEach(PostcardStyle.allCases) { Text($0.title).tag($0) }
-                }.pickerStyle(.segmented).frame(maxWidth: 360)
+                }.pickerStyle(.menu).frame(maxWidth: 360)
                 Spacer()
                 Button("导出 PNG", systemImage: "square.and.arrow.up") { export() }.buttonStyle(.borderedProminent)
                     .disabled(currentRoute == nil)
@@ -98,8 +102,8 @@ struct RailwayPostcardView: View {
             let key = routeKey, draft = journey
             route = nil; error = nil; preparing = true
             do {
-                try await Task.sleep(for: .milliseconds(400))
-                let result = try await model.passengerRoute(draft)
+                try await Task.sleep(for: .milliseconds(100))
+                let result = try await model.passengerRoute(draft,retryMissing:retry > 0)
                 try Task.checkCancellation()
                 route = result; loadedKey = key; preparing = false
             } catch {
@@ -136,18 +140,56 @@ struct TicketPostcardArt: View {
     let caption: String
     let city: String
     let silhouette: RailSilhouette?
-    private var red: Bool { style == .red }
+    private var red: Bool { style == .red || style == .paper }
     private var ink: Color { red ? Color(red: 0.23, green: 0.13, blue: 0.13) : Color(red: 0.09, green: 0.19, blue: 0.27) }
     private var accent: Color { red ? Color(red: 0.66, green: 0.18, blue: 0.22) : Color(red: 0.12, green: 0.38, blue: 0.57) }
     private var paper: Color { red ? Color(red: 0.98, green: 0.83, blue: 0.79) : Color(red: 0.77, green: 0.88, blue: 0.94) }
     var body: some View {
         Group {
-            if style == .map { mapCard }
+            if [.map,.night,.inkMap].contains(style) { mapCard }
+            else if [.paper,.magnetic,.voucher].contains(style) { keepsakeTicket }
             else { ticket }
         }
         .frame(width: 760, height: 440)
         .clipped()
         .accessibilityElement(children: .combine)
+    }
+
+    private var keepsakeTicket: some View {
+        ZStack {
+            LinearGradient(colors: [paper, .white.opacity(0.8), paper], startPoint:.topLeading, endPoint:.bottomTrailing)
+            Canvas { context, size in
+                for row in 0..<44 {
+                    var path=Path()
+                    for x in stride(from:0,through:Int(size.width),by:4) {
+                        let y=Double(row)*10+sin(Double(x)/26+Double(row)/3)*5
+                        let p=CGPoint(x:CGFloat(x),y:y)
+                        if x==0 {path.move(to:p)} else {path.addLine(to:p)}
+                    }
+                    context.stroke(path,with:.color(accent.opacity(0.13)),lineWidth:0.6)
+                }
+            }
+            VStack(alignment:.leading,spacing:14) {
+                HStack {
+                    Text(style == .voucher ? "铁路电子客票 · 报销凭证纪念版" : "铁路旅客车票").font(TicketTypography.chinese(style,size:22))
+                    Spacer(); Text("留　念").foregroundStyle(accent)
+                }
+                HStack {
+                    station(journey.from); VStack { Text(journey.train).font(TicketTypography.digits(24)); Text("⟶") }
+                    station(journey.to)
+                }
+                Text("\(journey.date)　\(journey.departure) 开").font(TicketTypography.digits(24))
+                Text(style == .voucher ? "乘车区间凭证样张" : "仅供旅行收藏").font(TicketTypography.chinese(style,size:17))
+                Divider()
+                HStack {
+                    if let silhouette { SilhouetteCanvas(silhouette:silhouette,ink:accent,grid:false).frame(width:190,height:86) }
+                    Text(caption).font(TicketTypography.chinese(style,size:18)).lineLimit(3)
+                    Spacer()
+                }
+                Spacer()
+                Text("铁道漫游　旅行纪念　不可报销或乘车　　Jeremy Gao / © OpenStreetMap contributors").font(.caption)
+            }.padding(.horizontal,38).padding(.vertical,25)
+        }.foregroundStyle(ink)
     }
 
     private var ticket: some View {
@@ -222,8 +264,8 @@ struct TicketPostcardArt: View {
     private var mapCard: some View {
         HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
-                Color(red: 0.07, green: 0.19, blue: 0.21)
-                if let silhouette { SilhouetteCanvas(silhouette: silhouette).padding(10).accessibilityHidden(true) }
+                (style == .night ? Color(red:0.07,green:0.14,blue:0.24) : style == .inkMap ? Color(white:0.18) : Color(red: 0.07, green: 0.19, blue: 0.21))
+                if let silhouette { SilhouetteCanvas(silhouette: silhouette,ink:style == .night ? .yellow : .white,grid:style != .inkMap).padding(10).accessibilityHidden(true) }
                 VStack(alignment: .leading, spacing: 7) {
                     Text(journey.train.isEmpty ? "乘车路线" : journey.train).font(TicketTypography.chinese(.blue, size: 34))
                     Text(silhouette == nil ? "路线待匹配" : "YOUR JOURNEY IN LINES").font(TicketTypography.digits(11)).tracking(2)

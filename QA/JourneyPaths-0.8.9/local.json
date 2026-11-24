@@ -1,0 +1,484 @@
+{
+  "day": "2026-11-25",
+  "source": "http://127.0.0.1:18948/",
+  "browser": "158.0.4370.33",
+  "sampleSeed": "atlas-20261125:",
+  "mapImportedLibrary": true,
+  "budgetMs": 5000,
+  "results": [
+    {
+      "train": "Z336",
+      "supplemental": false,
+      "cold": {
+        "ms": 307,
+        "status": "full",
+        "drawn": 20,
+        "legs": 20,
+        "from": "南宁",
+        "to": "包头",
+        "gaps": [],
+        "vertices": 2985,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": [
+          {
+            "file": "Z3-356db9ec0779.json",
+            "ms": 4,
+            "bytes": 260258
+          }
+        ]
+      },
+      "warm": {
+        "ms": 89,
+        "status": "full",
+        "drawn": 20,
+        "legs": 20,
+        "from": "南宁",
+        "to": "包头",
+        "gaps": [],
+        "vertices": 2985,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 48,
+        "ready": true,
+        "message": "南宁 → 包头 · 21 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 213,
+        "bytes": 50051
+      }
+    },
+    {
+      "train": "N147",
+      "supplemental": false,
+      "cold": {
+        "ms": 343,
+        "status": "full",
+        "drawn": 22,
+        "legs": 22,
+        "from": "南昌",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1639,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": [
+          {
+            "file": "N1-e2bc63074398.json",
+            "ms": 41,
+            "bytes": 167760
+          }
+        ]
+      },
+      "warm": {
+        "ms": 97,
+        "status": "full",
+        "drawn": 22,
+        "legs": 22,
+        "from": "南昌",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1639,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 47,
+        "ready": true,
+        "message": "南昌 → 北京西 · 23 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 292,
+        "bytes": 49918
+      }
+    },
+    {
+      "train": "Z58",
+      "supplemental": false,
+      "cold": {
+        "ms": 325,
+        "status": "full",
+        "drawn": 13,
+        "legs": 13,
+        "from": "北京西",
+        "to": "三亚",
+        "gaps": [],
+        "vertices": 3100,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": [
+          {
+            "file": "Z0-3d4da704514d.json",
+            "ms": 4,
+            "bytes": 104699
+          }
+        ]
+      },
+      "warm": {
+        "ms": 116,
+        "status": "full",
+        "drawn": 13,
+        "legs": 13,
+        "from": "北京西",
+        "to": "三亚",
+        "gaps": [],
+        "vertices": 3100,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 32,
+        "ready": true,
+        "message": "北京西 → 三亚 · 14 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 328,
+        "bytes": 49676
+      }
+    },
+    {
+      "train": "C273",
+      "supplemental": false,
+      "cold": {
+        "ms": 219,
+        "status": "full",
+        "drawn": 7,
+        "legs": 7,
+        "from": "昆明",
+        "to": "西双版纳",
+        "gaps": [],
+        "vertices": 420,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "C2-4dbdcc53c255.json",
+            "ms": 3,
+            "bytes": 76616
+          }
+        ]
+      },
+      "warm": {
+        "ms": 64,
+        "status": "full",
+        "drawn": 7,
+        "legs": 7,
+        "from": "昆明",
+        "to": "西双版纳",
+        "gaps": [],
+        "vertices": 420,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 41,
+        "ready": true,
+        "message": "昆明 → 西双版纳 · 8 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 246,
+        "bytes": 53758
+      }
+    },
+    {
+      "train": "D2236",
+      "supplemental": false,
+      "cold": {
+        "ms": 308,
+        "status": "full",
+        "drawn": 23,
+        "legs": 23,
+        "from": "南昌西",
+        "to": "宜宾",
+        "gaps": [],
+        "vertices": 1287,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": [
+          {
+            "file": "D22-094f624767b2.json",
+            "ms": 8,
+            "bytes": 174435
+          }
+        ]
+      },
+      "warm": {
+        "ms": 93,
+        "status": "full",
+        "drawn": 23,
+        "legs": 23,
+        "from": "南昌西",
+        "to": "宜宾",
+        "gaps": [],
+        "vertices": 1287,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 115,
+        "ready": true,
+        "message": "南昌西 → 宜宾 · 24 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 465,
+        "bytes": 54151
+      }
+    },
+    {
+      "train": "V6461",
+      "supplemental": false,
+      "cold": {
+        "ms": 6,
+        "status": "absent",
+        "message": "这版时刻库未收录 V6461。"
+      },
+      "warm": {
+        "ms": 12,
+        "status": "absent",
+        "message": "这版时刻库未收录 V6461。"
+      }
+    },
+    {
+      "train": "S8140",
+      "supplemental": false,
+      "cold": {
+        "ms": 201,
+        "status": "full",
+        "drawn": 4,
+        "legs": 4,
+        "from": "海口东",
+        "to": "海口",
+        "gaps": [],
+        "vertices": 35,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "S81-541126867c92.json",
+            "ms": 7,
+            "bytes": 14972
+          }
+        ]
+      },
+      "warm": {
+        "ms": 39,
+        "status": "full",
+        "drawn": 4,
+        "legs": 4,
+        "from": "海口东",
+        "to": "海口",
+        "gaps": [],
+        "vertices": 35,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 115,
+        "ready": true,
+        "message": "海口东 → 海口 · 5 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 245,
+        "bytes": 50644
+      }
+    },
+    {
+      "train": "G3703",
+      "supplemental": false,
+      "cold": {
+        "ms": 291,
+        "status": "full",
+        "drawn": 9,
+        "legs": 9,
+        "from": "成都东",
+        "to": "广州白云",
+        "gaps": [],
+        "vertices": 842,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "G37-4537f98723ca.json",
+            "ms": 8,
+            "bytes": 200275
+          }
+        ]
+      },
+      "warm": {
+        "ms": 87,
+        "status": "full",
+        "drawn": 9,
+        "legs": 9,
+        "from": "成都东",
+        "to": "广州白云",
+        "gaps": [],
+        "vertices": 842,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 91,
+        "ready": true,
+        "message": "成都东 → 广州白云 · 10 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 370,
+        "bytes": 54125
+      }
+    },
+    {
+      "train": "C2730",
+      "supplemental": false,
+      "cold": {
+        "ms": 226,
+        "status": "full",
+        "drawn": 3,
+        "legs": 3,
+        "from": "雄安",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 77,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "C27-0ea5e5706dc5.json",
+            "ms": 16,
+            "bytes": 23779
+          }
+        ]
+      },
+      "warm": {
+        "ms": 46,
+        "status": "full",
+        "drawn": 3,
+        "legs": 3,
+        "from": "雄安",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 77,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 82,
+        "ready": true,
+        "message": "雄安 → 北京西 · 4 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 288,
+        "bytes": 52081
+      }
+    },
+    {
+      "train": "C442",
+      "supplemental": false,
+      "cold": {
+        "ms": 201,
+        "status": "full",
+        "drawn": 3,
+        "legs": 3,
+        "from": "香格里拉",
+        "to": "大理",
+        "gaps": [],
+        "vertices": 369,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "C4-b62008463c7c.json",
+            "ms": 9,
+            "bytes": 55551
+          }
+        ]
+      },
+      "warm": {
+        "ms": 39,
+        "status": "full",
+        "drawn": 3,
+        "legs": 3,
+        "from": "香格里拉",
+        "to": "大理",
+        "gaps": [],
+        "vertices": 369,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 48,
+        "ready": true,
+        "message": "香格里拉 → 大理 · 4 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 153,
+        "bytes": 52297
+      }
+    },
+    {
+      "train": "G3888",
+      "supplemental": true,
+      "cold": {
+        "ms": 230,
+        "status": "full",
+        "drawn": 15,
+        "legs": 15,
+        "from": "杭州西",
+        "to": "襄阳东",
+        "gaps": [],
+        "vertices": 649,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": [
+          {
+            "file": "G38-01133a5e8a0d.json",
+            "ms": 11,
+            "bytes": 144453
+          }
+        ]
+      },
+      "warm": {
+        "ms": 59,
+        "status": "full",
+        "drawn": 15,
+        "legs": 15,
+        "from": "杭州西",
+        "to": "襄阳东",
+        "gaps": [],
+        "vertices": 649,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": []
+      },
+      "postcard": {
+        "previewMs": 34,
+        "ready": true,
+        "message": "杭州西 → 襄阳东 · 16 站 · 全国铁路车次径路 · 2026-11-24",
+        "pngMs": 382,
+        "bytes": 56093
+      }
+    }
+  ]
+}

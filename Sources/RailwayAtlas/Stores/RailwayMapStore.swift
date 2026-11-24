@@ -6,6 +6,12 @@ import SwiftUI
 @MainActor
 final class RailwayMapStore: ObservableObject {
     lazy var journeyPlayer = RailMapPlayback(map: self)
+    lazy var journeyWorkspace: ExperienceStore = {
+        let model = ExperienceStore()
+        model.map = self
+        return model
+    }()
+    @Published var stationBoardPins: [RailStation] = [] { didSet { previousVisibility=nil } }
     @Published var experienceLines: [ExperienceMapLine] = []
     @Published var experienceMarker: Coordinate?
     @Published var experienceGeometryRevision = 0
@@ -467,6 +473,7 @@ final class RailwayMapStore: ObservableObject {
             || CommandLine.arguments.contains("--v020-interchange-check")
             || CommandLine.arguments.contains("--v020-national-check")
             || CommandLine.arguments.contains("--experiences-check")
+            || CommandLine.arguments.contains("--journey-frame-benchmark")
             || CommandLine.arguments.contains("--interface-check") || CommandLine.arguments.contains("--macao-check")
             || CommandLine.arguments.contains("--hongkong-check") || CommandLine.arguments.contains("--beijing-check") { mapMode = .offline }
         if CommandLine.arguments.contains("--render-performance") { mapMode = .offline }
@@ -541,6 +548,7 @@ final class RailwayMapStore: ObservableObject {
     }
 
     func station(withID id: String) -> RailStation? {
+        if let pin=stationBoardPins.first(where:{ $0.id==id }) { return pin }
         guard let index = prepared.stationByID[id], activeStations.indices.contains(index) else { return nil }
         return activeStations[index]
     }
@@ -687,6 +695,10 @@ final class RailwayMapStore: ObservableObject {
             }
         }
         #endif
+        if showsStations, !stationBoardPins.isEmpty {
+            let existing=Set(displayedStations.map(\.name))
+            displayedStations += stationBoardPins.filter { !existing.contains($0.name) }
+        }
         visibleStations = displayedStations
         renderGroups = grouped.map { style, lines in
             let ids = lines.map(\.id)

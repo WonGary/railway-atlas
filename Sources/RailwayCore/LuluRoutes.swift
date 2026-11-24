@@ -118,6 +118,14 @@ public struct LuluRouteDatabase: Codable, Equatable, Sendable {
 
     private func expand(_ route: Route, edition: String) throws -> LuluRoutePlan {
         let byID = Dictionary(uniqueKeysWithValues: lines.map { ($0.id, $0) })
+        // Index shared stations once; scanning every station on every line for each
+        // edge made choosing a long-distance train stall the main thread.
+        var stationLines: [String:[Int:Int]] = [:]
+        for line in lines {
+            for station in line.stations where stationLines[station.name]?[line.id] == nil {
+                stationLines[station.name, default: [:]][line.id] = station.kilometre
+            }
+        }
         var nodes: [LuluRoutePlan.Node] = [], edges: [LuluRoutePlan.Edge] = [], cumulative = 0
         for (i, part) in route.parts.enumerated() {
             guard let line = byID[part.lineID] else { throw Self.invalid("线路不存在") }
@@ -134,11 +142,10 @@ public struct LuluRouteDatabase: Codable, Equatable, Sendable {
                 if station.name == previous.name && distance == 0 { previous = station; continue }
                 // A shared physical section may be named for either constituent
                 // line by OSM (e.g. the shared Nanguang/Guiguang approach).
-                let aliases = lines.filter { alternative in
-                    guard let start = alternative.stations.first(where: { $0.name == previous.name }),
-                          let end = alternative.stations.first(where: { $0.name == station.name }) else { return false }
-                    return abs(abs(end.kilometre - start.kilometre) - distance) <= 1
-                }.map(\.name).sorted()
+                let aliases = (stationLines[previous.name] ?? [:]).compactMap { id,start -> String? in
+                    guard let end=stationLines[station.name]?[id], abs(abs(end-start)-distance)<=1 else { return nil }
+                    return byID[id]?.name
+                }.sorted()
                 edges.append(.init(lineID: line.id, lineName: line.name, aliases: aliases))
                 cumulative += distance
                 nodes.append(.init(station: station.name, code: station.code, kilometre: cumulative))

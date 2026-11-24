@@ -28,6 +28,11 @@ enum OnlineUIValidation {
             window?.setContentSize(NSSize(width: 1240, height: 820))
             window?.center()
             window?.title = "铁道图鉴 · 本地验证"
+            if let flag = arguments.firstIndex(of:"--journey-frame-benchmark"), arguments.indices.contains(flag+1) {
+                try await benchmarkJourneyFrames(store, window:window, directory:directory, libraryFile:arguments[flag+1])
+                NSApp.terminate(nil)
+                return
+            }
             if arguments.contains("--station-directory-check") {
                 try await checkStationDirectory(store, window: window, directory: directory)
                 NSApp.terminate(nil)
@@ -259,6 +264,46 @@ enum OnlineUIValidation {
             print(report)
             exit(1)
         }
+    }
+
+    private static func benchmarkJourneyFrames(_ store: RailwayMapStore, window: NSWindow?, directory: URL, libraryFile: String) async throws {
+        guard let view=window?.contentView else { throw DataError.invalid("主地图窗口未打开") }
+        let library=try LuluTimetableSnapshot.read(Data(contentsOf:URL(fileURLWithPath:libraryFile)))
+        let day="2026-11-25", model=store.journeyWorkspace
+        await model.load()
+        var results=[[String:Any]]()
+        for train in ["Z336","N147","Z58","C273","D2236","V6461","S8140","G3703","C2730","C442","G3888"] {
+            let rows=library.services.filter { $0.validFrom<=day && day<=$0.validThrough && LuluRouteDatabase.trainNames($0.train).contains(train) }
+            store.journeyPlayer.stop()
+            let start=DispatchTime.now().uptimeNanoseconds
+            var row:[String:Any]=["train":train]
+            do {
+                let timetable:RailTimetable?
+                if rows.count==1 { timetable=try library.timetable(rows[0],on:day) }
+                else { timetable=try await NationalJourneyPaths.shared.timetable(train:train,date:day) }
+                if let timetable {
+                    let route=try await model.prepareRoute(timetable,allowNetwork:false)
+                    try store.journeyPlayer.start(timetable,route:route)
+                    store.journeyPlayer.pause()
+                    guard store.experienceLines.count==route.legs.count, store.experienceMarker != nil else {
+                        throw DataError.invalid("主地图缺少车次轨迹")
+                    }
+                    try await Task.sleep(for:.milliseconds(34))
+                    view.layoutSubtreeIfNeeded(); window?.displayIfNeeded()
+                    guard let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else {
+                        throw DataError.invalid("主地图画面读取失败")
+                    }
+                    view.cacheDisplay(in:view.bounds,to:bitmap)
+                    row["ms"]=Double(DispatchTime.now().uptimeNanoseconds-start)/1_000_000
+                    row["legs"]=route.legs.count; row["status"]="full"
+                    if train=="Z58" { try bitmap.representation(using:.png,properties:[:])?.write(to:directory.appendingPathComponent("Z58-map.png")) }
+                } else { row["status"]="absent" }
+            } catch { row["status"]="unavailable";row["detail"]=error.localizedDescription }
+            if row["ms"]==nil {row["ms"]=Double(DispatchTime.now().uptimeNanoseconds-start)/1_000_000}
+            results.append(row)
+        }
+        try JSONSerialization.data(withJSONObject:results,options:[.prettyPrinted,.sortedKeys])
+            .write(to:directory.appendingPathComponent("native-window.json"),options:.atomic)
     }
 
     private static func checkStationDirectory(_ store: RailwayMapStore, window: NSWindow?, directory: URL) async throws {

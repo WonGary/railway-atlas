@@ -60,6 +60,10 @@ const StationPanel = (() => {
     function current() { return source.value==="local" ? local : base; }
     function trainDetail(panel, data, origin) {
       panel.append(node("p",`${data.number}　${data.stops[0][0]} → ${data.stops.at(-1)[0]} · ${data.stops.length} 个停站`));
+      if (options.trainAction && origin) {
+        for (const [title,mode] of [["在主地图沿线旅行","journey"],["制作路线明信片","postcard"]])
+          panel.append(button(title,()=>options.trainAction(data,origin,mode,station)));
+      }
       if (origin) panel.append(node("small",`始发日期 ${origin}，跨日停站以 +1日、+2日 标注。`));
       const list=node("ol",null,"rail-sequence");
       for (const [i,[name,a,b]] of data.stops.entries()) {

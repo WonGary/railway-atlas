@@ -42,4 +42,4 @@ python3 -m http.server 8080 --directory Web
 
 随后访问 `http://127.0.0.1:8080/`。自行部署时把 `Web/` 的内容放到同一 HTTPS 路径，保留目录结构。重建桌面 ZIP 使用 `python3 Portable/package.py <新的输出目录>`，需要 macOS、Go 和 Command Line Tools。
 
-[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.8.md)
+[数据来源及第三方许可](licenses/components.txt) · [本版更新](RELEASE_NOTES_0.8.9.md)

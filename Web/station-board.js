@@ -42,7 +42,7 @@ const StationMapBoard = (() => {
   function mount(parent,name) {
     if (!name) return;
     const root=document.createElement("section");root.dataset.stationDirectory=name; parent.prepend(root);
-    StationPanel.mount(root,name,{library:RailLibrary.current,coordinate:n=>positions().get(n),locate});
+    StationPanel.mount(root,name,{library:RailLibrary.current,coordinate:n=>positions().get(n),locate,trainAction:openStationTrain});
     if (location.origin==="http://127.0.0.1:18763") appendOriginalStationLookup(root,name);
   }
   function focus(name) {

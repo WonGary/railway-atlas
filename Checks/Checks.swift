@@ -13,6 +13,39 @@ struct Checks {
 
     static func run() async throws {
         let arguments = CommandLine.arguments
+        if arguments.count >= 6, arguments[1] == "--benchmark-journey-paths" {
+            let directory = URL(fileURLWithPath: arguments[2], isDirectory: true)
+            let day = arguments[4]
+            let library = try LuluTimetableSnapshot.read(Data(contentsOf: URL(fileURLWithPath: arguments[3])))
+            for train in arguments.dropFirst(5) {
+                let paths = NationalJourneyPaths(directory: directory)
+                let matches = library.services.filter {
+                    $0.validFrom <= day && day <= $0.validThrough && LuluRouteDatabase.trainNames($0.train).contains(train)
+                }
+                for attempt in ["cold", "warm"] {
+                    let start = DispatchTime.now().uptimeNanoseconds
+                    var result: [String: Any] = ["train":train, "run":attempt]
+                    do {
+                        let timetable: RailTimetable?
+                        if matches.count == 1 { timetable = try library.timetable(matches[0], on: day) }
+                        else { timetable = try await paths.timetable(train: train, date: day) }
+                        if let timetable, let route = try await paths.journey(timetable) {
+                            try route.validate(for: timetable)
+                            result["status"] = "full"
+                            result["legs"] = route.legs.count
+                            result["vertices"] = route.legs.reduce(0) { $0 + $1.count }
+                        } else { result["status"] = timetable == nil ? "absent" : "unmatched" }
+                    } catch {
+                        result["status"] = "unavailable"
+                        result["detail"] = error.localizedDescription
+                    }
+                    result["ms"] = Double(DispatchTime.now().uptimeNanoseconds-start) / 1_000_000
+                    let json = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+                    print(String(decoding: json, as: UTF8.self))
+                }
+            }
+            return
+        }
         if arguments.count == 2, arguments[1] == "--assistant-regression" {
             try await AssistantChecks.run()
             try ConfigurationChecks.run()
