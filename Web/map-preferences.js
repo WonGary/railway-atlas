@@ -15,7 +15,7 @@ const AtlasPrefs = (() => {
     categories:Object.keys(categories),networks:Object.keys(networks),forcedCategories:[],forcedNetworks:[],hiddenRoutes:[],
     metroWidthScale:1,railwayWidthScale:1,stationRadiusMultiplier:1.25,depotBrightness:.5,railwayPattern:true,viewportBuffer:.2,
     basemapDarkness:0,mapAppearance:"system",mode:"online",uiScale:1,panelWidth:320,inspectorWidth:380,panelSize:"medium",panelLayout:"floating",
-    inspectorLayout:"docked",panelVisible:true,panelBackgroundOpacity:1,inspectorBackgroundOpacity:1,statusVisible:true,
+    inspectorLayout:"docked",panelVisible:false,panelBackgroundOpacity:1,inspectorBackgroundOpacity:1,statusVisible:true,
     assistantPresentation:"sidebar",statusX:0,statusY:0
   };
   const ranges = {metroWidthScale:[.5,2],railwayWidthScale:[.5,2],stationRadiusMultiplier:[.5,3],depotBrightness:[.1,1],
@@ -105,7 +105,6 @@ const AtlasPrefs = (() => {
     root.setProperty("--right-alpha",p.inspectorBackgroundOpacity); root.setProperty("--left-height",({small:"43%",medium:"70%",large:"96%"})[p.panelSize]);
     shell.dataset.leftLayout=p.panelLayout; shell.dataset.rightLayout=p.inspectorLayout;
     const status=document.querySelector(".map-status");status.hidden=!p.statusVisible;
-    status.style.transform=`translate(${p.statusX}px,${p.statusY}px)`;
     if (!state.map) return;
     $("basemapModeNote").hidden=p.mode==="online";
     $("baseLayer").disabled=$("darkStreetPreset").disabled=p.mode!=="online";
@@ -187,10 +186,11 @@ const AtlasPrefs = (() => {
     range(render,"railwayWidthScale","铁路线宽",.05);range(render,"metroWidthScale","地铁线宽",.05);range(render,"stationRadiusMultiplier","站点半径",.05);
     toggle(render,"railwayPattern","铁路轨枕纹理");range(render,"depotBrightness","站场轨道亮度",.05);range(render,"viewportBuffer","视野边缘预绘制比例",.05);
     const ui=section(s,"ui","界面与面板",false);range(ui,"uiScale","界面缩放",.05,false);
+    toggle(ui,"panelVisible","桌面打开地图时展开工作区",false);
     select(ui,"panelLayout","左栏布局",{floating:"浮窗",docked:"贴边分屏"});select(ui,"panelSize","左侧浮窗高度",{small:"小",medium:"中",large:"大"});
     range(ui,"panelWidth","左栏宽度",1,false);range(ui,"panelBackgroundOpacity","左栏浮窗不透明度",.05,false);
     select(ui,"inspectorLayout","右栏布局",{floating:"浮窗",docked:"贴边分屏"});range(ui,"inspectorWidth","右栏宽度",1,false);
-    range(ui,"inspectorBackgroundOpacity","右栏浮窗不透明度",.05,false);toggle(ui,"statusVisible","显示地图状态",false);
+    range(ui,"inspectorBackgroundOpacity","右栏浮窗不透明度",.05,false);toggle(ui,"statusVisible","在图例中显示地图状态",false);
     select(ui,"assistantPresentation","地图问答位置",{sidebar:"右侧面板",floating:"地图浮窗",window:"独立窗口"});
   }
   function openBasemap(){
@@ -201,6 +201,12 @@ const AtlasPrefs = (() => {
   }
   function setup(){
     controls();apply(false);
+    const legend=$("speedLegend");
+    for (const key of ["speed350","speed300","speed250","speed200","speed160","below160","unknown"]) {
+      const [name,color]=categories[key], row=make("span"), line=make("i");
+      line.className="legend-line";line.style.borderColor=color;
+      row.append(line,document.createTextNode(name));legend.append(row);
+    }
     $("goToBasemap").onclick=openBasemap;
     $("darkStreetPreset").onclick=()=>{
       p.mapAppearance="dark";p.basemapDarkness=0;persist();

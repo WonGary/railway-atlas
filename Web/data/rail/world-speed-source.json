@@ -1,0 +1,17 @@
+{
+  "source": "https://qlever.dev/api/osm-planet",
+  "query": "PREFIX k:<https://www.openstreetmap.org/wiki/Key:>\nPREFIX geo:<http://www.opengis.net/ont/geosparql#>\nPREFIX osm:<https://www.openstreetmap.org/>\nSELECT ?way ?speed ?shape WHERE {\n  ?way a osm:way; k:railway \"rail\"; k:usage \"main\"; k:maxspeed ?speed; geo:hasGeometry/geo:asWKT ?shape.\n}",
+  "osmPlanet": "2026-09-21",
+  "copyright": "OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "rows": 808406,
+  "drawnWays": {
+    "below160": 584139,
+    "speed300": 27882,
+    "speed160": 87087,
+    "speed200": 46234,
+    "speed250": 40632,
+    "speed350": 22419
+  },
+  "sha256TSVRows": "b931273193583057f2997575813c1beb96258531ed38800f730ef195c8164bd1"
+}

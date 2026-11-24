@@ -33,7 +33,7 @@ const LocalRailCache = (() => {
       const count = await call({type:file ? "import":"restore",file,path});
       loaded = true; writeStored(activeKey,path);
       label.textContent = `本机缓存有 ${count.toLocaleString()} 条瓦片记录。`;
-      RailMapLayers.toggle(true);
+      RailMapLayers.clearSourceCache();RailMapLayers.toggle(true);
     } catch (e) { label.textContent = `载入失败。${e.message}`; }
     finally { input.disabled = false; }
   }

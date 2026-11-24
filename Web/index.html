@@ -15,18 +15,12 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">R</div>
-      <div>
-        <h1>铁道漫游</h1>
-      <p>铁路地图 <span id="versionBadge">0.8.6</span></p>
-      </div>
-    </div>
+    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.7</span></div>
     <div class="top-actions">
-      <button id="toggleWorkspace" class="icon-button" title="打开工作区" aria-label="打开工作区">☰</button>
-      <button id="homeMap" class="icon-button" title="返回全国视野" aria-label="返回全国视野">⌖</button>
-      <button id="toggleInfo" class="text-button">要素信息</button>
-      <button id="toggleAssistant" class="text-button">地图问答</button>
+      <button id="toggleWorkspace" class="text-button" aria-controls="workspacePanel" title="打开图层与工作区">图层</button>
+      <button id="homeMap" class="text-button" title="返回全国视野">全国</button>
+      <button id="toggleInfo" class="text-button" aria-controls="infoPanel">要素</button>
+      <button id="toggleAssistant" class="text-button" aria-controls="assistantPanel">问答</button>
     </div>
   </header>
 
@@ -168,9 +162,9 @@
           <details id="basemapPanel" open><summary>底图与站点</summary>
             <label>地图底图
               <select id="baseLayer">
-                <optgroup label="矢量底图">
-                  <option value="versatiles-vector" selected>VersaTiles · 矢量</option>
-                  <option value="openfreemap-vector">OpenFreeMap · 矢量</option>
+                <optgroup label="简洁矢量底图">
+                  <option value="versatiles-vector" selected>VersaTiles · 简洁街道</option>
+                  <option value="openfreemap-vector">OpenFreeMap · 简洁街道</option>
                 </optgroup>
                 <optgroup label="栅格底图">
                   <option value="osm">OpenStreetMap</option>
@@ -182,8 +176,9 @@
                 </optgroup>
               </select>
             </label>
+            <p id="basemapSourceNote" class="panel-note"></p>
             <div id="basemapDisplayControls"></div>
-            <button type="button" id="darkStreetPreset" class="text-button">使用深色街道底图</button>
+            <button type="button" id="darkStreetPreset" class="text-button">使用深色简洁底图</button>
             <p id="basemapModeNote" class="panel-note" hidden>在线底图已关闭。可在「设置 → 地图模式」选择「在线与本机缓存」。</p>
             <div id="stationDisplayControls"></div>
           </details>
@@ -229,17 +224,20 @@
         </select>
         <button id="closePlayback" class="icon-button small" title="关闭沿线旅行" aria-label="关闭沿线旅行">×</button>
       </div>
-      <div class="map-status">
-        <span id="dataStatus">正在打开铁路地图…</span>
-        <span id="zoomStatus">比例尺</span>
-        <span id="baseLayerWarning" role="status" hidden></span>
+      <div class="map-notices">
+        <p id="baseLayerWarning" role="status" hidden></p>
+        <p id="mapDataError" role="alert" hidden></p>
       </div>
-      <div class="map-legend" aria-label="地图图例">
-        <span><i class="legend-line route-line"></i>铁路</span>
-        <span><i class="legend-line metro-line"></i>地铁</span>
-        <span><i class="legend-line railway-construction"></i>铁路在建</span>
-        <span><i class="legend-line construction-line"></i>城轨在建</span>
-      </div>
+      <details class="map-legend">
+        <summary>图例</summary>
+        <div class="legend-sheet">
+          <div id="speedLegend" aria-label="铁路限速"></div>
+          <span><i class="legend-line metro-line"></i>城市轨道（按线路着色）</span>
+          <span><i class="legend-line railway-construction"></i>铁路在建或规划</span>
+          <span><i class="legend-line construction-line"></i>城轨在建或规划</span>
+          <div class="map-status"><span id="dataStatus">正在打开铁路地图…</span><span id="zoomStatus"></span></div>
+        </div>
+      </details>
     </section>
 
     <aside id="infoPanel" class="right-panel info-panel" aria-label="要素信息" hidden>

@@ -1,5 +1,5 @@
-const VERSION = "0.8.6";
-const SHELL = `railway-atlas-web-${VERSION}-world-rail`;
+const VERSION = "0.8.7";
+const SHELL = `railway-atlas-web-${VERSION}`;
 // City snapshots still carry the same 2026-11-05 edition. Reuse downloads on upgrade.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
@@ -7,6 +7,7 @@ const address = path => new URL(path, base).href;
 const files = [
   "index.html","styles.css","app.js","library.js","timetable-package.mjs","map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js","cache-worker.mjs",
   "world-rail.js","data/rail/world-z2.json","data/rail/world-z4.json","data/rail/world-z6.json",
+  "data/rail/speed-z2.json","data/rail/speed-z4.json","data/rail/speed-z6.json",
   "station-layout-layer.js","data/station-layouts.js","data/station-layouts.json","data/world-stations/index.json",
   "vendor/sqlite/index.mjs","vendor/sqlite/sqlite3.wasm","vendor/sqlite/sqlite3-opfs-async-proxy.js",
   "manifest.webmanifest","touch.png","icon-192.png","icon-512.png",

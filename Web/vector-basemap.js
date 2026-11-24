@@ -17,46 +17,20 @@ const AtlasVectorBasemap = (() => {
   let darkTheme = false;
 
   const light = {
-    ocean: "#c7dce7",
-    water: "#b9d7e6",
-    waterLine: "#77aec4",
-    land: "#edf0eb",
-    park: "#dcebd3",
-    forest: "#d3e5c8",
-    farmland: "#e9edcf",
-    residential: "#ece9e4",
-    industrial: "#e4e0d9",
-    building: "#d8d5d0",
-    roadCasing: "#d8d4ce",
-    road: "#fffdf8",
-    motorway: "#edb36c",
-    primary: "#f0cc8f",
-    secondary: "#f7e0ad",
-    rail: "#b98b79",
-    boundary: "#a99e9a",
-    label: "#39474c",
-    labelHalo: "rgba(255,255,255,.82)"
+    ocean: "#cbdfe4", water: "#c7dfe4", waterLine: "#a8cbd2",
+    land: "#f0f0e9", park: "#e1e9de", forest: "#d9e4d8", farmland: "#e9eadd",
+    residential: "#e9e9e3", industrial: "#e5e6e0",
+    roadCasing: "#d4d6cf", road: "#f7f7f2",
+    motorway: "#ded9cb", primary: "#e7e1d4", secondary: "#f3efe6",
+    boundary: "#b6b8af", label: "#56645f", labelHalo: "rgba(250,251,246,.92)"
   };
   const dark = {
-    ocean: "#182c39",
-    water: "#1e4556",
-    waterLine: "#6da8bb",
-    land: "#27312f",
-    park: "#2d4a3b",
-    forest: "#345342",
-    farmland: "#4a4b38",
-    residential: "#353a38",
-    industrial: "#41403b",
-    building: "#555550",
-    roadCasing: "#1b2424",
-    road: "#6f7772",
-    motorway: "#c18d55",
-    primary: "#c7a46e",
-    secondary: "#9a9c8e",
-    rail: "#c79b82",
-    boundary: "#8e9b96",
-    label: "#e2e7df",
-    labelHalo: "rgba(20,28,29,.88)"
+    ocean: "#172a35", water: "#203541", waterLine: "#38515d",
+    land: "#222b2e", park: "#2a3834", forest: "#2c3d35", farmland: "#303833",
+    residential: "#293134", industrial: "#2b3336",
+    roadCasing: "#263033", road: "#3b474a",
+    motorway: "#5e605a", primary: "#555a55", secondary: "#484f4d",
+    boundary: "#535e60", label: "#aab7b5", labelHalo: "rgba(28,36,39,.95)"
   };
 
   function palette() {
@@ -73,14 +47,23 @@ const AtlasVectorBasemap = (() => {
       properties.type || properties.railway || layerName || "").toLowerCase();
   }
 
-  function isRailway(layerName, properties) {
-    return properties.rail === true || properties.rail === 1 ||
-      ["rail", "railway", "light_rail", "subway", "tram", "monorail", "narrow_gauge", "funicular"].includes(
-        kindOf(layerName, properties)
-      ) ||
-      /railway|railway_line|transportation/.test(layerName) && /rail|transit/.test(
-        String(properties.class || properties.subclass || properties.kind || "")
-      );
+  const streetLayers = new Set(["streets", "street_labels", "street_labels_points", "transportation", "transportation_name"]);
+  const publicRoad = /^(motorway|trunk|primary|secondary|tertiary|minor|residential|unclassified|living_street|busway|pedestrian)(?:_link)?$/;
+  const railFeature = /^(?:rail(?:way)?|transit|light_rail|subway|tram|monorail|narrow_gauge|funicular|station|halt|platform|subway_entrance|train_station_entrance|tram_stop|train_station|railway_station|station_area|concourse)(?:_construction)?$/;
+  function roadKind(tags) {
+    return tags.class === "path" ? tags.subclass : tags.class || tags.kind;
+  }
+  function isContextFeature(layer, tags) {
+    if (tags.rail === true || tags.rail === 1 || tags.rail === "yes" ||
+        tags.railway && tags.railway !== "no" || tags.public_transport && tags.public_transport !== "no" ||
+        [tags.class, tags.subclass, tags.kind, tags.building, tags.landuse].some(value => railFeature.test(value))) return false;
+    if (!streetLayers.has(layer)) return true;
+    const road = roadKind(tags);
+    if (road === "ferry") return true;
+    if (!publicRoad.test(road)) return false;
+    // Both schemas include station concourses among pedestrian streets.
+    return !(tags.indoor && tags.indoor !== "no") &&
+      !(road === "pedestrian" && (tags.brunnel === "tunnel" || tags.tunnel === true || tags.tunnel === 1 || tags.tunnel === "yes"));
   }
 
   function fillColor(layerName, properties, colors) {
@@ -92,7 +75,6 @@ const AtlasVectorBasemap = (() => {
     if (/farmland|farm|orchard|vineyard|meadow/.test(kind)) return colors.farmland;
     if (/residential|suburb|neighbourhood/.test(kind)) return colors.residential;
     if (/industrial|commercial|retail/.test(kind)) return colors.industrial;
-    if (/building/.test(layerName)) return colors.building;
     if (/landuse/.test(layerName)) return colors.residential;
     return colors.land;
   }
@@ -107,9 +89,6 @@ const AtlasVectorBasemap = (() => {
     }
     if (layerName === "boundary" || layerName === "boundaries") {
       return { color: colors.boundary, width: 0.8, casing: 0, dash: [4, 4] };
-    }
-    if (isRailway(layerName, properties)) {
-      return { color: colors.rail, width: Math.min(2.1, 0.8 + (zoom - 5) * 0.16), casing: 0.7, dash: [4, 3] };
     }
     if (/motorway|trunk/.test(kind)) return { color: colors.motorway, width: Math.min(4.1, 1.5 + (zoom - 5) * 0.22), casing: 1.4 };
     if (/primary/.test(kind)) return { color: colors.primary, width: Math.min(3.4, 1.2 + (zoom - 5) * 0.19), casing: 1.1 };
@@ -164,11 +143,15 @@ const AtlasVectorBasemap = (() => {
 
   function labelAllowed(layerName, properties, zoom) {
     if (!nameOf(properties)) return false;
-    if (/place/.test(layerName)) return zoom >= 4;
-    if (/water/.test(layerName)) return zoom >= 7;
-    if (/street|transportation/.test(layerName)) return zoom >= 10;
-    if (/boundary/.test(layerName)) return zoom >= 6;
-    return zoom >= 12;
+    if (layerName.startsWith("place")) {
+      const kind = kindOf(layerName, properties);
+      if (/^(country|state|capital|state_capital|city)$/.test(kind)) return zoom >= 4;
+      if (kind === "town") return zoom >= 8;
+      return zoom >= 12;
+    }
+    if (layerName.startsWith("water")) return zoom >= 10;
+    const major = /^(motorway|trunk|primary|secondary|tertiary)$/.test(roadKind(properties));
+    return zoom >= (major ? 13 : 16);
   }
 
   function drawLabel(context, text, point, zoom, important) {
@@ -188,8 +171,10 @@ const AtlasVectorBasemap = (() => {
 
   // OpenMapTiles and Shortbread use different layer names. Paint in map order,
   // independent of the order in which a provider serialized the layers.
-  const polygonLayers = ["land", "landuse", "landcover", "park", "sites", "ocean", "water",
-    "water_polygons", "street_polygons", "building", "buildings"];
+  // Building footprints can carry only height/dummy attributes; a station
+  // building would be indistinguishable from a city block. Use land-use areas
+  // for urban context and leave individual outlines to the station layer.
+  const polygonLayers = ["land", "landuse", "landcover", "park", "sites", "ocean", "water", "water_polygons"];
   const lineLayers = ["waterway", "water_lines", "ferries", "boundary", "boundaries", "transportation", "streets"];
   const labelLayers = ["place", "place_labels", "water_name", "water_polygons_labels",
     "water_lines_labels", "transportation_name", "street_labels", "street_labels_points"];
@@ -201,7 +186,7 @@ const AtlasVectorBasemap = (() => {
       if (!layer) continue;
       for (let i = 0; i < layer.length; i++) {
         const feature = layer.feature(i);
-        if (!type || feature.type === type) output.push({name, feature});
+        if ((!type || feature.type === type) && isContextFeature(name, feature.properties)) output.push({name, feature});
       }
     }
     return output;
@@ -266,7 +251,7 @@ const AtlasVectorBasemap = (() => {
           box.right > left && box.left < right)) continue;
       drawLabel(context, text, point, coords.z, important);
       placed.push({left, right, y:point.y});
-      if (placed.length >= 32) break;
+      if (placed.length >= (coords.z >= 15 ? 5 : 3)) break;
     }
   }
 
@@ -407,5 +392,5 @@ const AtlasVectorBasemap = (() => {
     if (selected?.options.pane === "vectorBasemap" && map.hasLayer(selected)) selected.redraw();
   }
 
-  return { create, setTheme, openFreeMapAttribution: sources.openfreemap.attribution };
+  return { create, setTheme, decodeTile, openFreeMapAttribution: sources.openfreemap.attribution };
 })();

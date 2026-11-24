@@ -32,6 +32,47 @@ for (const city of index.cities) {
   for (const route of detail.routes) assert.ok(route.stops.every(s=>stations.has(s.id)));
 }
 const tiles = json("data/rail/index.json").tiles;
+const bands = ["below160","speed160","speed200","speed250","speed300","speed350"];
+for (const z of [2,4,6]) {
+  const path=`data/rail/speed-z${z}.json`, data=json(path);
+  assert.ok(files.includes(path));
+  assert.equal(data.zoom,z);
+  const seen=new Set();
+  for (const groups of Object.values(data.tiles)) for (const [band,lines] of Object.entries(groups)) {
+    seen.add(band);
+    assert.ok(lines.length && lines.every(line=>line.length>=4 && line.length%2===0 &&
+      line.every(n=>Number.isInteger(n) && n>=0 && n<=data.extent)), `Invalid ${band} path at Z${z}`);
+  }
+  assert.deepEqual(seen,new Set(bands));
+  for (const [place,lat,lon,band] of [["Le Creusot",46.763,4.499,"speed250"],["Princeton",40.316,-74.624,"speed200"],
+    ["Kenitra",34.26,-6.51,"speed300"],["Midrand",-25.996,28.135,"speed160"],
+    ["Buenos Aires",-34.6,-58.4,"below160"],["Sydney",-33.87,151.21,"below160"]]) {
+    const side=2**z, x=(lon+180)/360*side, y=(1-Math.asinh(Math.tan(lat*Math.PI/180))/Math.PI)/2*side;
+    const px=x*data.extent, py=y*data.extent;
+    const close=[-1,0,1].some(dx=>[-1,0,1].some(dy=>{
+      const tx=Math.floor(x)+dx,ty=Math.floor(y)+dy, lines=data.tiles[`${tx}/${ty}`]?.[band] || [];
+      return lines.some(line=>line.some((v,i)=>i%2===0 &&
+        Math.hypot(tx*data.extent+v-px,ty*data.extent+line[i+1]-py)<=Math.max(2,5*side/64)));
+    }));
+    assert.ok(close,`${place} ${band} Z${z}`);
+  }
+}
+const layers={
+  streets:[{kind:"rail",rail:true},{kind:"footway"},{kind:"primary"}],
+  street_labels:[{kind:"subway",name:"Métro 12"},{kind:"primary",name:"Avenue du Maine"}],
+  transportation:[{class:"rail",subclass:"rail"},{class:"path",subclass:"platform"},{class:"primary"}],
+  transportation_name:[{class:"transit",subclass:"tram",name:"T3"},{class:"minor",name:"Rue Doré"}],
+  building:[{}],buildings:[{dummy:1}],land:[{kind:"railway"},{kind:"park"}],public_transport:[{kind:"station"}]
+};
+const mockLayers=Object.fromEntries(Object.entries(layers).map(([name,rows])=>[name,{
+  length:rows.length,feature:i=>({type:/building|^land$/.test(name)?3:2,properties:rows[i]})
+}]));
+const basemap={AtlasVector:{decode:()=>({layers:mockLayers})}};
+vm.createContext(basemap);vm.runInContext(text("vector-basemap.js"),basemap);
+const decoded=vm.runInContext("AtlasVectorBasemap.decodeTile(new Uint8Array())",basemap);
+assert.deepEqual(Array.from(decoded.lines,r=>r.feature.properties.class || r.feature.properties.kind),["primary","primary"]);
+assert.deepEqual(Array.from(decoded.areas,r=>r.feature.properties.kind),["park"]);
+assert.deepEqual(Array.from(decoded.names,r=>r.feature.properties.name),["Rue Doré","Avenue du Maine"]);
 for (const z of [2,4,6]) {
   const path=`data/rail/world-z${z}.json`, data=json(path);
   assert.ok(files.includes(path), `Offline world map Z${z}`);

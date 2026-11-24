@@ -442,9 +442,9 @@ function setWorkspaceOpen(open) {
   document.querySelector(".app-shell").classList.toggle("workspace-open", open);
   document.querySelector(".app-shell").classList.toggle("workspace-closed", !open);
   $("workspaceScrim").hidden = !open;
-  $("toggleWorkspace").setAttribute("aria-label", open ? "关闭工作区" : "打开工作区");
+  $("toggleWorkspace").setAttribute("aria-label", open ? "收起图层与工作区" : "打开图层与工作区");
   $("toggleWorkspace").setAttribute("aria-expanded", String(open));
-  $("toggleWorkspace").title = open ? "关闭工作区" : "打开工作区";
+  $("toggleWorkspace").title = $("toggleWorkspace").getAttribute("aria-label");
   updateJourneyControl();
   if(state.map)requestAnimationFrame(()=>state.map.invalidateSize({pan:false}));
 }
@@ -1867,15 +1867,22 @@ function updateBasemapAppearance() {
   if (!state.map) return;
   const {mapAppearance, basemapDarkness, mode} = AtlasPrefs.value;
   const dark = mapAppearance === "dark" || (mapAppearance === "system" && systemDarkMap.matches);
-  const imagery = mode === "online" && ["satellite", "hybrid"].includes($("baseLayer").value);
+  const baseID = $("baseLayer").value;
+  const imagery = mode === "online" && ["satellite", "hybrid"].includes(baseID);
+  document.documentElement.dataset.mapTheme = dark ? "dark" : "light";
+  const note = $("basemapSourceNote");
+  note.hidden = mode !== "online";
+  note.textContent = baseID.endsWith("-vector") ? "底图显示街道、水域和地名。线路、站名及站区由铁道漫游绘制。"
+    : baseID === "satellite" ? "纯卫星影像。线路和站名来自铁道漫游。"
+    : "这款底图自带标注。选择「简洁街道」可避免和铁路图层重叠。";
   const brightness = 1 - basemapDarkness;
   const rasterBrightness = brightness * (dark && !imagery ? 0.34 : 1);
   const surface = state.map.getContainer();
   surface.dataset.stationInk = imagery || dark || brightness <= 0.54 ? "light" : "dark";
   StationLayoutLayer.refresh();
   // Transparent or missing tiles reveal the map surface, including in offline mode.
-  const background = imagery ? [46, 54, 59] : [205, 213, 214];
-  surface.style.backgroundColor = `rgb(${background.map(c => Math.round(c * rasterBrightness)).join(",")})`;
+  const background = imagery ? [46, 54, 59] : dark ? [34, 43, 46] : [240, 240, 233];
+  surface.style.backgroundColor = `rgb(${background.map(c => Math.round(c * brightness)).join(",")})`;
   state.map.getPane("tilePane").style.filter = `brightness(${rasterBrightness})`;
   state.map.getPane("vectorBasemap").style.filter = `brightness(${brightness})`;
   AtlasVectorBasemap.setTheme(dark, state.baseLayers[$("baseLayer").value], state.map);
@@ -1936,6 +1943,7 @@ function setupLibrary() {
 }
 
 async function loadData() {
+  $("mapDataError").hidden = true;
   const currentID = state.route?.id;
   const [corridors, journeys, timetableBundle, metro, metroIndex, history] = await Promise.all([
     loadJSON(DATA.corridors), loadJSON(DATA.journeys), loadJSON(DATA.timetables),
@@ -2334,8 +2342,8 @@ function chooseQuizAnswer(event) {
 }
 
 function showError(error) {
-  $("dataStatus").textContent = error.message || String(error);
-  $("dataStatus").classList.add("error");
+  $("mapDataError").textContent = error.message || String(error);
+  $("mapDataError").hidden = false;
 }
 
 function nationalView() {
@@ -2349,6 +2357,20 @@ function closeTopMapPanel() {
 }
 function initializeMap() {
   state.map = L.map("map", { zoomControl: true, preferCanvas: true,minZoom:2,maxZoom:19 });
+  // Several active layers credit the same providers. Let Leaflet reference-count
+  // each credit independently, including when the last layer is switched off.
+  const credits=state.map.attributionControl;
+  credits.setPrefix(false);
+  for (const method of ["addAttribution","removeAttribution"]) {
+    const update=credits[method].bind(credits);
+    credits[method]=text=>{
+      for (const part of (text || "").split(" · ").filter(Boolean)) {
+        update(/openstreetmap\.org\/copyright|^(?:&copy;|©) OpenStreetMap contributors$/.test(part)
+          ? '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>' : part);
+      }
+      return credits;
+    };
+  }
   state.map.createPane("vectorBasemap").style.zIndex = 190;
   state.map.getPane("vectorBasemap").style.pointerEvents = "none";
   const camera=readStored("railway-atlas-map-camera",null);

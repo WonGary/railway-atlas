@@ -163,19 +163,48 @@ const RailMapLayers = (() => {
   // Detail tiles are painted independently. Leaflet retains the previous zoom's
   // tiles while the next view loads. The bundled Z4 layer remains underneath.
   function detailGrid() {
+    const parents = new Map();
+    function acquire(coords) {
+      const key = `${AtlasPrefs.value.mode}/${coords.z}/${coords.x}/${coords.y}`;
+      let entry = parents.get(key);
+      if (!entry) {
+        const controller = new AbortController();
+        entry = {controller,users:0,ready:false};
+        const request = entry;
+        entry.promise = (async () => {
+          const local = (await LocalRailCache.read(coords)).map(bytes => AtlasVector.decode(bytes));
+          controller.signal.throwIfAborted();
+          const tiles = local.length || AtlasPrefs.value.mode !== "online" ? local : [await onlineTile(coords,controller.signal)];
+          request.ready = true;
+          for (const [oldKey, old] of parents) {
+            if (parents.size <= 24) break;
+            if (old.ready && !old.users) parents.delete(oldKey);
+          }
+          return tiles;
+        })().catch(error=>{if(parents.get(key)===request)parents.delete(key);throw error;});
+        parents.set(key, entry);
+      }
+      entry.users++;
+      return {promise:entry.promise,release(){
+        if (--entry.users === 0 && !entry.ready && parents.get(key)===entry) {
+          parents.delete(key);entry.controller.abort();
+        }
+      }};
+    }
     const Grid = L.GridLayer.extend({
       createTile(coords, done) {
         const canvas = document.createElement("canvas"), size = 256, scale = Math.min(2, devicePixelRatio || 1);
         canvas.width = canvas.height = size * scale;
         const ctx = canvas.getContext("2d"); ctx.scale(scale,scale);
         const {x,y,z} = coords;
-        const controller = new AbortController();
-        canvas.abortTile = () => controller.abort();
+        const nativeZ=Math.min(z,14), magnification=2**(z-nativeZ);
+        const dx=(x%magnification)*size, dy=(y%magnification)*size;
+        const source=acquire({x:Math.floor(x/magnification),y:Math.floor(y/magnification),z:nativeZ});
+        let unloaded=false;
+        canvas.abortTile = () => {if (!unloaded) {unloaded=true;source.release();}};
         (async () => {
-          const local = (await LocalRailCache.read(coords)).map(bytes => AtlasVector.decode(bytes));
-          if (!local.length && AtlasPrefs.value.mode!=="online") return;
-          const tiles = local.length ? local : [await onlineTile(coords,controller.signal)];
-          if (controller.signal.aborted) return;
+          const tiles = await source.promise;
+          if (unloaded) return;
           canvas.hits = [];
           canvas.stationNames = [];
           for (const tile of tiles) {
@@ -195,13 +224,17 @@ const RailMapLayers = (() => {
               if (!line && !station) continue;
               const visual = style(tags,false,station,map.getZoom());
               if (!visual.visible) continue;
-              const factor = size / feature.extent;
+              const factor = size * magnification / feature.extent;
+              if (magnification>1) {
+                const [a,b,c,d]=feature.bbox();
+                if (a*factor>dx+size+8 || b*factor>dy+size+8 || c*factor<dx-8 || d*factor<dy-8) continue;
+              }
               ctx.strokeStyle = visual.color; ctx.lineWidth = visual.weight;ctx.globalAlpha=visual.opacity;
               ctx.setLineDash(visual.dashArray ? [7,6] : []);
               for (const path of feature.loadGeometry()) {
                 ctx.beginPath();
                 if (station && path.length) {
-                  const px = path[0].x*factor, py = path[0].y*factor;
+                  const px = path[0].x*factor-dx, py = path[0].y*factor-dy;
                   const radius = 2.4 * AtlasPrefs.value.stationRadiusMultiplier;
                   ctx.arc(px,py,radius,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill();
                   const name=tags["name:zh"] || tags.name;
@@ -214,7 +247,7 @@ const RailMapLayers = (() => {
                   }
                   canvas.hits.push({x:px,y:py,tags,station:true});
                 } else {
-                  const points=path.map(p=>[p.x*factor,p.y*factor]);
+                  const points=path.map(p=>[p.x*factor-dx,p.y*factor-dy]);
                   points.forEach(([x,y],i)=>i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
                   canvas.hits.push({points,tags});
                   if (path.length > 1 && !AtlasPrefs.classify(tags).urban) canvas.hasTracks = true;
@@ -228,12 +261,16 @@ const RailMapLayers = (() => {
           }
           canvas.hasRail = canvas.hits.length>0;
           }
-        })().then(() => done(null,canvas),error => done(error,canvas));
+        })().then(() => {if(!unloaded)done(null,canvas);},error => {if(!unloaded)done(error,canvas);});
         return canvas;
       }
     });
-    const grid = new Grid({pane:"railDetail",minZoom:7,maxNativeZoom:14,maxZoom:19,keepBuffer:2,updateWhenIdle:true,
+    const grid = new Grid({pane:"railDetail",minZoom:7,maxZoom:19,keepBuffer:2,updateWhenIdle:true,
       attribution:AtlasVectorBasemap.openFreeMapAttribution+' · <a href="https://versatiles.org/">VersaTiles</a>'});
+    grid.clearSourceCache=()=>{
+      for (const entry of parents.values()) if(!entry.ready)entry.controller.abort();
+      parents.clear();
+    };
     grid.on("tileunload",event => {
       event.tile.abortTile?.();
       world.showDetail(event.coords,false);
@@ -243,10 +280,10 @@ const RailMapLayers = (() => {
     grid.on("load",()=>toggle());
     map.on("click",event => {
       if (!map.hasLayer(grid)) return;
-      const z = Math.min(map.getZoom(),14);
+      const z = map.getZoom();
       const p = map.project(event.latlng,z), x = Math.floor(p.x/256), y = Math.floor(p.y/256);
       const tile = grid._tiles[`${x}:${y}:${z}`]?.el;
-      const px=p.x-x*256,py=p.y-y*256,tol=7/Math.pow(2,map.getZoom()-z);
+      const px=p.x-x*256,py=p.y-y*256,tol=7;
       let nearest=tol, hit;
       for(const h of tile?.hits || []){
         if(h.station){if(Math.hypot(h.x-px,h.y-py)<=tol){hit=h;break;}continue;}
@@ -262,7 +299,7 @@ const RailMapLayers = (() => {
   }
   function eachVisibleStation(visit) {
     if (!live || !map.hasLayer(live)) return;
-    const zoom = Math.min(map.getZoom(), 14);
+    const zoom = map.getZoom();
     for (const tile of Object.values(live._tiles)) {
       if (tile.current && tile.coords.z === zoom) tile.el.stationNames?.forEach(visit);
     }
@@ -271,7 +308,7 @@ const RailMapLayers = (() => {
     if (!map) return;
     const rail = $("showRail").checked;
     const mode=AtlasPrefs.value.mode;
-    setLayerVisible(world,style(WorldRail.tags,true).visible && mode!=="offline");
+    setLayerVisible(world,WorldRail.enabled(map.getZoom()) && mode!=="offline");
     if(overviewReady){
       for(const {line,tags} of overviewGroups){
         const visual=style(tags,true);
@@ -303,5 +340,5 @@ const RailMapLayers = (() => {
     };
     loadOverview().catch(error => { $("regionStatus").textContent = error.message; });
   }
-  return {setup,toggle,inspect,eachVisibleStation};
+  return {setup,toggle,inspect,eachVisibleStation,clearSourceCache:()=>live?.clearSourceCache()};
 })();

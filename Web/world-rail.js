@@ -1,16 +1,26 @@
 const WorldRail = (() => {
   const editions = new Map();
-  const credit = '<a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/railroads/">Natural Earth</a>';
+  const credit = '<a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/railroads/">Natural Earth</a> · <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>';
   const tags = {railway:"rail", source:"Natural Earth · 1:10m"};
+  const speedBands = ["below160","speed160","speed200","speed250","speed300","speed350"];
 
-  function edition(zoom) {
-    if (!editions.has(zoom)) {
-      editions.set(zoom, loadJSON(`./data/rail/world-z${zoom}.json`).catch(error => {
-        editions.delete(zoom);
+  function edition(zoom, type = "world") {
+    const key = `${type}-z${zoom}`;
+    if (!editions.has(key)) {
+      editions.set(key, loadJSON(`./data/rail/${key}.json`).catch(error => {
+        editions.delete(key);
         throw error;
       }));
     }
-    return editions.get(zoom);
+    return editions.get(key);
+  }
+
+  function visible(category, z) {
+    return $("showRail").checked && AtlasPrefs.visible({network:"railway",category}, z, {overview:true});
+  }
+
+  function enabled(z) {
+    return ["unknown", ...speedBands].some(category => visible(category, z));
   }
 
   function create(map, regionalTiles, style, inspect) {
@@ -21,13 +31,18 @@ const WorldRail = (() => {
       const {x, y, z} = coords;
       const side = 2 ** z, wrappedX = ((x % side) + side) % side;
       const scale = 2 ** (z - data.zoom);
-      const paths = data.tiles[`${Math.floor(wrappedX/scale)}/${Math.floor(y/scale)}`] || [];
+      const key = `${Math.floor(wrappedX/scale)}/${Math.floor(y/scale)}`;
       const left = (wrappedX % scale) * size, top = (y % scale) * size;
-      const units = size * scale / data.extent;
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, size, size);
-      const drawing = new Path2D();
-      canvas.railPath = drawing;
+      function makePath(lines, extent) {
+        const path = new Path2D(), units = size * scale / extent;
+        for (const line of lines) {
+          path.moveTo(line[0]*units-left, line[1]*units-top);
+          for (let i=2; i<line.length; i+=2) path.lineTo(line[i]*units-left, line[i+1]*units-top);
+        }
+        return path;
+      }
       // These regional Z4 tiles have more accurate geometry and speed colours.
       // They are Leaflet overlays in the original world copy only.
       const clip = new Path2D();
@@ -40,18 +55,40 @@ const WorldRail = (() => {
         }
       }
       canvas.railClip = clip;
-      for (const path of paths) {
-        drawing.moveTo(path[0]*units-left, path[1]*units-top);
-        for (let i=2; i<path.length; i+=2) drawing.lineTo(path[i]*units-left, path[i+1]*units-top);
-      }
+      const drawing = makePath(data.tiles[key] || [], data.extent);
+      const bands = canvas.speeds?.tiles[key];
+      canvas.bandPaths = new Map();
       const visual = style(tags, true, false, z);
       ctx.save();
       ctx.clip(clip, "evenodd");
-      ctx.strokeStyle = map.getContainer().dataset.stationInk === "light" ? "#b6c6d1" : "#495b68";
-      ctx.globalAlpha = z <= 3 ? .87 : .94;
-      ctx.lineWidth = visual.weight * (z <= 3 ? .82 : .94);
       ctx.lineJoin = ctx.lineCap = "round";
-      ctx.stroke(drawing);
+      const width = visual.weight * (z <= 3 ? .85 : .98);
+      if (visible("unknown", z)) {
+        canvas.bandPaths.set("unknown", drawing);
+        ctx.strokeStyle = AtlasPrefs.categories.unknown[1];
+        ctx.lineWidth = width;
+        ctx.stroke(drawing);
+      }
+      if (bands) {
+        const paths = speedBands.filter(category => bands[category]).map(category =>
+          [category, makePath(bands[category], canvas.speeds.extent)]);
+        // Clear generalized gray under all recorded limits, even filtered ones.
+        // Colour only the actual OSM geometry. Never transfer a limit to a nearby branch.
+        const mask = new Path2D();
+        for (const [, path] of paths) mask.addPath(path);
+        canvas.speedMask = mask;
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.lineWidth = width + 1.8;
+        ctx.stroke(mask);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.lineWidth = width;
+        for (const [category, path] of paths) {
+          if (!visible(category, z)) continue;
+          ctx.strokeStyle = AtlasPrefs.categories[category][1];
+          ctx.stroke(path);
+          canvas.bandPaths.set(category, path);
+        }
+      }
       ctx.restore();
     }
     const Grid = L.GridLayer.extend({
@@ -68,6 +105,10 @@ const WorldRail = (() => {
           canvas.data = data;
           paint(canvas);
           done(null, canvas);
+          edition(data.zoom,"speed").then(speeds => {
+            canvas.speeds = speeds;
+            paint(canvas);
+          }).catch(() => {}); // The public-domain overview is still usable on its own.
         }, error => done(error, canvas));
         return canvas;
       }
@@ -78,14 +119,24 @@ const WorldRail = (() => {
       const z = Math.round(map.getZoom()), p = map.project(event.latlng, z);
       const x = Math.floor(p.x/size), y = Math.floor(p.y/size);
       const canvas = grid._tiles[`${x}:${y}:${z}`]?.el;
-      if (!canvas?.railPath || canvas.style.visibility === "hidden") return;
+      if (!canvas?.bandPaths || canvas.style.visibility === "hidden") return;
       const ctx = canvas.getContext("2d"), px = p.x-x*size, py = p.y-y*size;
       ctx.save();
       ctx.resetTransform();
-      ctx.lineWidth = 7;
-      const hit = ctx.isPointInPath(canvas.railClip, px, py, "evenodd") && ctx.isPointInStroke(canvas.railPath, px, py);
+      let hit;
+      if (ctx.isPointInPath(canvas.railClip, px, py, "evenodd")) {
+        for (const tolerance of [2, 5, 7]) {
+          ctx.lineWidth = tolerance;
+          for (const [category, path] of [...canvas.bandPaths].reverse()) {
+            if (category === "unknown" && canvas.speedMask && ctx.isPointInStroke(canvas.speedMask,px,py)) continue;
+            if (ctx.isPointInStroke(path,px,py)) { hit = category; break; }
+          }
+          if (hit) break;
+        }
+      }
       ctx.restore();
-      if (hit) inspect("全球铁路干线 · Natural Earth", tags, false, event.latlng);
+      if (hit) inspect(`铁路干线 · ${AtlasPrefs.categories[hit][0]}`, hit === "unknown" ? tags :
+        {railway:"rail", "限速区间":AtlasPrefs.categories[hit][0], source:"OpenStreetMap · 全球干线概览"}, false, event.latlng);
     });
     grid.repaint = () => Object.values(grid._tiles || {}).forEach(tile => paint(tile.el));
     grid.showDetail = (coords, ready) => {
@@ -94,5 +145,5 @@ const WorldRail = (() => {
     };
     return grid;
   }
-  return {create, tags};
+  return {create, enabled};
 })();
