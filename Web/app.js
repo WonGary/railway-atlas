@@ -705,6 +705,8 @@ function buildMetroCityLayers(city, detail) {
   const stationsLayer = L.layerGroup();
   const routeLines = [];
   const stationMarkers = new Map();
+  const stationRoutes = new Map();
+  const routesByID = new Map(detail.routes.map(route => [route.id, route]));
   for (const route of detail.routes || []) {
     const construction = metroIsConstruction(route);
     const parts = (route.parts || [])
@@ -732,7 +734,7 @@ function buildMetroCityLayers(city, detail) {
     const location = pointToLatLng(station.coordinate);
     if (!location) continue;
     if (!platformsByName.has(station.name)) platformsByName.set(station.name, []);
-    platformsByName.get(station.name).push({location, routes: station.routes || []});
+    platformsByName.get(station.name).push({location, station});
   }
   for (const station of detail.stations || []) {
     const coordinate = pointToLatLng(station.coordinate);
@@ -744,9 +746,18 @@ function buildMetroCityLayers(city, detail) {
       fillColor: "#ffffff",
       fillOpacity: 0.96, bubblingMouseEvents: false
     });
-    const routesAtStop = platformsByName.get(station.name)
-      .filter(platform => marker.getLatLng().distanceTo(platform.location) <= 350)
-      .flatMap(platform => platform.routes);
+    const nearby = platformsByName.get(station.name).filter(platform =>
+      platform.station.id !== station.id && marker.getLatLng().distanceTo(platform.location) <= 350);
+    const physicalLines = new Map();
+    for (const platform of [station, ...nearby.map(item => item.station)]) {
+      for (const reference of platform.routes || []) {
+        const route = routesByID.get(reference.id) || reference;
+        const key = AtlasPrefs.routeKey(city.name, route);
+        if (!physicalLines.has(key) || (!physicalLines.get(key).color && route.color)) physicalLines.set(key, route);
+      }
+    }
+    const routesAtStop = [...physicalLines.values()];
+    stationRoutes.set(station.id, routesAtStop);
     marker.options.atlasColors=[...new Set(routesAtStop.map(r=>r.color).filter(Boolean))].sort();
     StationLabels.bind(marker, station.name, {
       id: station.id, minZoom: 13, important: StationLabels.prominent({}, routesAtStop),
@@ -756,7 +767,7 @@ function buildMetroCityLayers(city, detail) {
     marker.addTo(stationsLayer);
     stationMarkers.set(station.id, marker);
   }
-  return { city, detail, routesLayer, stationsLayer, routeLines, stationMarkers };
+  return { city, detail, routesLayer, stationsLayer, routeLines, stationMarkers, stationRoutes };
 }
 
 function loadMetroCity(city, { retry = false } = {}) {
@@ -1055,9 +1066,7 @@ function renderMetroStationInfo(city, station) {
   $("favoriteStation").title = isFavorite ? "取消收藏车站" : "收藏车站";
   $("favoriteStation").setAttribute("aria-label", $("favoriteStation").title);
   $("infoTitle").textContent = station.name;
-  const detail = state.metroDetails.get(city.id);
-  const routeLookup = new Map((detail?.routes || []).map(route => [route.id, route]));
-  const routes = (station.routes || []).map(reference => routeLookup.get(reference.id) || reference);
+  const routes = state.metroCityLayers.get(city.id)?.stationRoutes.get(station.id) || station.routes || [];
   const coordinate = pointToLatLng(station.coordinate);
   $("infoContent").innerHTML = `
     <div class="info-block"><div class="info-label">城市轨道车站</div>
@@ -1067,8 +1076,8 @@ function renderMetroStationInfo(city, station) {
     <div class="info-block"><div class="info-label">坐标</div><div class="info-value">${coordinate ? `${coordinate[0].toFixed(5)}, ${coordinate[1].toFixed(5)}` : "未记录"}</div></div>
     <p class="station-source">城市轨道数据来自 OpenStreetMap，数据截取日期 ${escapeHTML(city.sourceDate || "未记录")}，按 ODbL 1.0 提供。${city.source ? `<br><a href="${escapeHTML(city.source)}" target="_blank" rel="noopener noreferrer">查看数据来源</a>` : ""}</p>`;
   $("infoContent").querySelectorAll("[data-metro-route]").forEach(button => button.addEventListener("click", () => {
-    const route = detail?.routes.find(item => item.id === button.dataset.metroRoute);
-    if (route) selectMetroRoute(city, route);
+    const route = routes.find(item => item.id === button.dataset.metroRoute);
+    if (route) selectMetroRoute(city, route, {fit: true});
   }));
   StationLayoutLayer.addFocusButton($("infoContent"),coordinate);
   refreshMetroDetailVisibility();
@@ -1083,8 +1092,8 @@ function selectMetroStation(city, station, { pan = true } = {}) {
   if (marker && pan && state.map) state.map.setView(marker.getLatLng(), Math.max(state.map.getZoom(),12));
 }
 
-function selectMetroRoute(city, route) {
-  LineFocus.metro(city,route);
+function selectMetroRoute(city, route, {fit = false} = {}) {
+  LineFocus.metro(city,route,{fit});
   state.selectedMapFeature=null;
   state.selectedMetroRoute = { city, route };
   state.selectedMetroStation = null;

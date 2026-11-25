@@ -34,6 +34,21 @@ const fingerprint=buf=>crypto.createHash("sha256").update(buf).digest("hex");
     assert.ok(colours.ring.length>=2 && colours.ring.every(c=>colours.stop.includes(c.toUpperCase())));
     assert.deepEqual(colours.after,colours.stop);
     await page.screenshot({path:path.join(out,"interchange.png")});
+    const connections=await page.evaluate(()=>{
+      const city=state.metroCities.find(c=>c.id==="beijing"),detail=state.metroDetails.get(city.id);
+      const wangjing=detail.stations.find(s=>s.name==="望京"), links=()=>[...$("infoContent").querySelectorAll("[data-metro-route]")];
+      const routes=links().map(button=>detail.routes.find(route=>route.id===button.dataset.metroRoute));
+      return routes.map(route=>{
+        selectMetroStation(city,wangjing,{pan:false});
+        links().find(button=>button.dataset.metroRoute===route.id).click();
+        const view=state.map.getBounds(),focus=LineFocus.active;
+        return {ref:route.ref,selected:state.selectedMetroRoute?.route.id===route.id,
+          allInView:focus.parts.every(part=>part.every(p=>view.contains(p))),
+          stops:$("infoContent").querySelectorAll("[data-metro-stop]").length};
+      });
+    });
+    assert.deepEqual(connections.map(row=>row.ref).sort(),["14","15"]);
+    assert.ok(connections.every(row=>row.selected && row.allInView && row.stops>1));
     async function region(name,at,z) {
       await page.evaluate(name=>{LineFocus.clear();$("regionSelect").value=name;$("regionSelect").dispatchEvent(new Event("change"));},name);
       await page.waitForFunction(s=>$("regionStatus").textContent.includes(s),name==="shanghai"?"上海":"南昌");
@@ -103,7 +118,7 @@ const fingerprint=buf=>crypto.createHash("sha256").update(buf).digest("hex");
     assert.deepEqual(await page.evaluate(geometry,changed),expected);
     await page.reload({waitUntil:"domcontentloaded"});await ready();assert.deepEqual(await page.evaluate(geometry,changed),expected);
     assert.deepEqual(errors,[]);
-    const result={colours,speed,handoff,journey,receipt};fs.writeFileSync(path.join(out,"palette-updates.json"),JSON.stringify(result,null,2)+"\n");
+    const result={colours,connections,speed,handoff,journey,receipt};fs.writeFileSync(path.join(out,"palette-updates.json"),JSON.stringify(result,null,2)+"\n");
     console.log(JSON.stringify(result));
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

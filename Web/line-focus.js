@@ -90,7 +90,7 @@ const LineFocus = (() => {
     if (p) set(name,[],[[name,p,id,colors]]);
     else clear();
   }
-  function metro(city,route) {
+  function metro(city,route,{fit = false} = {}) {
     const key=AtlasPrefs.routeKey(city.name,route);
     const detail=state.metroCityLayers.get(city.id);
     const members=(detail?.routeLines || []).filter(e=>AtlasPrefs.routeKey(city.name,e.route)===key);
@@ -102,6 +102,11 @@ const LineFocus = (() => {
       AtlasPrefs.value.showsMetroColors && e.route.color, dashArray:e.line.options.dashArray})));
     set(metroRouteLabel(route),parts,stops,{styleForPart:i=>styles[i](),
       selectStop:(_name,id)=>{const s=detail.detail.stations.find(s=>s.id===id);if(s) selectMetroStation(city,s,{pan:false});}});
+    if (fit) {
+      const bounds=L.latLngBounds(stops.map(([,location])=>location));
+      for (const member of members) bounds.extend(member.line.getBounds());
+      if (bounds.isValid()) map.fitBounds(bounds,{padding:[32,32],maxZoom:15,animate:false});
+    }
   }
   function closestPart(parts,at) {
     const target=map.project(at);
