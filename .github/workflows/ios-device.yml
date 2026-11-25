@@ -2,7 +2,7 @@ name: Build native iPhone and iPad archive
 on:
   push:
     branches: [codex/mobile-map-release]
-    paths: ['Sources/**', 'Config/**', 'Design/**', 'RailwayAtlas.xcodeproj/**', 'Mobile/VERSION', '.github/workflows/ios-device.yml']
+    paths: ['Sources/**', 'Config/**', 'Design/**', 'RailwayAtlas.xcodeproj/**', 'VERSION', '.github/workflows/ios-device.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,7 +19,7 @@ jobs:
           xcodebuild -version
           sdk=$(xcrun --sdk iphoneos --show-sdk-version)
           test "${sdk%%.*}" -ge 26
-          version=$(cat Mobile/VERSION)
+          version=$(cat VERSION)
           build="$GITHUB_RUN_NUMBER"
           archive="$RUNNER_TEMP/Railway-Atlas.xcarchive"
           xcodebuild -project RailwayAtlas.xcodeproj -scheme RailwayAtlas-iOS \
