@@ -160,19 +160,19 @@ struct FeatureInspectorContent: View {
                 .foregroundStyle(.secondary)
             if let group = model.interchange {
                 ForEach(group.documentedRoutes, id: \.visibilityKey) { route in
-                    FeatureInspectorRouteMarker(route: route, compactTitle: routeTitle(route))
+                    focusButton(route, compact: true)
                 }
                 if !group.possibleRoutes.isEmpty {
                     FeatureInspectorText(value: "同名邻近站 · 换乘待核实", font: .caption2)
                         .foregroundStyle(.secondary)
                     ForEach(group.possibleRoutes, id: \.visibilityKey) { route in
-                        FeatureInspectorRouteMarker(route: route, compactTitle: routeTitle(route))
+                        focusButton(route, compact: true)
                     }
                 }
             } else if !model.routes.isEmpty {
                 // Do not truncate to the first four routes or join by route name.
                 ForEach(Array(model.routes.enumerated()), id: \.offset) { _, route in
-                    FeatureInspectorRouteMarker(route: route)
+                    focusButton(route, compact: false)
                 }
             } else if let color = model.featureColor {
                 HStack(alignment: .top, spacing: 7 * uiScale) {
@@ -190,6 +190,12 @@ struct FeatureInspectorContent: View {
 
     private func routeTitle(_ route: RailRoute) -> String {
         store.urbanRouteTitles[route.visibilityKey] ?? MetroRouteTitle.short(route)
+    }
+
+    private func focusButton(_ route: RailRoute, compact: Bool) -> some View {
+        Button { store.focusRelation(route) } label: {
+            FeatureInspectorRouteMarker(route: route, compactTitle: compact ? routeTitle(route) : nil)
+        }.buttonStyle(.plain).help("在地图上高亮\(routeTitle(route))")
     }
 
     @ViewBuilder

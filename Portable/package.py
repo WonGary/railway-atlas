@@ -25,7 +25,8 @@ def archive(label, extra):
     path = out / f"Railway-Atlas-{version}-{label}.zip"
     with ZipFile(path, "x", compression=ZIP_DEFLATED) as dest:
         for item in sorted(web.rglob("*")):
-            if item.is_file() and not any(p.startswith(".") for p in item.relative_to(web).parts):
+            if (item.is_file() and item.name != "card-contours.json" and
+                    not any(p.startswith(".") for p in item.relative_to(web).parts)):
                 dest.write(item, "Web/" + item.relative_to(web).as_posix())
         for name, item in extra.items():
             dest.write(item, name)

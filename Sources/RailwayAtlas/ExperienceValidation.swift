@@ -127,10 +127,10 @@ enum ExperienceValidation {
         try await Task.sleep(for: .milliseconds(200))
         _ = try await OnlineUIValidation.capture("experience-import-review", directory: directory, window: window)
 
-        let shape = RailSilhouette(coordinates: try model.trackJourneys[0].slice(from: confirmed.from, to: confirmed.to).legs)
+        let legs = try model.trackJourneys[0].slice(from: confirmed.from, to: confirmed.to).legs
         for style in PostcardStyle.allCases {
             let renderer = ImageRenderer(content: TicketPostcardArt(style: style, journey: confirmed,
-                caption: "山川迢迢，来日方长。", city: "乘车区间", silhouette: shape)
+                caption: "山川迢迢，来日方长。", legs: legs)
                 .environment(\.colorScheme, .light))
             renderer.scale = 2
             guard let image = renderer.cgImage,

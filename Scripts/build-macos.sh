@@ -67,6 +67,7 @@ cp Sources/RailwayCore/Resources/mainland-osm-mask.json "$ATLAS_APP/Contents/Res
 cp Sources/RailwayCore/Resources/metro-palette.json Sources/RailwayCore/Resources/METRO-PALETTE-LICENCE.txt "$ATLAS_APP/Contents/Resources/Resources/"
 cp Sources/RailwayCore/Resources/metro-snapshot-*.json "$ATLAS_APP/Contents/Resources/Resources/"
 cp Sources/RailwayCore/Resources/china-metro-overview.json Sources/RailwayCore/Resources/NATIONAL-METRO-LICENCE.txt "$ATLAS_APP/Contents/Resources/Resources/"
+cp Sources/RailwayCore/Resources/national-metro-baseline.json "$ATLAS_APP/Contents/Resources/Resources/"
 cp Sources/RailwayCore/Resources/railway-experience-*.json "$ATLAS_APP/Contents/Resources/Resources/"
 cp Config/default-config.json "$ATLAS_APP/Contents/Resources/Resources/"
 strip_bundle_metadata "$ATLAS_APP"

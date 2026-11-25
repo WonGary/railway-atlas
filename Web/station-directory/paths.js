@@ -111,5 +111,5 @@ const RailPaths = (() => {
       source:{title:"全国铁路车次径路 · "+meta.edition,note:"China Railway GTFS · Jeremy Gao / © OpenStreetMap contributors"},
       geometryKinds:row.k.slice(a,b), indexed:true};
   }
-  return {find};
+  return {find,decode};
 })();

@@ -115,6 +115,25 @@ struct Checks {
             print("PASS live-snapshot conversion: \(actual.count) source relations, \(refreshed.routeCount) route keys, \(refreshed.cityNames.count) city/network groups, \(refreshed.colouredRouteCount) coloured; original OSM timestamp retained.")
             return
         }
+        if arguments.count == 5, arguments[1] == "--compile-national-edition" {
+            let previous = try NationalMetroSnapshot.decode(Data(contentsOf: URL(fileURLWithPath: arguments[3])))
+            let raw = try Data(contentsOf: URL(fileURLWithPath: arguments[2]))
+            let next = try NationalMetroSnapshot.decodeOverpass(raw, cityReference: previous)
+            try next.validateReplacement(of: previous)
+            guard let date = next.sourceDate, date >= (previous.sourceDate ?? "") else { throw DataError.invalid("上游资料日期过早或缺失") }
+            try next.encode().write(to: URL(fileURLWithPath: arguments[4]), options: .atomic)
+            print("OSM \(date) · \(next.cityNames.count) 个城市或网络")
+            return
+        }
+        if arguments.count == 3, arguments[1] == "--fetch-national-edition" {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("atlas-feed-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let snapshot = try await NationalMetroRepository(directory: directory).refresh()
+            guard let date = snapshot.sourceDate else { throw DataError.invalid("上游没有资料日期，保留现有发布版本") }
+            try snapshot.encode().write(to: URL(fileURLWithPath: arguments[2]), options: .atomic)
+            print("OSM \(date) · \(snapshot.cityNames.count) 个城市或网络")
+            return
+        }
         if arguments.count == 5, arguments[1] == "--build-national-overview" {
             let data = try Data(contentsOf: URL(fileURLWithPath: arguments[2]))
             let snapshot = try NationalMetroSnapshot.decodeGeoJSON(data, sourceDate: arguments[4])

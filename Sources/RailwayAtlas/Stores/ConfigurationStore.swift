@@ -71,8 +71,13 @@ final class ConfigurationStore: ObservableObject {
         value.assistant = assistant.settings
         value.map.mode = map.mapMode.rawValue
         value.map.basemapStyle = map.basemapStyle.rawValue
+        value.map.standardBasemapSource = map.standardBasemapSource.rawValue
+        value.map.satelliteBasemapSource = map.satelliteBasemapSource.rawValue
+        value.map.customStandardTileTemplate = map.customStandardTileTemplate
+        value.map.customSatelliteTileTemplate = map.customSatelliteTileTemplate
         value.map.basemapDarkness = map.basemapDarkness
         value.map.alignment = map.alignment.rawValue
+        value.map.automaticAlignment = map.automaticAlignment
         value.map.tileSource = map.tileSource
         value.layers.categories = map.categories.map(\.rawValue).sorted()
         value.layers.networks = map.networks.map(\.rawValue).sorted()
@@ -115,6 +120,8 @@ final class ConfigurationStore: ObservableObject {
         guard !applying, !hasError else { return }
         do {
             let value = snapshot()
+            if (value.map.standardBasemapSource == "custom" && value.map.customStandardTileTemplate.isEmpty)
+                || (value.map.satelliteBasemapSource == "custom" && value.map.customSatelliteTileTemplate.isEmpty) { return }
             try value.validate()
             let data = try value.encoded()
             guard data != lastWritten else { return }
@@ -150,8 +157,13 @@ final class ConfigurationStore: ObservableObject {
         map.renderSettings = value.rendering
         assistant.settings = value.assistant
         map.basemapStyle = BasemapStyle(rawValue: value.map.basemapStyle)!
+        map.standardBasemapSource = BasemapSource(rawValue: value.map.standardBasemapSource)!
+        map.satelliteBasemapSource = BasemapSource(rawValue: value.map.satelliteBasemapSource)!
+        map.customStandardTileTemplate = value.map.customStandardTileTemplate
+        map.customSatelliteTileTemplate = value.map.customSatelliteTileTemplate
         map.basemapDarkness = value.map.basemapDarkness
-        map.alignment = MapAlignment(rawValue: value.map.alignment)!
+        map.automaticAlignment = value.map.automaticAlignment
+        map.alignment = value.map.automaticAlignment ? map.activeBasemapSource.defaultAlignment : MapAlignment(rawValue: value.map.alignment)!
         map.categories = Set(value.layers.categories.compactMap(RailCategory.init(rawValue:)))
         map.networks = Set(value.layers.networks.compactMap(RailNetwork.init(rawValue:)))
         map.forcedCategories = Set(value.layers.forcedCategories.compactMap(RailCategory.init(rawValue:)))

@@ -44,7 +44,6 @@ struct RailwayPostcardView: View {
     @State private var retry = 0
     private var routeKey: String { journey.duplicateKey + (journey.timetable?.id ?? "") + (journey.timetable?.routing?.providerID ?? "") }
     private var currentRoute: RailTrackJourney? { loadedKey == routeKey ? route : nil }
-    private var silhouette: RailSilhouette? { currentRoute.map { RailSilhouette(coordinates: $0.legs) } }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             TimetableLibraryPanel(library: model.library) { model.postcardDraft = $0.draftJourney }
@@ -58,7 +57,7 @@ struct RailwayPostcardView: View {
             }
             GeometryReader { proxy in
                 TicketPostcardArt(style: style, journey: journey, caption: caption,
-                                  city: "\(journey.from) → \(journey.to)", silhouette: silhouette)
+                                  legs: currentRoute?.legs, stations: currentRoute?.stations ?? [])
                     .frame(width: 760, height: 440)
                     .scaleEffect(proxy.size.width / 760, anchor: .topLeading)
             }.aspectRatio(760.0 / 440, contentMode: .fit)
@@ -120,7 +119,7 @@ struct RailwayPostcardView: View {
         guard currentRoute != nil else { error = "请先完成乘车区间匹配"; return }
         let renderer = ImageRenderer(content:
             TicketPostcardArt(style: style, journey: journey, caption: caption,
-                              city: "\(journey.from) → \(journey.to)", silhouette: silhouette)
+                              legs: currentRoute?.legs, stations: currentRoute?.stations ?? [])
                 .frame(width: 760, height: 440).environment(\.colorScheme, .light))
         renderer.scale = 2
         guard let cgImage = renderer.cgImage else { error = "图片生成失败"; return }
@@ -138,8 +137,11 @@ struct TicketPostcardArt: View {
     let style: PostcardStyle
     let journey: RailJourney
     let caption: String
-    let city: String
-    let silhouette: RailSilhouette?
+    let legs: [[Coordinate]]?
+    var stations: [String] = []
+    private func routeMap(_ legs: [[Coordinate]], ink: Color, paper: Color) -> some View {
+        JourneyContextMap(legs:legs,from:journey.from,to:journey.to,ink:ink,paper:paper,stations:stations)
+    }
     private var red: Bool { style == .red || style == .paper }
     private var ink: Color { red ? Color(red: 0.23, green: 0.13, blue: 0.13) : Color(red: 0.09, green: 0.19, blue: 0.27) }
     private var accent: Color { red ? Color(red: 0.66, green: 0.18, blue: 0.22) : Color(red: 0.12, green: 0.38, blue: 0.57) }
@@ -182,12 +184,12 @@ struct TicketPostcardArt: View {
                 Text(style == .voucher ? "乘车区间凭证样张" : "仅供旅行收藏").font(TicketTypography.chinese(style,size:17))
                 Divider()
                 HStack {
-                    if let silhouette { SilhouetteCanvas(silhouette:silhouette,ink:accent,grid:false).frame(width:190,height:86) }
+                    if let legs { routeMap(legs,ink:accent,paper:paper).frame(width:190,height:86) }
                     Text(caption).font(TicketTypography.chinese(style,size:18)).lineLimit(3)
                     Spacer()
                 }
                 Spacer()
-                Text("铁道漫游　旅行纪念　不可报销或乘车　　Jeremy Gao / © OpenStreetMap contributors").font(.caption)
+                Text("旅行纪念　不可报销或乘车　　\(CardGeography.credit) · Jeremy Gao / © OpenStreetMap contributors").font(.caption)
             }.padding(.horizontal,38).padding(.vertical,25)
         }.foregroundStyle(ink)
     }
@@ -229,14 +231,13 @@ struct TicketPostcardArt: View {
                 }.font(TicketTypography.digits(20)).padding(.top, 26)
                 Rectangle().fill(accent.opacity(0.25)).frame(height: 1).padding(.top, 20)
                 HStack(spacing: 20) {
-                    if let silhouette {
-                        SilhouetteCanvas(silhouette: silhouette, ink: accent.opacity(0.6), grid: false)
-                            .frame(width: 135, height: 112).accessibilityHidden(true)
+                    if let legs {
+                        routeMap(legs,ink:accent,paper:paper).frame(width:165,height:112)
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         Text(caption.isEmpty ? "一路山河，一程记忆。" : String(caption.prefix(100)))
                             .font(TicketTypography.chinese(style, size: 21)).lineLimit(2)
-                        Text(silhouette == nil ? "乘车路线待匹配" : "乘车区间 · © OpenStreetMap contributors")
+                        Text(legs == nil ? "乘车路线待匹配" : "乘车区间 · \(CardGeography.credit) / © OpenStreetMap contributors")
                             .font(.system(size: 10)).foregroundStyle(ink.opacity(0.65))
                     }.frame(maxWidth: .infinity, alignment: .leading)
                     VStack(spacing: 1) {
@@ -265,10 +266,11 @@ struct TicketPostcardArt: View {
         HStack(spacing: 0) {
             ZStack(alignment: .bottomLeading) {
                 (style == .night ? Color(red:0.07,green:0.14,blue:0.24) : style == .inkMap ? Color(white:0.18) : Color(red: 0.07, green: 0.19, blue: 0.21))
-                if let silhouette { SilhouetteCanvas(silhouette: silhouette,ink:style == .night ? .yellow : .white,grid:style != .inkMap).padding(10).accessibilityHidden(true) }
+                if let legs { routeMap(legs,ink:style == .night ? .yellow : .white,paper:Color(white:0.15))
+                    .padding(.horizontal,10).padding(.top,12).padding(.bottom,91) }
                 VStack(alignment: .leading, spacing: 7) {
                     Text(journey.train.isEmpty ? "乘车路线" : journey.train).font(TicketTypography.chinese(.blue, size: 34))
-                    Text(silhouette == nil ? "路线待匹配" : "YOUR JOURNEY IN LINES").font(TicketTypography.digits(11)).tracking(2)
+                    Text(legs == nil ? "路线待匹配" : CardGeography.Contours.shared == nil ? "实线　乘车径路" : "乘车 ━　国界 ━·━　省界 ···").font(.caption)
                 }.foregroundStyle(.white).padding(26)
             }.frame(width: 365)
             VStack(alignment: .leading, spacing: 20) {
@@ -280,7 +282,7 @@ struct TicketPostcardArt: View {
                 Divider()
                 Text(String(caption.prefix(100))).font(TicketTypography.chinese(.red, size: 20)).lineLimit(3)
                 Spacer()
-                Text("乘车区间 © OpenStreetMap contributors\n旅行纪念 · 非乘车凭证")
+                Text("\(CardGeography.credit)\n轨迹 Jeremy Gao / © OpenStreetMap contributors\n旅行纪念 · 非乘车凭证")
                     .font(.system(size: 10)).foregroundStyle(ink.opacity(0.6))
             }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }.background(Color(red: 0.98, green: 0.96, blue: 0.91)).foregroundStyle(ink)

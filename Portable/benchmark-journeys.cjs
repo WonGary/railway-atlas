@@ -67,9 +67,13 @@ const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
         try {
           await card.goto(source,{waitUntil:"domcontentloaded",timeout:90000});
           await card.waitForFunction(()=>typeof state!=="undefined" && state.corridor && state.map,null,{timeout:90000});
+          if(process.env.RAILWAY_TEST_CONTOURS) {
+            await card.locator("#cardContourFile").setInputFiles(process.env.RAILWAY_TEST_CONTOURS);
+            await card.waitForFunction(()=>CardMap.hasContours);
+          }
           await card.evaluate(({train,day,from,to})=>{
             setWorkspaceView("experiences"); setWorkspaceOpen(true); setExperiencePage("postcard");
-            for(const [field,value] of Object.entries({Train:train,Date:day,From:from,To:to})) document.getElementById("postcard"+field).value=value;
+            for(const [field,value] of Object.entries({Train:train,Date:day,From:from,To:to,Style:"map"})) document.getElementById("postcard"+field).value=value;
             window.cardBenchStart=performance.now();
             document.getElementById("postcardTo").dispatchEvent(new Event("input",{bubbles:true}));
           },{train,day,from:row.cold.from,to:row.cold.to});
@@ -92,8 +96,17 @@ const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
       results.push(row);
       console.log(JSON.stringify(row));
       if(output) fs.writeFileSync(output,JSON.stringify({day,source,browser:browser.version(),sampleSeed:"atlas-20261125:",
-        mapImportedLibrary:!!process.env.RAILWAY_TEST_LIBRARY,budgetMs:5000,results},null,2)+"\n");
+        mapImportedLibrary:!!process.env.RAILWAY_TEST_LIBRARY,cardImportedContours:!!process.env.RAILWAY_TEST_CONTOURS,
+        cardStyle:"map",budgetMs:5000,results},null,2)+"\n");
       await context.close();
+    }
+    for(const result of results) {
+      if(result.train==="V6461") {assert.equal(result.cold.status,"absent");continue;}
+      for(const run of [result.cold,result.warm]) {
+        assert.equal(run.status,"full",result.train);
+        assert.ok(run.ms<=5000,`${result.train} map: ${run.ms} ms`);
+      }
+      assert.ok(result.postcard?.ready && result.postcard.pngMs<=5000,`${result.train} PNG: ${result.postcard?.pngMs} ms`);
     }
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

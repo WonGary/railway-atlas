@@ -14,7 +14,11 @@ enum ConfigurationChecks {
          "layers":{"categories":["speed350","speed300"],"hiddenRoutes":["metro:seoul:2"]}}
         """.utf8))
         try check(value.rendering.stationRadiusMultiplier == 1.5 && value.rendering.railwayWidthScale == 1
-                  && value.interface.uiScale == 1, "partial configuration fills omitted fields with defaults")
+                  && value.interface.uiScale == 1
+                  && value.map.standardBasemapSource == "apple"
+                  && value.map.satelliteBasemapSource == "apple"
+                  && value.map.customStandardTileTemplate.isEmpty,
+                  "partial configuration fills omitted fields with defaults")
         try check(value.interface.panelSize == .medium && !value.interface.inspectorVisible
                   && value.interface.inspectorWidth == 380 && value.interface.inspectorTab == "feature",
                   "pre-panel config migrates to floating medium panel and closed feature inspector")
@@ -45,6 +49,21 @@ enum ConfigurationChecks {
                   "urban priority persists independently from overview and existing filters")
         try check(restored.assistant.webSearch && restored.layers.categories == ["speed350", "speed300"]
                   && restored.layers.hiddenRoutes == ["metro:seoul:2"], "search and per-class/per-line switches survive JSON round trip")
+        var basemaps = value
+        basemaps.map.standardBasemapSource = "openStreetMap"
+        basemaps.map.satelliteBasemapSource = "gaode"
+        basemaps.map.customStandardTileTemplate = "https://tiles.example.test/{z}/{x}/{y}.png"
+        basemaps.map.customSatelliteTileTemplate = "https://tiles.example.test/satellite/{z}/{x}/{y}.jpg"
+        let basemapRestored = try AtlasConfiguration.decode(basemaps.encoded())
+        try check(basemapRestored.map.standardBasemapSource == "openStreetMap"
+                  && basemapRestored.map.satelliteBasemapSource == "gaode"
+                  && basemapRestored.map.customStandardTileTemplate.contains("{z}")
+                  && basemapRestored.map.customSatelliteTileTemplate.contains("{y}"),
+                  "standard and satellite basemap sources survive JSON round trip")
+        basemaps.map.standardBasemapSource = "versaTiles"
+        basemaps.map.automaticAlignment = true
+        try check(try AtlasConfiguration.decode(basemaps.encoded()).map.standardBasemapSource == "versaTiles",
+                  "vector basemap source and automatic alignment survive JSON round trip")
         for (label, json) in [
             ("future schema", #"{"version":99}"#),
             ("unknown property", #"{"rendering":{"stationRaduis":2}}"#),
@@ -59,6 +78,14 @@ enum ConfigurationChecks {
             ("invalid inspector width", #"{"interface":{"inspectorWidth":40}}"#),
             ("credentials in config", #"{"assistant":{"apiKey":"secret"}}"#),
             ("invalid endpoint", #"{"assistant":{"endpoint":"http://example.test/v1/responses"}}"#),
+            ("invalid standard basemap source", #"{"map":{"standardBasemapSource":"unknownProvider"}}"#),
+            ("vector street source used as satellite", #"{"map":{"satelliteBasemapSource":"versaTiles"}}"#),
+            ("credentials in custom tile authority", #"{"map":{"customStandardTileTemplate":"https://me:secret@tiles.example.test/{z}/{x}/{y}"}}"#),
+            ("invalid satellite basemap source", #"{"map":{"satelliteBasemapSource":"openStreetMap"}}"#),
+            ("missing custom standard template", #"{"map":{"standardBasemapSource":"custom"}}"#),
+            ("invalid custom tile scheme", #"{"map":{"customStandardTileTemplate":"http://tiles.example.test/{z}/{x}/{y}.png"}}"#),
+            ("missing custom tile placeholder", #"{"map":{"customStandardTileTemplate":"https://tiles.example.test/{z}/{x}.png"}}"#),
+            ("credential in custom tile URL", #"{"map":{"customStandardTileTemplate":"https://tiles.example.test/{z}/{x}/{y}.png?apiKey=secret"}}"#),
             ("null section", #"{"rendering":null}"#)
         ] {
             do { _ = try AtlasConfiguration.decode(Data(json.utf8)) }

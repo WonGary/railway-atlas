@@ -14,10 +14,10 @@ struct PassengerRouteView: View {
             Text("\(journey.from) → \(journey.to)").font(.title2.weight(.semibold))
             Text("\(journey.date) · \(journey.train) · 乘车区间").font(.subheadline).foregroundStyle(.secondary)
             if let route {
-                SilhouetteCanvas(silhouette: RailSilhouette(coordinates: route.legs), ink: .railwayAccent, grid: false)
+                JourneyContextMap(legs:route.legs,from:journey.from,to:journey.to,ink:.railwayAccent,paper:Color.railwayCanvas,stations:route.stations)
                     .frame(height: 290).accessibilityLabel("沿\(journey.train)径路，从\(journey.from)至\(journey.to)")
                 Text("\(route.stations.joined(separator: " → "))").font(.caption).fixedSize(horizontal: false, vertical: true)
-                Text("地图轨道约 \(Int(route.distance / 1000)) km · © OpenStreetMap contributors").font(.caption).foregroundStyle(.secondary)
+                Text("地图轨道约 \(Int(route.distance / 1000)) km · \(CardGeography.credit) · © OpenStreetMap contributors").font(.caption).foregroundStyle(.secondary)
                 ExperienceSourceView(source: route.source)
             } else if loading {
                 ProgressView("正在按车次匹配乘车区间…").frame(maxWidth: .infinity, minHeight: 220)

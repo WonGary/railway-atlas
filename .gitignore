@@ -6,3 +6,4 @@ xcuserdata/
 .DS_Store
 *.xcuserstate
 Web/.cache/
+Web/station-directory/card-contours.json

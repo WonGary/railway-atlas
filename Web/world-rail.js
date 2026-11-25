@@ -135,8 +135,22 @@ const WorldRail = (() => {
         }
       }
       ctx.restore();
-      if (hit) inspect(`铁路干线 · ${AtlasPrefs.categories[hit][0]}`, hit === "unknown" ? tags :
-        {railway:"rail", "限速区间":AtlasPrefs.categories[hit][0], source:"OpenStreetMap · 全球干线概览"}, false, event.latlng);
+      if (hit) {
+        if(event.originalEvent) event.originalEvent.atlasFeatureHit=true;
+        const data=hit==="unknown" ? canvas.data : canvas.speeds, scale=2**(z-data.zoom);
+        const key=`${Math.floor((((x%2**z)+2**z)%2**z)/scale)}/${Math.floor(y/scale)}`;
+        const lines=hit==="unknown" ? data.tiles[key] : data.tiles[key]?.[hit];
+        const originX=Math.floor(x/scale)*scale*size, originY=Math.floor(y/scale)*scale*size;
+        const parts=(lines || []).map(points=>{
+          const part=[];
+          for(let i=0;i<points.length;i+=2) part.push(map.unproject([originX+points[i]*size*scale/data.extent,originY+points[i+1]*size*scale/data.extent],z));
+          return part;
+        });
+        const part=LineFocus.closestPart(parts,event.latlng);
+        inspect(`铁路干线 · ${AtlasPrefs.categories[hit][0]}`, hit === "unknown" ? tags :
+          {railway:"rail", "限速区间":AtlasPrefs.categories[hit][0], source:"OpenStreetMap · 全球干线概览"}, false,event.latlng,
+          part && {parts:[part],styleForPart:()=>({color:hit==="unknown" ? null : AtlasPrefs.categories[hit][1]}),note:"概览轨道区段"});
+      }
     });
     grid.repaint = () => Object.values(grid._tiles || {}).forEach(tile => paint(tile.el));
     grid.showDetail = (coords, ready) => {

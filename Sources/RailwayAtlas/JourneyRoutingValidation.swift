@@ -74,7 +74,7 @@ enum JourneyRoutingValidation {
         _ = try await OnlineUIValidation.capture("passport-passenger-route", directory: directory, window: window)
         for style in PostcardStyle.allCases {
             let renderer = ImageRenderer(content: TicketPostcardArt(style: style, journey: journey,
-                caption: "只画这一程。", city: "乘车区间", silhouette: RailSilhouette(coordinates: passenger.legs))
+                caption: "只画这一程。", legs: passenger.legs)
                 .environment(\.colorScheme, .light))
             renderer.scale = 2
             guard let image = renderer.cgImage, let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {

@@ -5,12 +5,18 @@
     "railwayWidthScale": 1,
     "stationRadiusMultiplier": 1.25,
     "depotBrightness": 0.5,
+    "focusColor": "#D45212",
     "viewportBuffer": 0.2,
     "railwayPattern": true
   },
   "map": {
     "mode": "apple",
     "basemapStyle": "standard",
+    "automaticAlignment": true,
+    "standardBasemapSource": "apple",
+    "satelliteBasemapSource": "apple",
+    "customStandardTileTemplate": "",
+    "customSatelliteTileTemplate": "",
     "basemapDarkness": 0,
     "alignment": "mainlandGCJ",
     "tileSource": "https://openrailwaymap.app"

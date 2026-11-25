@@ -1,17 +1,15 @@
 import Foundation
 
-/// Overview geometry never enters the detail identity ledger or pretends to be
-/// a complete spatial tile. Replace only rectangles with complete detail data.
+/// The national view keeps its original geometry. At detail zoom each displayed
+/// urban track replaces only the stretch of overview it actually represents.
 public enum NationalMetroDisplay {
     public static func merging(_ overview: NationalMetroSnapshot?, into detail: RailTileFeatures,
-                               detailCoverage: [MapBounds], zoom: Double,
                                palette: [String: MetroPaletteRecord] = [:],
                                wiki: [String: WikiMetroColour] = [:],
                                enrichWiki: Bool = true) -> RailTileFeatures {
         guard let overview else { return detail }
         var result = detail
-        let coverage = detailCoverage
-        let detailGeometry = coverage.isEmpty ? nil : DetailGeometry(detail.lines)
+        let detailGeometry = DetailGeometry(detail.lines)
         var decorated: [RailRoute: RailRoute] = [:]
         func decorate(_ route: RailRoute) -> RailRoute {
             if let value = decorated[route] { return value }
@@ -25,27 +23,17 @@ public enum NationalMetroDisplay {
         for sourceLine in overview.lines {
             var original = sourceLine
             original.routes = original.routes?.map(decorate)
-            let bounds = MapBounds(points: original.coordinates)
-            // A complete *old* tile can still lack a new line or extension.
-            // Replace only geometry actually represented by the same route.
-            let overlaps = coverage.filter {
-                $0.intersects(bounds) && detailGeometry?.covers(original, inside: $0) == true
+            guard let parts = detailGeometry.uncovered(original) else {
+                result.lines.append(original)
+                continue
             }
-            if !overlaps.isEmpty {
-                var country = original
-                country.tags["atlas:overviewLOD"] = "country"
-                result.lines.append(country)
-            }
-            var parts = [original.coordinates]
-            for box in overlaps {
-                parts = parts.flatMap { outside($0, bounds: box) }
-            }
+            var country = original
+            country.tags["atlas:overviewLOD"] = "country"
+            result.lines.append(country)
             for (index, coordinates) in parts.enumerated() {
                 var line = original
-                if !overlaps.isEmpty {
-                    line.id += "/clip/\(index)"
-                    line.tags["atlas:overviewLOD"] = "detail"
-                }
+                line.id += "/clip/\(index)"
+                line.tags["atlas:overviewLOD"] = "detail"
                 line.coordinates = coordinates
                 result.lines.append(line)
             }
@@ -58,67 +46,87 @@ public enum NationalMetroDisplay {
             let a: Coordinate
             let b: Coordinate
             let keys: Set<String>
+            let network: RailNetwork
+            let category: RailCategory
         }
         let segments: [Segment]
         let index: RailSpatialIndex
-        // The overview has a 50m simplification tolerance. This margin permits
-        // that approximation while requiring actual detail along the whole part.
+        // The source overview was simplified to 50 m.
         static let tolerance = 60.0
 
         init(_ lines: [RailLine]) {
             var segments: [Segment] = []
             for line in lines where line.tags["atlas:nationalOverview"] != "yes" {
-                let keys = Set((line.routes ?? []).flatMap { [$0.id, $0.visibilityKey] })
-                guard !keys.isEmpty else { continue }
+                let facts = RailLineDisplayFacts(line)
+                guard facts.urbanTransit, !facts.serviceTrack,
+                      (facts.sourceZoom ?? MetroViewport.minimumZoom) >= MetroViewport.minimumZoom else { continue }
+                let keys = Set((line.routes ?? []).map(\.id))
                 segments += zip(line.coordinates, line.coordinates.dropFirst()).map {
-                    Segment(a: $0, b: $1, keys: keys)
+                    Segment(a: $0, b: $1, keys: keys, network: facts.network, category: facts.category)
                 }
             }
             self.segments = segments
             index = RailSpatialIndex(bounds: segments.map { MapBounds(points: [$0.a, $0.b]) })
         }
 
-        func covers(_ line: RailLine, inside box: MapBounds) -> Bool {
-            let keys = Set((line.routes ?? []).flatMap { [$0.id, $0.visibilityKey] })
-            guard !keys.isEmpty else { return false }
-            let parts = RailGeometryClip.segments(line.coordinates, inside: box)
-            guard !parts.isEmpty else { return false }
-            for part in parts {
-                for (a, b) in zip(part, part.dropFirst()) {
-                    let metresPerLon = 111_320 * cos((a.latitude + b.latitude) * .pi / 360)
-                    let distance = hypot((b.longitude - a.longitude) * metresPerLon, (b.latitude - a.latitude) * 111_320)
-                    let steps = max(1, Int(ceil(distance / Self.tolerance)))
-                    // Bound pathological/corrupt long parts; retaining overview
-                    // is safer than spending unbounded time proving coverage.
-                    guard steps <= 10_000 else { return false }
-                    for step in 0...steps {
-                        let t = Double(step) / Double(steps)
-                        let point = Coordinate(a.latitude + (b.latitude - a.latitude) * t,
-                                               a.longitude + (b.longitude - a.longitude) * t)
-                        guard covered(point, keys: keys) else { return false }
-                    }
-                }
-            }
-            return true
+        func expanded(_ box: MapBounds) -> MapBounds {
+            let dy = Self.tolerance / 111_320
+            let dx = dy / max(0.08, cos(max(abs(box.south), abs(box.north)) * .pi / 180))
+            return MapBounds(south: box.south-dy, west: box.west-dx, north: box.north+dy, east: box.east+dx)
         }
 
-        private func covered(_ point: Coordinate, keys: Set<String>) -> Bool {
-            let xScale = max(1, 111_320 * cos(point.latitude * .pi / 180))
-            let dy = Self.tolerance / 111_320, dx = Self.tolerance / xScale
-            let candidates = index.query(MapBounds(south: point.latitude - dy, west: point.longitude - dx,
-                                                   north: point.latitude + dy, east: point.longitude + dx))
-            for candidate in candidates {
-                let segment = segments[candidate]
-                guard !segment.keys.isDisjoint(with: keys) else { continue }
-                let ax = (segment.a.longitude - point.longitude) * xScale
-                let ay = (segment.a.latitude - point.latitude) * 111_320
-                let bx = (segment.b.longitude - point.longitude) * xScale
-                let by = (segment.b.latitude - point.latitude) * 111_320
-                let vx = bx - ax, vy = by - ay, squared = vx * vx + vy * vy
-                let t = squared == 0 ? 0 : min(1, max(0, -(ax * vx + ay * vy) / squared))
-                if hypot(ax + t * vx, ay + t * vy) <= Self.tolerance { return true }
+        // Project detail onto the overview chord. The perpendicular strip admits
+        // simplified bends, but the projected endpoints bound the handoff.
+        func uncovered(_ line: RailLine) -> [[Coordinate]]? {
+            guard !segments.isEmpty, !index.query(expanded(MapBounds(points: line.coordinates))).isEmpty else { return nil }
+            let keys = Set((line.routes ?? []).map(\.id))
+            let network = RailNetwork.classify(line.tags), category = line.category
+            var changed = false, output: [[Coordinate]] = [], part: [Coordinate] = []
+            func finish() { if part.count > 1 { output.append(part) }; part = [] }
+            for (a,b) in zip(line.coordinates, line.coordinates.dropFirst()) {
+                let scale = 111_320 * cos((a.latitude+b.latitude) * .pi / 360)
+                let x = (b.longitude-a.longitude)*scale, y = (b.latitude-a.latitude)*111_320
+                let length = hypot(x,y)
+                guard length > 0 else { continue }
+                let ux = x/length, uy = y/length
+                var spans: [(Double, Double)] = []
+                for i in index.query(expanded(MapBounds(points: [a,b]))) {
+                    let s = segments[i], named = !s.keys.isEmpty
+                    guard s.category == category, named ? !keys.isDisjoint(with: s.keys) : network == s.network else { continue }
+                    let ax = (s.a.longitude-a.longitude)*scale, ay = (s.a.latitude-a.latitude)*111_320
+                    let bx = (s.b.longitude-a.longitude)*scale, by = (s.b.latitude-a.latitude)*111_320
+                    let start = ax*ux+ay*uy, end = bx*ux+by*uy, along = end-start
+                    guard abs(along) > hypot(bx-ax,by-ay) * (named ? 0.45 : 0.90) else { continue }
+                    let cross = ay*ux-ax*uy, slope = (by-ay)*ux-(bx-ax)*uy
+                    var lo = 0.0, hi = 1.0
+                    if abs(slope) < 1e-8 { if abs(cross) > Self.tolerance { continue } }
+                    else {
+                        let l = (-Self.tolerance-cross)/slope, h = (Self.tolerance-cross)/slope
+                        lo = max(0,min(l,h)); hi = min(1,max(l,h))
+                    }
+                    guard lo <= hi else { continue }
+                    let p = start+lo*along, q = start+hi*along
+                    let left = max(0,min(p,q)), right = min(length,max(p,q))
+                    if right > left { spans.append((left,right)) }
+                }
+                func point(_ d: Double) -> Coordinate {
+                    if d <= 0 { return a }; if d >= length { return b }
+                    return Coordinate(a.latitude+(b.latitude-a.latitude)*d/length,
+                                      a.longitude+(b.longitude-a.longitude)*d/length)
+                }
+                func keep(_ l: Double, _ r: Double) {
+                    if part.isEmpty { part.append(point(l)) }; part.append(point(r))
+                }
+                var cursor = 0.0
+                for (l,r) in spans.sorted(by: { $0.0 < $1.0 }) where r > cursor {
+                    changed = true
+                    if l > cursor + 0.05 { keep(cursor,l) }
+                    finish(); cursor = r
+                }
+                if cursor == 0 || length-cursor > 0.05 { keep(cursor,length) }
             }
-            return false
+            finish()
+            return changed ? output : nil
         }
     }
 

@@ -16,9 +16,9 @@ const StationLabels = (() => {
     if (map && !frame) frame = requestAnimationFrame(layout);
   }
 
-  function bind(marker, name, {id = name, important = false, minZoom = Infinity, selected} = {}) {
+  function bind(marker, name, {id = name, important = false, minZoom = Infinity, selected, focused=false} = {}) {
     if (!name) return marker;
-    const station = {marker, name: String(name), id, important, minZoom, selected};
+    const station = {marker, name: String(name), id, important, minZoom, selected, focused};
     const add = () => { markers.add(station); schedule(); };
     marker.on({
       add,
@@ -58,8 +58,8 @@ const StationLabels = (() => {
       const latlng = station.marker?.getLatLng() || station.latlng;
       const {x,y} = map.latLngToContainerPoint(latlng);
       if (x < 0 || y < 0 || x > size.x || y > size.y) return;
-      const kind = selected ? "selected" : station.important ? "major" : "regular";
-      candidates.push({station, latlng, x, y, kind, priority: isHover ? 3 : selected ? 2 : station.important ? 1 : 0});
+      const kind = station.focused ? "focus" : selected ? "selected" : station.important ? "major" : "regular";
+      candidates.push({station, latlng, x, y, kind, priority: station.focused ? 4 : isHover ? 3 : selected ? 2 : station.important ? 1 : 0});
     }
     markers.forEach(collect);
     if (showsLabels && zoom >= 12) tileCandidates(collect);

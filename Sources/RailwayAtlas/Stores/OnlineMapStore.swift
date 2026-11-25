@@ -301,16 +301,13 @@ extension RailwayMapStore {
             let preview = self.tileZoom >= 10 && (28.3...29.0).contains(self.region.center.latitude)
                 && (115.5...116.3).contains(self.region.center.longitude) ? self.metroPreview : nil
             let overview = self.showsNationalMetroOverview ? self.nationalMetroSnapshot : nil
-            let zoom = self.displayZoom
-            let detailCoverage = self.completeMetroKeys.intersection(tiles.keys)
-                .sorted { $0.path < $1.path }.map { $0.tile.bounds }
             self.recordAssemblyPass()
             let worker = Task.detached(priority: .userInitiated) {
                 let result = RailFeatureAssembler.assemble(tiles: tiles, palette: palette, wiki: wiki,
                                                enrichWiki: enrich, ledger: ledger, preview: preview,
                                                requested: requested, fallbackKeys: fallback)
                 let features = NationalMetroDisplay.merging(overview, into: result.features,
-                    detailCoverage: detailCoverage, zoom: zoom, palette: palette, wiki: wiki, enrichWiki: enrich)
+                    palette: palette, wiki: wiki, enrichWiki: enrich)
                 guard !Task.isCancelled else { return nil as (RailAssembly, RailTileFeatures, PreparedMapData)? }
                 return (result, features, PreparedMapData(lines: features.lines, stations: features.stations))
             }

@@ -39,26 +39,10 @@ function drawTicketFace(ctx, style, palette, journey) {
     text($("postcardCaption").value,32,249,19,{max:520});
   }
   ctx.strokeStyle=palette.accent+"99";ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(29,276);ctx.lineTo(611,276);ctx.stroke();
-  text("乘车径路",32,308,16);drawCardTrack(ctx,journey,[111,281,147,51],palette.accent,1.9);
+  text("乘车径路",32,308,16);CardMap.draw(ctx,journey,[107,279,190,54],palette.accent,palette.paper,1.8);
   text("旅行留念　不可乘车或报销",610,305,17,{align:"right",bold:true});
   if(voucher) text($("postcardCaption").value,610,328,14,{align:"right",max:297});
   text("RAILWAY ATLAS",29,348,11,{face:"monospace",colour:palette.accent});
-  text("China Railway GTFS · Jeremy Gao / © OpenStreetMap contributors",610,347,10,{face:"sans-serif",align:"right"});
+  text(cardMapCredit(),610,347,10,{face:"sans-serif",align:"right",max:432});
   ctx.restore();
-}
-
-function drawCardTrack(ctx, route, rect, colour, weight) {
-  if (!route?.legs.length) return;
-  let south=Infinity,north=-Infinity,west=Infinity,east=-Infinity;
-  for (const leg of route.legs) for (const [lat,lon] of leg) {
-    south=Math.min(south,lat); north=Math.max(north,lat); west=Math.min(west,lon); east=Math.max(east,lon);
-  }
-  const [x,y,w,h]=rect, aspect=Math.cos((south+north)*Math.PI/360);
-  const scale=Math.min(w/Math.max(.0001,(east-west)*aspect),h/Math.max(.0001,north-south));
-  ctx.strokeStyle=colour; ctx.lineWidth=weight; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.beginPath();
-  for (const leg of route.legs) leg.forEach(([lat,lon],i)=>{
-    const px=x+w/2+(lon-(east+west)/2)*aspect*scale, py=y+h/2-(lat-(north+south)/2)*scale;
-    if (i) ctx.lineTo(px,py); else ctx.moveTo(px,py);
-  });
-  ctx.stroke();
 }

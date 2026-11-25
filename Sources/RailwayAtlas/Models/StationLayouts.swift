@@ -37,10 +37,11 @@ struct StationLayout: Decodable, Equatable, Identifiable {
     let accessTitle: String?
     let labelAnchors: [Coordinate]
     let labelOwner: String?
+    let matchedOSM: String?
     var hasGeometry: Bool { !paths[0].isEmpty }
     var hasShape: Bool { paths[0].count > 1 }
 
-    enum CodingKeys: CodingKey { case id, kind, network, area, paths, platformLabel, accessLabel, accessTitle, labelAnchors, labelOwner }
+    enum CodingKeys: CodingKey { case id, kind, network, area, paths, platformLabel, accessLabel, accessTitle, labelAnchors, labelOwner, matchedOSM }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -57,6 +58,7 @@ struct StationLayout: Decodable, Equatable, Identifiable {
         accessLabel = try c.decodeIfPresent(String.self, forKey: .accessLabel)
         accessTitle = try c.decodeIfPresent(String.self, forKey: .accessTitle)
         labelOwner = try c.decodeIfPresent(String.self, forKey: .labelOwner)
+        matchedOSM = try c.decodeIfPresent(String.self, forKey: .matchedOSM)
         labelAnchors = try (c.decodeIfPresent([[Double]].self, forKey: .labelAnchors) ?? []).map(coordinate)
         guard let outer = paths.first, !outer.isEmpty,
               outer.count >= 2 || kind == .platform || kind == .entrance,
@@ -112,6 +114,16 @@ struct PlatformNumberPlacement {
     let frame: CGRect
     let kind: StationLayoutKind
     let title: String?
+    let leaderStart: CGPoint?
+
+    // Only a badge can move. The exit dot stays at its surveyed coordinate.
+    static func entranceOffsets(width: CGFloat) -> [CGPoint] {
+        let directions: [(CGFloat, CGFloat)] = [(1,0),(-1,0),(0,-1),(0,1),
+                                                (0.71,-0.71),(-0.71,0.71),(-0.71,-0.71),(0.71,0.71)]
+        return [width + 4, (width + 4) * 1.6].flatMap { radius in
+            directions.map { CGPoint(x: $0.0 * radius, y: $0.1 * radius) }
+        }
+    }
 
     static func diameter(_ text: String, scale: CGFloat) -> CGFloat {
         let units = text.unicodeScalars.reduce(0.0) { $0 + ($1.value > 255 ? 10.5 : 6.7) }
@@ -136,6 +148,52 @@ struct PlatformNumberPlacement {
 
 private struct LayoutSnapshot: Decodable {
     let features: [StationLayout]
+}
+
+// Shipped tiles are read off the UI thread. Their bounds include every tile crossed by a footprint.
+actor WorldStationTiles {
+    private struct TileLayer: Decodable { let tiles: [String: String] }
+    private struct Index: Decodable {
+        let tiles: [String: String]
+        let supplements: [TileLayer]?
+        func files(_ key: String) -> [String] {
+            [tiles[key]].compactMap { $0 } + (supplements ?? []).compactMap { $0.tiles[key] }
+        }
+    }
+    private var folder: URL?
+    private var index: Index?
+    private var recent: [String: [StationLayout]] = [:]
+    private var order: [String] = []
+
+    nonisolated static func keys(in bounds: MapBounds) -> [String] {
+        guard bounds.isValid, bounds.north-bounds.south < 2, bounds.east-bounds.west < 2 else { return [] }
+        let rows = Int(floor(bounds.south*4))...Int(floor(bounds.north*4))
+        let columns = Int(floor(bounds.west*4))...Int(floor(bounds.east*4))
+        return rows.flatMap { y in columns.map { x in "\(y)_\(x)" } }
+    }
+    func load(_ keys: [String], indexURL: URL?) -> [StationLayout] {
+        guard !keys.isEmpty, let indexURL else { return [] }
+        if index == nil {
+            guard let data = try? Data(contentsOf: indexURL), let manifest = try? JSONDecoder().decode(Index.self, from: data) else { return [] }
+            folder = indexURL.deletingLastPathComponent()
+            index = manifest
+        }
+        var seen = Set<String>()
+        var rows: [StationLayout] = []
+        guard let folder, let index else { return [] }
+        for file in keys.flatMap(index.files) {
+            if Task.isCancelled { return [] }
+            if recent[file] == nil, let data = try? Data(contentsOf: folder.appendingPathComponent(file)),
+               let tile = try? JSONDecoder().decode([StationLayout].self, from: data) { recent[file] = tile }
+            if let tile = recent[file] {
+                order.removeAll { $0 == file }
+                order.append(file)
+                rows.append(contentsOf: tile.filter { seen.insert($0.id).inserted })
+            }
+        }
+        while order.count > 12 { recent.removeValue(forKey: order.removeFirst()) }
+        return rows
+    }
 }
 
 // Overlapping station-sized windows keep the surroundings in the query even at Z20.
@@ -176,6 +234,7 @@ extension RailwayMapStore {
         if !showsStationLayouts { showsStationLayouts = true }
         cameraRevision += 1
         rebuildVisible()
+        scheduleWorldStationTiles()
         if mapMode != .offline { refreshViewport() }
     }
 
@@ -184,9 +243,31 @@ extension RailwayMapStore {
               let pack = try? JSONDecoder().decode(LayoutSnapshot.self, from: data) else { return [] }
         return pack.features
     }
+    private func nearbyLayouts(in bounds: MapBounds) -> [StationLayout] {
+        layoutFeatures.filter { $0.bounds.intersects(bounds) && !worldStationAliases.contains($0.id) } +
+        worldStationRows.filter { $0.bounds.intersects(bounds) && !layoutIDs.contains($0.id) && !worldStationAliases.contains($0.id) }
+    }
+    var showsLTAAttribution: Bool {
+        showsStationLayouts && showsStationEntrances && !historyMapActive && displayZoom >= 16 &&
+        worldLTAExits.contains { $0.bounds.intersects(viewportBounds) }
+    }
+    func scheduleWorldStationTiles() {
+        let enabled = showsStationLayouts && !historyMapActive && displayZoom + 0.000001 >= StationLayoutKind.outline.minimumZoom
+        let keys = enabled ? WorldStationTiles.keys(in: viewportBounds) : []
+        guard keys != worldStationKeys else { return }
+        worldStationKeys = keys
+        worldStationWork?.cancel()
+        worldStationWork = Task { [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            let index = Self.resourceURL("world-stations/index", extension: "json")
+            let rows = await self.worldStationTiles.load(keys, indexURL: index)
+            guard !Task.isCancelled, keys == self.worldStationKeys else { return }
+            self.worldStationRows = rows
+        }
+    }
     func stationLayouts(in bounds: MapBounds, zoom: Double) -> [StationLayout] {
         guard zoom + 0.000001 >= StationLayoutKind.outline.minimumZoom, showsStationLayouts, !historyMapActive else { return [] }
-        return layoutFeatures.filter { feature in
+        return nearbyLayouts(in: bounds).filter { feature in
             let enabled = switch feature.kind {
             case .outline: showsStationOutlines
             case .concourse: showsConcourses
@@ -194,7 +275,7 @@ extension RailwayMapStore {
             case .passage: showsPassengerPassages
             case .entrance: showsStationEntrances
             }
-            return enabled && feature.hasGeometry && zoom + 0.000001 >= feature.kind.minimumZoom && feature.bounds.intersects(bounds)
+            return enabled && feature.hasGeometry && zoom + 0.000001 >= feature.kind.minimumZoom
         }
     }
 
@@ -202,8 +283,8 @@ extension RailwayMapStore {
                          project: (Coordinate) -> CGPoint) -> [PlatformNumberPlacement] {
         guard showsStationLayouts, !historyMapActive, zoom + 0.000001 >= StationLayoutKind.entrance.minimumZoom,
               showsStationEntrances || showsPlatformNumbers || showsPassageSigns else { return [] }
-        let candidates = layoutFeatures.filter { feature in
-            guard !feature.labelAnchors.isEmpty && feature.bounds.intersects(bounds) else { return false }
+        let candidates = nearbyLayouts(in: bounds).filter { feature in
+            guard !feature.labelAnchors.isEmpty else { return false }
             switch feature.kind {
             case .entrance: return showsStationEntrances && !(feature.accessLabel ?? "").isEmpty
             case .passage: return showsPassageSigns && !(feature.accessLabel ?? "").isEmpty
@@ -220,29 +301,39 @@ extension RailwayMapStore {
             }
             return feature.kind == .passage ? 4 : feature.area ? 2 : 3
         }
-        for feature in candidates.sorted(by: { (rank($0), $0.id) < (rank($1), $1.id) }) {
+        func place(_ feature: StationLayout, displaced: Bool = false) -> Bool {
             guard let text = feature.accessLabel ?? feature.platformLabel, !text.isEmpty,
-                  !(feature.labelOwner.map(ids.contains) ?? false) else { continue }
+                  !(feature.labelOwner.map(ids.contains) ?? false) else { return false }
             let badge = feature.kind != .platform
             let width = badge ? PlatformNumberPlacement.diameter(text, scale: uiScale) : max(13, CGFloat(text.count) * 7.5 + 5) * uiScale
             let height = badge ? width : 17 * uiScale
+            let offsets = displaced ? PlatformNumberPlacement.entranceOffsets(width: width) : [CGPoint.zero]
             for anchor in feature.labelAnchors {
-                let point = project(anchor)
-                let frame = CGRect(x: point.x - width/2, y: point.y - height/2, width: width, height: height)
-                if screen.contains(frame) && !placed.contains(where: { $0.frame.insetBy(dx: -2, dy: -1).intersects(frame) }) {
+                let origin = project(anchor)
+                guard screen.contains(origin) else { continue }
+                for offset in offsets {
+                    let point = CGPoint(x: origin.x + offset.x, y: origin.y + offset.y)
+                    let frame = CGRect(x: point.x - width/2, y: point.y - height/2, width: width, height: height)
+                    guard screen.contains(frame),
+                          !placed.contains(where: { $0.frame.insetBy(dx: -2, dy: -1).intersects(frame) }) else { continue }
                     placed.append(.init(id: feature.id, text: text, coordinate: anchor, point: point, frame: frame,
-                                        kind: feature.kind, title: feature.accessTitle))
-                    break
+                                        kind: feature.kind, title: feature.accessTitle, leaderStart: displaced ? origin : nil))
+                    return true
                 }
             }
+            return false
         }
+        let ordered = candidates.sorted { (rank($0), $0.id) < (rank($1), $1.id) }
+        let crowded = ordered.filter { $0.kind == .entrance && !place($0) }
+        for exit in crowded { _ = place(exit, displaced: true) }
+        for feature in ordered where feature.kind != .entrance { _ = place(feature) }
         return placed
     }
 
     var stationLayoutHint: String {
         guard !historyMapActive else { return "返回当前地图可查看站区细节。" }
         guard displayZoom + 0.000001 >= StationLayoutKind.outline.minimumZoom else { return "放大到 Z14 可查看站区轮廓。" }
-        let nearby = layoutFeatures.filter { $0.bounds.intersects(viewportBounds) }
+        let nearby = nearbyLayouts(in: viewportBounds)
         guard !nearby.isEmpty else {
             return mapMode == .apple ? "放大后会自动查询地图中心附近的站区。" : "本地没有当前视野的站区图形。"
         }
@@ -263,6 +354,7 @@ extension RailwayMapStore {
     }
 
     func scheduleStationLayouts(force: Bool = false) {
+        scheduleWorldStationTiles()
         let target = stationLayoutTarget
         if !force, target == scheduledLayoutCell {
             guard let target, layoutWork == nil, layoutVisits[target]?.isFresh != true,
@@ -397,12 +489,12 @@ private enum StationLayoutFetch {
             arguments: [center.latitude, center.longitude, endpoint]).toArray() as? [String] else {
             throw URLError(.cannotParseResponse)
         }
-        for source in sources {
+        for (index,source) in sources.enumerated() {
             try Task.checkCancellation()
             guard let url = URL(string: source) else { continue }
             var form = URLComponents()
             form.queryItems = [URLQueryItem(name: "data", value: q)]
-            var request = URLRequest(url: url, timeoutInterval: 20)
+            var request = URLRequest(url: url, timeoutInterval: index == 0 && source.contains("ovp.dresel.systems") ? 8 : 16)
             request.httpMethod = "POST"
             request.httpBody = form.percentEncodedQuery?.data(using: .utf8)
             request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -414,6 +506,7 @@ private enum StationLayoutFetch {
                 guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 8_000_000 else { continue }
                 let document = try JSONSerialization.jsonObject(with: data)
                 guard let rows = try run(script, method: "extract", arguments: [document]).toArray() else { continue }
+                if rows.isEmpty && source.contains("ovp.dresel.systems") { continue }
                 return try JSONSerialization.data(withJSONObject: rows)
             } catch { try Task.checkCancellation() }
         }

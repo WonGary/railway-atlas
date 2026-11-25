@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 #if !NATIONAL_METRO_STANDALONE
 import RailwayCore
 #endif
@@ -7,6 +8,7 @@ enum NationalMetroChecks {
     /// Optional full source fixture is read-only. Network checks use URLProtocol
     /// and a disposable independent directory, never the user's tile cache.
     static func run(geoJSONURL: URL? = nil) async throws {
+        try await incremental()
         let sourceDate = "2026-09-14"
         let fetched = Date(timeIntervalSince1970: 1_800_000_000)
         let samples = try sampleFeatures()
@@ -223,6 +225,51 @@ enum NationalMetroChecks {
     private static func collection(_ features: [[String: Any]]) throws -> Data {
         try JSONSerialization.data(withJSONObject: ["type": "FeatureCollection", "features": features])
     }
+    private static func incremental() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let feed = root.appendingPathComponent("Web/data/metro-updates")
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("atlas-metro-delta-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let fixture = NationalMetroFixtureProtocol.state
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [NationalMetroFixtureProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let repo = NationalMetroRepository(directory: temporary, session: session)
+        let baseline = try Data(contentsOf: root.appendingPathComponent("Sources/RailwayCore/Resources/national-metro-baseline.json"))
+        var index = try JSONSerialization.jsonObject(with: baseline) as! [String: Any]
+        var chunks = index["chunks"] as! [[String: Any]]
+        let origin = URL(string: "https://atlas.test/")!
+        fixture.files(["manifest.json": baseline])
+        let zero = try await repo.refreshIncrementally(from: origin)
+        try require(zero.changed == 0 && fixture.requests.count == 1, "identical feed only reads the manifest")
+        let id = chunks[0]["hash"] as! String
+        var rows = try JSONSerialization.jsonObject(with: Data(contentsOf: feed.appendingPathComponent("\(id).json"))) as! [[String: Any]]
+        var parts = rows[0]["parts"] as! [[[Double]]]
+        parts[0][0][0] += 0.000001
+        rows[0]["parts"] = parts
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        chunks[0]["hash"] = hash; chunks[0]["bytes"] = data.count; index["chunks"] = chunks
+        let edition = try JSONSerialization.data(withJSONObject: index)
+        fixture.files(["manifest.json": edition, "\(hash).json": data])
+        let one = try await repo.refreshIncrementally(from: origin)
+        try require(one.changed == 1 && fixture.requests.map { $0.url!.lastPathComponent } == ["manifest.json","\(hash).json"], "exactly one changed city")
+        let cache = temporary.appendingPathComponent(NationalMetroRepository.cacheFilename)
+        let retained = try Data(contentsOf: cache)
+        fixture.files(["manifest.json":baseline])
+        do { _ = try await repo.refreshIncrementally(from: origin); throw CheckFailure.unexpectedSuccess }
+        catch CheckFailure.unexpectedSuccess { throw CheckFailure.unexpectedSuccess } catch {}
+        try require(try Data(contentsOf: cache) == retained, "interrupted update keeps the committed archive")
+        let reopened = NationalMetroRepository(directory: temporary, session: session)
+        fixture.files(["manifest.json":edition])
+        let again = try await reopened.refreshIncrementally(from: origin)
+        try require(again.changed == 0 && fixture.requests.count == 1 &&
+                    again.snapshot.lines.map(\.coordinates) == one.snapshot.lines.map(\.coordinates), "reopen restores updated geometry and its city hashes")
+        fixture.files(nil)
+        print("PASS native delta: 0 unchanged chunks, 1 changed city, failed update preserved disk and reopened geometry.")
+    }
     private enum CheckFailure: Error { case unexpectedSuccess }
     private static func rejects(_ operation: () throws -> Void) throws {
         do { try operation(); throw CheckFailure.unexpectedSuccess }
@@ -237,15 +284,18 @@ enum NationalMetroChecks {
 private final class NationalMetroFixtureState: @unchecked Sendable {
     private let lock = NSLock()
     private var primary = Data(), mirror = Data()
+    private var byName: [String: Data]?
     private var recorded: [URLRequest] = []
     func configure(primary: Data, mirror: Data) {
         lock.lock(); defer { lock.unlock() }
         self.primary = primary; self.mirror = mirror; recorded = []
     }
     var requests: [URLRequest] { lock.lock(); defer { lock.unlock() }; return recorded }
+    func files(_ data: [String: Data]?) { lock.lock(); defer { lock.unlock() }; byName = data; recorded = [] }
     func data(for request: URLRequest) -> Data {
         lock.lock(); defer { lock.unlock() }
         recorded.append(request)
+        if let byName { return byName[request.url!.lastPathComponent] ?? Data() }
         return request.url == NationalMetroRepository.sourceURL ? primary : mirror
     }
 }

@@ -28,6 +28,11 @@ enum OnlineUIValidation {
             window?.setContentSize(NSSize(width: 1240, height: 820))
             window?.center()
             window?.title = "铁道图鉴 · 本地验证"
+            if arguments.contains("--line-focus-check") {
+                try await checkFocusAndCards(store, window:window, directory:directory)
+                NSApp.terminate(nil)
+                return
+            }
             if let flag = arguments.firstIndex(of:"--journey-frame-benchmark"), arguments.indices.contains(flag+1) {
                 try await benchmarkJourneyFrames(store, window:window, directory:directory, libraryFile:arguments[flag+1])
                 NSApp.terminate(nil)
@@ -304,6 +309,59 @@ enum OnlineUIValidation {
         }
         try JSONSerialization.data(withJSONObject:results,options:[.prettyPrinted,.sortedKeys])
             .write(to:directory.appendingPathComponent("native-window.json"),options:.atomic)
+    }
+
+    private static func checkFocusAndCards(_ store: RailwayMapStore, window: NSWindow?, directory: URL) async throws {
+        guard let root = window?.contentView else { throw DataError.invalid("未找到主窗口") }
+        func child<T:NSView>(_ v:NSView,_ t:T.Type) -> T? { (v as? T) ?? v.subviews.lazy.compactMap { child($0,t) }.first }
+        guard let west = NationalDirectoryPins.all.first(where: { $0.name == "北京西" }) else { throw DataError.invalid("缺少北京西站坐标") }
+        store.changeMode(.apple); store.panelVisible=false; store.select(RailwayMapStore.item(west))
+        var board: WKWebView?
+        for _ in 0..<65 {
+            try await Task.sleep(for:.milliseconds(150))
+            if let web = child(root,WKWebView.self), (try? await web.evaluateJavaScript("!!document.querySelector('details summary')") as? Bool) == true {
+                board=web; break
+            }
+        }
+        guard let board else { throw DataError.invalid("车站侧栏未载入") }
+        _ = try await board.evaluateJavaScript("[...document.querySelectorAll('summary')].find(s=>s.textContent.startsWith('京九线 ·')).click()")
+        for _ in 0..<40 where store.lineFocus?.title != "京九线" { try await Task.sleep(for:.milliseconds(80)) }
+        guard let focus=store.lineFocus, !focus.paths.isEmpty, focus.includes(west), !store.stationBoardPins.isEmpty else {
+            throw DataError.invalid("从车站展开线路后缺少轨迹或站点")
+        }
+        store.region=MKCoordinateRegion(center:.init(latitude:35.4,longitude:115.6),span:.init(latitudeDelta:2.4,longitudeDelta:3.0))
+        store.cameraRevision += 1
+        try await Task.sleep(for:.milliseconds(650))
+        guard let map=child(root,MKMapView.self), map.overlays.contains(where:{$0 is FocusVeil}),
+              map.overlays.contains(where:{($0 as? MKMultiPolyline)?.title=="focus-rail"}) else { throw DataError.invalid("主地图未绘出高亮") }
+        _ = try await capture("native-line-focus",directory:directory,window:window)
+        _ = try await board.evaluateJavaScript("[...document.querySelectorAll('summary')].find(s=>s.textContent.startsWith('京西联络线 ·')).click()")
+        for _ in 0..<40 where store.lineFocus?.title != "京西联络线" { try await Task.sleep(for:.milliseconds(80)) }
+        guard store.lineFocus?.title=="京西联络线" else { throw DataError.invalid("线路没有切换") }
+        store.inspectorVisible=false
+        try await Task.sleep(for:.milliseconds(180))
+        guard store.lineFocus==nil,store.stationBoardPins.isEmpty,!map.overlays.contains(where:{$0 is FocusVeil}) else { throw DataError.invalid("关闭后地图仍然暗化") }
+        guard let geo = CardGeography.shared, !geo.cities.isEmpty,
+              let contours = CardGeography.Contours.shared, contours.provinces.count == 34,
+              !contours.provinceLines.isEmpty, !contours.coastLines.isEmpty, !contours.hainan.isEmpty,
+              !contours.settled.isEmpty, !contours.undelimited.isEmpty
+        else { throw DataError.invalid("乘车区间的地理轮廓或城市资料缺失") }
+        var timings = [String:Double]()
+        for (train,from,to) in [("G337","石家庄","武汉"),("Z58","北京西","三亚"),("S8140","海口东","海口")] {
+            let start=ProcessInfo.processInfo.systemUptime
+            guard let table=try await NationalJourneyPaths.shared.timetable(train:train,date:"2026-11-25"),
+                  let route=try await NationalJourneyPaths.shared.journey(table,from:from,to:to),
+                  route.stations.first==from,route.stations.last==to else { throw DataError.invalid("样本区间缺失") }
+            var journey=table.draftJourney
+            journey.from=from; journey.to=to; journey.updateBoardingTime()
+            if train=="G337", journey.departure != "17:58" { throw DataError.invalid("石家庄上车时刻不符") }
+            let image=ImageRenderer(content:TicketPostcardArt(style:.map,journey:journey,caption:"一路山河",legs:route.legs,stations:route.stations))
+            image.scale=2
+            guard let cg=image.cgImage, let data=NSBitmapImageRep(cgImage:cg).representation(using:.png,properties:[:]) else { throw DataError.invalid("明信片无法导出") }
+            try data.write(to:directory.appendingPathComponent("\(train)-native.png"))
+            timings[train]=((ProcessInfo.processInfo.systemUptime-start)*1000).rounded()
+        }
+        try JSONEncoder().encode(timings).write(to:directory.appendingPathComponent("native-ms.json"))
     }
 
     private static func checkStationDirectory(_ store: RailwayMapStore, window: NSWindow?, directory: URL) async throws {

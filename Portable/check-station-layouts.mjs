@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {createHash} from "node:crypto";
 import "../Sources/RailwayAtlas/Resources/station-layouts.js";
 const native = new URL("../Sources/RailwayAtlas/Resources/",import.meta.url);
 const web = new URL("../Web/data/",import.meta.url);
@@ -90,6 +91,9 @@ for (const [id,text,name] of [
 }
 assert.ok(!byID.has("node/8841911925")); // A named public park gate near Beijing South.
 const entrance=(id,tags)=>({type:"node",id,lat:1,lon:1,tags});
+for (const [name,label] of [["Sortie 12","12"],["Ausgang B","B"],["3번 출구","3"],["２番出口","2"],["مخرج ٢","2"],["Sortie du théâtre",""]]) {
+  assert.equal(StationLayoutOSM.extract({elements:[entrance(20,{railway:"subway_entrance",name})]})[0].accessLabel,label);
+}
 const gate=entrance(901,{railway:"subway_entrance",local_ref:"D2",name:"南站D2口"});
 const walkway={...way(903,[[1,1],[1.001,1]],{highway:"corridor",local_ref:"3"}),nodes:[901,902]};
 let rows=StationLayoutOSM.extract({elements:[gate,walkway]});
@@ -98,4 +102,34 @@ for(const t of [{entrance:"service"},{entrance:"emergency"},{access:"private"},{
   assert.ok(!StationLayoutOSM.extract({elements:[{...gate,tags:{...gate.tags,...t}}]}).length);
 assert.equal(StationLayoutOSM.extract({elements:[entrance(9,{railway:"subway_entrance"})]})[0].accessLabel,"");
 assert.equal(rows.find(f=>f.kind==="entrance").paths[0].length,1);
+const manifestFile="world-stations/index.json";
+assert.deepEqual(fs.readFileSync(new URL(manifestFile,native)),fs.readFileSync(new URL(manifestFile,web)));
+const manifest=JSON.parse(fs.readFileSync(new URL(manifestFile,native)));
+const worldIDs=new Map(), official=new Map();
+for (const layer of [manifest,...manifest.supplements]) {
+  const ids=layer===manifest?worldIDs:official;
+  for (const [key,file] of Object.entries(layer.tiles)) {
+    const bytes=fs.readFileSync(new URL("world-stations/"+file,native));
+    assert.equal(file,`${layer.id?layer.id+"-":""}${key}.${createHash("sha256").update(bytes).digest("hex").slice(0,12)}.json`);
+    assert.deepEqual(bytes,fs.readFileSync(new URL("world-stations/"+file,web)));
+    for (const row of JSON.parse(bytes)) {
+      if(ids.has(row.id)) assert.deepEqual(row,ids.get(row.id));
+      ids.set(row.id,row);
+    }
+  }
+}
+const counted={};
+for (const f of worldIDs.values()) counted[f.kind]=(counted[f.kind]||0)+1;
+assert.deepEqual(counted,manifest.counts);
+const sg=manifest.supplements.find(s=>s.id==="sg-lta");
+assert.equal(official.size,sg.records);
+const matched=new Set();
+for (const f of official.values()) if (f.matchedOSM) {
+  assert.equal(worldIDs.get(f.matchedOSM)?.kind,"entrance");
+  assert.ok(!matched.has(f.matchedOSM));
+  matched.add(f.matchedOSM);
+}
+assert.equal(matched.size,sg.matchedOSM);
+assert.equal(official.get("sg-lta/25149").accessLabel,"C");
+console.log(`全球站区分块校验通过，${worldIDs.size} 项 OSM 要素，${official.size} 条新加坡官方出口记录。`);
 console.log(`站区检查通过，${data.features.length} 个真实要素，原生与网页资料一致。`);

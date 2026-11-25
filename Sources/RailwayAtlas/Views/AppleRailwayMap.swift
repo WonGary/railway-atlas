@@ -66,10 +66,14 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         }
         let displayGroups = store.historyMapActive ? [] : store.renderGroups
         let renderingChanged = coordinator.renderRevision != store.renderRevision
-        let lightLabels = colorScheme == .dark || store.basemapDarkness >= 0.35 || store.basemapStyle != .standard
+        let lightLabels = store.basemapStyle != .standard || store.basemapDarkness >= 0.35
+            || ((store.activeBasemapSource == .apple || store.activeBasemapSource.isVector) && colorScheme == .dark)
         let labelContrastChanged = coordinator.lightStationLabels != lightLabels
         coordinator.lightStationLabels = lightLabels
-        if map.mapType != store.basemapStyle.mapType { map.mapType = store.basemapStyle.mapType }
+        coordinator.updateBasemap(map,
+                                  source: store.activeBasemapSource,
+                                  style: store.basemapStyle,
+                                  template: store.activeBasemapTemplate, dark: colorScheme == .dark)
         if coordinator.shade == nil {
             let shade = BasemapShade()
             coordinator.shade = shade
@@ -156,7 +160,15 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             map.addAnnotations(added)
             coordinator.scheduleStationLabels(map)
         }
-        if renderingChanged || layoutChanged {
+        let focus = store.historyMapActive ? nil : store.lineFocus
+        let paletteChanged = coordinator.focusInk != store.renderSettings.focusInk
+        coordinator.focusInk = store.renderSettings.focusInk
+        let focusChanged = coordinator.focusRevision != focus?.revision || paletteChanged
+        if focusChanged || renderingChanged {
+            coordinator.updateFocus(focus, on: map)
+            coordinator.scheduleStationLabels(map)
+        }
+        if renderingChanged || layoutChanged || focusChanged {
             // New groups arrive after retained overlays in MapKit. Restore
             // the prepared paint order so a late neutral track cannot cover
             // an already-coloured route. Reordering keeps vector geometry.
@@ -167,8 +179,9 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                     coordinator.groups[.init(token: $0.geometryToken, alignment: store.alignment), default: []]
                         .map { $0 as any MKOverlay }
                 } + coordinator.overlays(for: .platform) + coordinator.overlays(for: .passage) + coordinator.overlays(for: .entrance)
-                + coordinator.highlights.map { $0 as any MKOverlay }
                 + coordinator.experienceOverlays.map { $0 as any MKOverlay }
+                + (coordinator.focusVeil.map { [$0 as any MKOverlay] } ?? [])
+                + coordinator.highlights.map { $0 as any MKOverlay }
             var actual = map.overlays(in: .aboveLabels)
             var positions = Dictionary(uniqueKeysWithValues: actual.enumerated().map { (ObjectIdentifier($0.element), $0.offset) })
             for (target, overlay) in ordered.enumerated() {
@@ -212,34 +225,16 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         }
         if coordinator.selectedID != store.selection?.id || renderingChanged {
             coordinator.selectedID = store.selection?.id
-            map.removeOverlays(coordinator.highlights)
-            for old in coordinator.highlights { coordinator.styles.removeValue(forKey: ObjectIdentifier(old)) }
-            coordinator.highlights = []
-            if !store.historyMapActive, let line = store.visibleLines.first(where: { $0.id == store.selection?.id }) {
-                for part in (store.clippedGeometry[line.id] ?? []).flatMap({ store.alignment.displaySegments($0) }) {
-                    let points = part.map(\.location)
-                    let halo = MKPolyline(coordinates: points, count: points.count)
-                    halo.title = "halo"
-                    coordinator.highlights.append(halo)
-                    map.addOverlay(halo, level: .aboveLabels)
-                    for stroke in store.appearance(line).strokes(zoom: store.displayZoom, settings: store.renderSettings) {
-                        let overlay = MKPolyline(coordinates: points, count: points.count)
-                        coordinator.styles[ObjectIdentifier(overlay)] = stroke
-                        coordinator.highlights.append(overlay)
-                        map.addOverlay(overlay, level: .aboveLabels)
-                    }
-                }
-            }
             if let annotation = map.annotations.first(where: { ($0 as? StationAnnotation)?.station.id == store.selection?.id }) {
                 map.selectAnnotation(annotation, animated: true)
             }
         }
-        if coordinator.experienceRevision != store.experienceGeometryRevision || coordinator.experienceAlignment != store.alignment {
+        if coordinator.experienceRevision != store.experienceGeometryRevision || coordinator.experienceAlignment != store.alignment || paletteChanged {
             coordinator.experienceRevision = store.experienceGeometryRevision
             coordinator.experienceAlignment = store.alignment
             map.removeOverlays(coordinator.experienceOverlays)
             coordinator.experienceOverlays = []
-            let groups = Dictionary(grouping: store.experienceLines, by: { "\($0.colour)|\($0.uncertain)" })
+            let groups = Dictionary(grouping: store.experienceLines, by: { "\($0.colour ?? store.renderSettings.focusInk.hex)|\($0.uncertain)" })
             for (key, lines) in groups.sorted(by: { $0.key < $1.key }) {
                 let parts = lines.flatMap { store.alignment.displaySegments($0.coordinates) }.map { points in
                     let locations = points.map(\.location)
@@ -261,6 +256,9 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 coordinator.train = annotation; map.addAnnotation(annotation)
             }
             annotation.coordinate = store.alignment.display(point).location
+            if paletteChanged, let marker = map.view(for: annotation) as? MKMarkerAnnotationView {
+                marker.markerTintColor = PlatformColor(store.renderSettings.focusInk.tint)
+            }
         } else if let train = coordinator.train {
             map.removeAnnotation(train); coordinator.train = nil
         }
@@ -273,7 +271,51 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var cameraRevision = -1
         var cameraUpdatePending = false
         var selectedID: String?
-        var highlights: [MKPolyline] = []
+        var highlights: [MKMultiPolyline] = []
+        var focusRevision: UUID?
+        var focusInk: RailColor?
+        var focusVeil: FocusVeil?
+        func updateFocus(_ focus: MapLineFocus?, on map: MKMapView) {
+            stationStyles.removeAll(keepingCapacity: true)
+            focusRevision = focus?.revision
+            for overlay in highlights { styles.removeValue(forKey: ObjectIdentifier(overlay)) }
+            map.removeOverlays(highlights)
+            highlights = []
+            guard let focus else {
+                if let focusVeil { map.removeOverlay(focusVeil); self.focusVeil = nil }
+                return
+            }
+            if focusVeil == nil {
+                let veil = FocusVeil()
+                focusVeil = veil
+                map.addOverlay(veil, level: .aboveLabels)
+            }
+            var directory: [MKPolyline] = []
+            for path in focus.paths {
+                for segment in store.alignment.displaySegments(path) {
+                    let points = segment.map(\.location)
+                    directory.append(MKPolyline(coordinates: points, count: points.count))
+                }
+            }
+            func add(_ parts: [MKPolyline], _ stroke: RailStroke) {
+                guard !parts.isEmpty else { return }
+                let multi = MKMultiPolyline(parts)
+                multi.title = stroke.color.hex == "#FFFFFF" && stroke.width == 7 ? "focus-rim" : "focus-rail"
+                styles[ObjectIdentifier(multi)] = stroke
+                highlights.append(multi)
+                map.addOverlay(multi, level: .aboveLabels)
+            }
+            let groups = Dictionary(grouping: store.visibleLines.filter(focus.includes), by: store.appearance)
+            let rim = RailStroke(color: RailColor("#FFFFFF")!, width: 7)
+            add(directory, rim)
+            add(directory, RailStroke(color: store.renderSettings.focusInk, width: 4.4))
+            let styled = groups.map { appearance, lines in
+                (appearance.focusStrokes(zoom: store.displayZoom, settings: store.renderSettings),
+                 lines.flatMap { geometry[$0.id]?.2 ?? [] })
+            }
+            add(styled.flatMap(\.1), rim)
+            for (strokes, paths) in styled { for stroke in strokes { add(paths, stroke) } }
+        }
         var historyActive = false
         var experienceRevision = -1
         var experienceAlignment: MapAlignment?
@@ -301,6 +343,8 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var retirementTask: Task<Void, Never>?
         var geometry: [String: ([[Coordinate]], MapAlignment, [MKPolyline])] = [:]
         var stations: [String: StationAnnotation] = [:]
+        var basemapOverlay: BasemapTileOverlay?
+        var basemapKey = ""
         var shade: BasemapShade?
         var labelRevision = -1
         var uiScale = 1.0
@@ -365,6 +409,24 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         private var stationStyles: [String: StationAppearance] = [:]
         init(store: RailwayMapStore) { self.store = store }
 
+        func updateBasemap(_ map: MKMapView, source: BasemapSource, style: BasemapStyle, template: String?, dark: Bool) {
+            let key = "\(style.rawValue)|\(source.rawValue)|\(template ?? "")|\(source.isVector && dark)"
+            let mapType = source == .apple ? style.mapType : MKMapType.standard
+            if map.mapType != mapType { map.mapType = mapType }
+            guard key != basemapKey else { return }
+            basemapKey = key
+
+            let previous = basemapOverlay
+            if source.isVector || template != nil {
+                let next = BasemapTileOverlay(template: template, source:source, dark:dark)
+                basemapOverlay = next
+                map.addOverlay(next, level:.aboveRoads)
+            } else {
+                basemapOverlay = nil
+            }
+            if let previous { map.removeOverlay(previous) }
+        }
+
         func retire(_ overlays: [MKMultiPolyline], immediately: Bool, on map: MKMapView) {
             guard !overlays.isEmpty else { return }
             if immediately {
@@ -421,6 +483,14 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             }
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
+            if overlay is FocusVeil {
+                let renderer = BasemapShadeRenderer(overlay: overlay)
+                renderer.darkness = 0.50
+                return renderer
+            }
+            if let tile = overlay as? BasemapTileOverlay {
+                return MKTileOverlayRenderer(tileOverlay: tile)
+            }
             if let kind = layoutKinds[ObjectIdentifier(overlay)] {
                 let renderer: MKOverlayPathRenderer
                 if let polygon = overlay as? MKPolygon { renderer = MKPolygonRenderer(polygon: polygon) }
@@ -480,16 +550,18 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 #endif
                 view.displayPriority = .required
                 view.image = annotation.image
+                setFocusOpacity(view, member: store.lineFocus == nil)
                 return view
             }
             if annotation is ExperienceTrainAnnotation {
                 let view = (mapView.dequeueReusableAnnotationView(withIdentifier: "experience-train") as? MKMarkerAnnotationView)
                     ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "experience-train")
                 view.annotation = annotation
-                view.markerTintColor = .systemOrange
+                view.markerTintColor = PlatformColor(store.renderSettings.focusInk.tint)
                 view.glyphText = "🚆"
                 view.displayPriority = .required
                 view.titleVisibility = .hidden
+                setFocusOpacity(view, member: store.lineFocus == nil)
                 return view
             }
             guard let annotation = annotation as? StationAnnotation else { return nil }
@@ -516,6 +588,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             return style
         }
         private func configure(_ view: MKAnnotationView, station: RailStation, label: Bool, appearance: StationAppearance? = nil) {
+            setFocusOpacity(view, member: store.lineFocus?.includes(station) ?? true)
             let appearance = appearance ?? stationAppearance(station)
             #if os(macOS)
             let density = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
@@ -532,6 +605,14 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             view.image = StationSymbol.image(appearance, title: configuration.title,
                                              uiScale: store.uiScale, displayScale: density, lightText: configuration.lightText)
             view.centerOffset = CGPoint(x: label ? 74 * store.uiScale : 0, y: 0)
+        }
+        private func setFocusOpacity(_ view: MKAnnotationView, member: Bool) {
+            #if os(macOS)
+            view.alphaValue = member ? 1 : 0.25
+            #else
+            view.alpha = member ? 1 : 0.25
+            #endif
+            view.zPriority = member && store.lineFocus != nil ? .max : .defaultUnselected
         }
         func scheduleStationLabels(_ map: MKMapView) {
             guard labelUpdate == nil else { return }
@@ -559,16 +640,26 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             let density = map.traitCollection.displayScale
             #endif
             for placement in placements {
-                let coordinate = store.alignment.display(placement.coordinate)
+                var coordinate = store.alignment.display(placement.coordinate).location
+                var leader = CGSize.zero
+                if let start = placement.leaderStart {
+                    // Center the image between the geographic exit and its displaced badge.
+                    let middle = CGPoint(x: (start.x + placement.point.x) / 2, y: (start.y + placement.point.y) / 2)
+                    coordinate = map.convert(middle, toCoordinateFrom: map)
+                    leader = CGSize(width: placement.point.x - start.x, height: placement.point.y - start.y)
+                    #if os(macOS)
+                    if !map.isFlipped { leader.height = -leader.height }
+                    #endif
+                }
                 let style = PlatformNumberAnnotation.Style(text: placement.text, kind: placement.kind, title: placement.title,
-                                                          scale: store.uiScale, light: lightStationLabels, density: density)
+                                                          scale: store.uiScale, light: lightStationLabels, density: density, leader: leader)
                 if let old = platformAnnotations[placement.id], old.style == style {
                     if old.coordinate.latitude != coordinate.latitude || old.coordinate.longitude != coordinate.longitude {
-                        old.coordinate = coordinate.location
+                        old.coordinate = coordinate
                     }
                 } else {
                     if let old = platformAnnotations[placement.id] { map.removeAnnotation(old) }
-                    let annotation = PlatformNumberAnnotation(style: style, coordinate: coordinate.location)
+                    let annotation = PlatformNumberAnnotation(style: style, coordinate: coordinate)
                     platformAnnotations[placement.id] = annotation
                     map.addAnnotation(annotation)
                 }
@@ -580,6 +671,10 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 symbols.append((annotation, view, stationAppearance(annotation.station)))
             }
             symbols.sort {
+                if let focus = store.lineFocus {
+                    let left = focus.includes($0.0.station), right = focus.includes($1.0.station)
+                    if left != right { return left }
+                }
                 if $0.2.radius == $1.2.radius { return $0.0.station.id < $1.0.station.id }
                 return $0.2.radius > $1.2.radius
             }
@@ -587,10 +682,14 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 let point = map.convert(annotation.coordinate, toPointTo: map)
                 let scale = store.uiScale
                 let rect = CGRect(x: point.x + 10 * scale, y: point.y - 11 * scale, width: 160 * scale, height: 22 * scale)
-                let label = store.showsLabels && RailDisplayPolicy.labelVisible(appearance.kind, zoom: zoom)
+                let member = store.lineFocus?.includes(annotation.station) == true
+                let label = store.showsLabels && (member || RailDisplayPolicy.labelVisible(appearance.kind, zoom: zoom))
                     && map.bounds.contains(point) && !occupied.contains { $0.intersects(rect) }
                 if label { occupied.append(rect) }
                 configure(view, station: annotation.station, label: label, appearance: appearance)
+            }
+            for annotation in map.annotations where annotation is PlatformNumberAnnotation || annotation is ExperienceTrainAnnotation {
+                if let view = map.view(for: annotation) { setFocusOpacity(view, member: store.lineFocus == nil) }
             }
         }
         #if os(macOS)
@@ -606,6 +705,17 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         #endif
         private func pickTrack(_ point: CGPoint, map: MKMapView) {
             guard !store.historyMapActive else { return }
+            // Annotation selection has its own delegate callback. A pick on a
+            // station must not immediately select the track beneath that station.
+            #if os(macOS)
+            var hit = map.hitTest(map.convert(point, to: map.superview))
+            #else
+            var hit = map.hitTest(point, with: nil)
+            #endif
+            while let view = hit {
+                if view is MKAnnotationView { return }
+                hit = view.superview
+            }
             let display = map.convert(point, toCoordinateFrom: map)
             let location = MKMapPoint(display)
             let tolerance = map.visibleMapRect.width / max(1, map.bounds.width) * 9
@@ -624,6 +734,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
               }
             }
             if let nearest { store.selection = RailwayMapStore.item(nearest.0) }
+            else { store.clearLineFocus() }
         }
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let annotation = view.annotation as? StationAnnotation else { return }
@@ -646,13 +757,32 @@ final class PlatformNumberAnnotation: MKPointAnnotation {
         let scale: Double
         let light: Bool
         let density: CGFloat
+        let leader: CGSize
+
+        @ViewBuilder var glyph: some View {
+            let badge = PlatformNumberPlacement.text(text, kind: kind, scale: scale, light: light)
+            if leader == .zero {
+                badge
+            } else {
+                let diameter = PlatformNumberPlacement.diameter(text, scale: scale)
+                let width = diameter + abs(leader.width), height = diameter + abs(leader.height)
+                let end = CGPoint(x: (width + leader.width) / 2, y: (height + leader.height) / 2)
+                ZStack(alignment: .topLeading) {
+                    Path { path in
+                        path.move(to: CGPoint(x: end.x - leader.width, y: end.y - leader.height))
+                        path.addLine(to: end)
+                    }.stroke(kind.ink(dark: light), lineWidth: scale)
+                    badge.position(end)
+                }.frame(width: width, height: height)
+            }
+        }
     }
     let style: Style
     let image: StationSymbol.Image?
 
     init(style: Style, coordinate: CLLocationCoordinate2D) {
         self.style = style
-        let renderer = ImageRenderer(content: PlatformNumberPlacement.text(style.text, kind: style.kind, scale: style.scale, light: style.light))
+        let renderer = ImageRenderer(content: style.glyph)
         renderer.scale = style.density
         #if os(macOS)
         image = renderer.nsImage
@@ -689,6 +819,11 @@ final class StationAnnotation: NSObject, MKAnnotation {
 }
 
 final class BasemapShade: NSObject, MKOverlay {
+    let coordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
+    let boundingMapRect = MKMapRect.world
+}
+
+final class FocusVeil: NSObject, MKOverlay {
     let coordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
     let boundingMapRect = MKMapRect.world
 }

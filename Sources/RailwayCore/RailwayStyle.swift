@@ -216,6 +216,8 @@ public enum RailSpeed {
 }
 
 public struct RailColor: Hashable, Sendable {
+    public static let focusPresets: [(name: String, hex: String)] = [("朱橙", "#D45212"), ("湖蓝", "#237BB5"),
+        ("青碧", "#008778"), ("鸢紫", "#8057AB"), ("玫红", "#BE4771"), ("琥珀", "#B98213")]
     public let hex: String
     public init?(_ raw: String) {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -336,6 +338,17 @@ public struct RailAppearance: Hashable, Sendable {
 
     public var strokes: [RailStroke] { strokes(zoom: 12) }
 
+    /// Keep the map symbol, including shared-track dashes and directional colours.
+    public func focusStrokes(zoom: Double, settings: RailRenderSettings) -> [RailStroke] {
+        let strokes = strokes(zoom: zoom, settings: settings)
+        let scale = max(1, 4.4 / max(0.1, strokes[0].width))
+        let uncoloured = category == .unknown || (category == .urban && colors.isEmpty)
+        return strokes.enumerated().map { index, stroke in
+            RailStroke(color: index == 0 && uncoloured ? settings.focusInk : stroke.color,
+                       width: stroke.width * scale, dash: stroke.dash, phase: stroke.phase)
+        }
+    }
+
     public func lineWidth(zoom: Double, settings: RailRenderSettings = RailRenderSettings()) -> Double {
         let width = zoom < 6 ? (category == .speed350 || category == .speed300 ? 1.15 : 0.65) :
             zoom < 9 ? category.lineWidth * 0.65 : category.lineWidth
@@ -377,6 +390,9 @@ public struct RailStroke: Hashable, Sendable {
     public let width: Double
     public var dash: [Double] = []
     public var phase: Double = 0
+    public init(color: RailColor, width: Double, dash: [Double] = [], phase: Double = 0) {
+        self.color = color; self.width = width; self.dash = dash; self.phase = phase
+    }
 }
 
 extension RailLine {

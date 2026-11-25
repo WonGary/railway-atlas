@@ -34,15 +34,12 @@ const StationMapBoard = (() => {
     const bounds=state.map.getBounds();
     for (const [name,p] of positions()) if (bounds.contains(p)) railPoint(name,p,points);
   }
-  function locate(rows) {
-    overlay.clearLayers();
-    for (const [name,p] of rows) railPoint(name,p,overlay);
-    state.map.fitBounds(rows.map(entry=>entry[1]),{padding:[30,30],maxZoom:13});
-  }
   function mount(parent,name) {
     if (!name) return;
     const root=document.createElement("section");root.dataset.stationDirectory=name; parent.prepend(root);
-    StationPanel.mount(root,name,{library:RailLibrary.current,coordinate:n=>positions().get(n),locate,trainAction:openStationTrain});
+    StationPanel.mount(root,name,{library:RailLibrary.current,coordinate:n=>positions().get(n),
+      locate:(rows,title,names,fit)=>LineFocus.directory(title,rows,names,fit),
+      endLine:LineFocus.endDirectory,trainAction:openStationTrain});
     if (location.origin==="http://127.0.0.1:18763") appendOriginalStationLookup(root,name);
   }
   function focus(name) {
@@ -53,7 +50,7 @@ const StationMapBoard = (() => {
     const old=document.querySelector("#infoContent [data-station-directory]");
     if (old) { const parent=old.parentNode, name=old.dataset.stationDirectory;old.remove();mount(parent,name); }
   }
-  return {setup,mount,focus,refresh,reload};
+  return {setup,mount,focus,refresh,reload,coordinate:name=>positions().get(name)};
 })();
 
 function showStationBoard(raw) {

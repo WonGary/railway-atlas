@@ -212,12 +212,6 @@ struct SidebarView: View {
                     Spacer()
                 }
                 .atlasFont(.caption2).foregroundStyle(.secondary)
-                Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
-                    .atlasFont(.system(size: 10)).foregroundStyle(.secondary)
-                if store.mapMode != .offline {
-                    Link("铁路瓦片 · OpenRailwayMap", destination: URL(string: "https://openrailwaymap.app")!)
-                        .atlasFont(.system(size: 10)).foregroundStyle(.secondary)
-                }
             }
               .atlasPadding(.vertical, 12)
             }
@@ -321,7 +315,7 @@ struct DataControls: View {
             Toggle("显示全国城市轨道概览", isOn: $store.showsNationalMetroOverview)
                 .toggleStyle(.switch).atlasControlSize(.small)
                 .help("独立控制全国地铁、轻轨、单轨和有轨电车的简化线路；详细城市轨道仍由图层开关控制")
-            Text(store.showsNationalMetroOverview ? store.nationalMetroStatus : "全国城市轨道概览已关闭")
+            Text(store.nationalMetroStatus)
                 .atlasFont(.caption).foregroundStyle(.secondary)
             if store.showsNationalMetroOverview, let snapshot = store.nationalMetroSnapshot {
                 Text("已取得配色 \(snapshot.colouredRouteCount)/\(snapshot.routeCount) · 未知颜色保留中性色")
@@ -329,10 +323,10 @@ struct DataControls: View {
             }
             HStack {
                 if store.nationalMetroLoading { ProgressView().atlasControlSize(.small) }
-                Button("更新全国地铁概览") { store.refreshNationalMetroOverview() }
-                    .disabled(!store.showsNationalMetroOverview || store.mapMode != .apple || store.nationalMetroWork != nil)
+                Button("检查城轨增量更新") { store.refreshNationalMetroOverview() }
+                    .disabled(store.nationalMetroLoading || store.nationalMetroWork != nil)
             }
-            Text("随附地理线路概览；放大后补充详细轨道和车站。在线更新后保存在本机，更新失败保留已有数据。")
+            Text("手动检查发布版本，只下载有变化的城市或网络。更新需要联网，下载中仍可使用地图。")
                 .atlasFont(.caption2).foregroundStyle(.secondary)
             Divider()
             SectionCaption(title: "本地缓存数据库", detail: "自动保存")

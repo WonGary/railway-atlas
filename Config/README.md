@@ -54,9 +54,15 @@ Claude 在对话页及设置中有独立的“联网搜索”和“读取网页�
 | `rendering.railwayPattern` | 铁路空实相间线型开关；在建、停用等状态虚线仍保留 |
 | `map.mode` | `apple` 在线、`cached` 仅缓存、`offline` 本地地图包 |
 | `map.basemapStyle` | `standard`、`satellite`、`hybrid` |
+| `map.standardBasemapSource` | 标准地图来源：`apple`、`gaode`、`openStreetMap`、`versaTiles`、`openFreeMap`、`custom` |
+| `map.satelliteBasemapSource` | 卫星地图来源：`apple`、`gaode`、`custom`；`hybrid` 使用此字段 |
+| `map.customStandardTileTemplate` | 自定义标准地图 HTTPS 瓦片模板，必须包含 `{z}`、`{x}`、`{y}` |
+| `map.customSatelliteTileTemplate` | 自定义卫星地图 HTTPS 瓦片模板，必须包含 `{z}`、`{x}`、`{y}` |
 | `map.basemapDarkness` | 底图暗化，0–1 |
-| `map.alignment` | `mainlandGCJ`：中国区域 Apple 底图，含港澳（默认）；`mainlandOnlyGCJ`：仅大陆；`wgs84`：原始坐标。只改变显示，缓存不转换 |
+| `map.automaticAlignment` | 按底图来源自动选择坐标对齐。关闭后使用 `map.alignment` |
+| `map.alignment` | `mainlandGCJ`：中国区域 Apple 底图，含港澳（默认）；`mainlandOnlyGCJ`：仅大陆；`wgs84`：OpenStreetMap、OpenFreeMap、VersaTiles 和自定义底图。只改变显示，缓存不转换 |
 | `map.tileSource` | ORM 兼容铁路数据源 |
+
 | `layers.categories` | 允许显示的铁路速度 / 用途 / 状态分类 |
 | `layers.networks` | 允许显示的铁路、地铁、轻轨、电车、工业、窄轨等网络 |
 | `layers.hiddenRoutes` | 关闭的整线标识；在图层页操作后自动填写，不建议猜测 ID |
@@ -104,3 +110,4 @@ Claude 在对话页及设置中有独立的“联网搜索”和“读取网页�
 GPT 的 `webSearch` 默认关闭，可在助手中随时切换。启用后，Responses 请求附带 `web_search` 工具，由模型按需使用。回答下方显示本次是否实际完成搜索，并展示 API 返回的可点击引用。需要服务商及所选模型支持；Chat Completions 模式暂不提供搜索，发送前明确提示。服务商拒绝搜索时不会偷偷重试为普通回答。API key 只保存在钥匙串，禁止写入配置；同一网关切换 GPT 协议可沿用凭据，更换服务地址需分别配置。
 
 打开设置或编辑配置不会调用模型。只有点击“发送”才把地图材料、问题及本会话发送给配置的服务商；搜索和网页读取可能另收费。GPT Responses 与 Claude Messages 工具链均有本地模拟响应验证，尚未用真实付费账号验证服务商兼容性。
+

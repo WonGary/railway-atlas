@@ -9,6 +9,9 @@ public struct StationAppearance: Sendable, Equatable {
     public let radius: Double
     public let filled: Bool
     public let colors: [RailColor]
+    public init(kind: StationKind, radius: Double, filled: Bool, colors: [RailColor]) {
+        self.kind = kind; self.radius = radius; self.filled = filled; self.colors = colors
+    }
     public var doubleRing: Bool { kind == .major || kind == .interchange || kind == .connection }
     public var ringWidth: Double { min(1.2, radius * 0.36) }
     public var title: String {

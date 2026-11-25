@@ -6,7 +6,7 @@ import SwiftUI
 struct ExperienceMapLine: Identifiable {
     let id: String
     let coordinates: [Coordinate]
-    let colour: String
+    let colour: String?
     var uncertain = false
 }
 
@@ -48,13 +48,14 @@ final class RailMapPlayback: ObservableObject {
     }
     func start(_ timetable: RailTimetable, route: RailTrackJourney) throws {
         try route.validate(for: timetable)
+        map?.clearLineFocus()
         pause()
         rememberCamera()
         self.timetable = timetable; self.route = route; region = nil; mode = .train
         seconds = Double(timetable.start * 60); cameraTime = 0
         map?.historyMapActive = false
         map?.experienceLines = route.legs.enumerated().map {
-            ExperienceMapLine(id: "\(route.id)/\($0.offset)", coordinates: $0.element, colour: "#DC653D")
+            ExperienceMapLine(id: "\(route.id)/\($0.offset)", coordinates: $0.element, colour: nil)
         }
         map?.experienceGeometryRevision += 1
         if let point = route.legs.first?.first { focus(point, span: 0.12) }
@@ -62,6 +63,7 @@ final class RailMapPlayback: ObservableObject {
         play()
     }
     func start(_ region: RailHistoryRegion) {
+        map?.clearLineFocus()
         pause()
         rememberCamera()
         self.region = region; timetable = nil; route = nil; mode = .history

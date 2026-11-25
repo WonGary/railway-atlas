@@ -135,6 +135,10 @@ button { color: inherit; }
 .record-main strong { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .record-main span { color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .record-item .record-actions { flex: 0 0 auto; justify-content: flex-end; }
+.journey-record { flex-wrap: wrap; }
+.passenger-map { flex: 0 0 100%; min-width: 0; }
+.passenger-map summary { cursor: pointer; font-size: 12px; }
+.passenger-map canvas { display: block; width: 100%; height: auto; margin-top: 6px; border-radius: 4px; }
 .passport-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .passport-summary > div {
   display: grid; justify-items: start; gap: 2px; padding: 8px;
@@ -305,8 +309,12 @@ h2 { font-size: 16px; line-height: 1.3; margin-top: 4px; }
 .map-stage:has(#playbackBar:not([hidden])) .map-legend { bottom: 126px; }
 .map-stage .leaflet-bar { border: 1px solid var(--map-edge); box-shadow: none; overflow: hidden; }
 .map-stage .leaflet-bar a { color: var(--map-type); background: var(--map-bar); border-color: var(--map-edge); }
-.map-stage .leaflet-control-attribution { font-size: 10px; background: var(--map-bar); color: var(--map-muted); }
-.map-stage .leaflet-control-attribution a { color: var(--map-muted); }
+#mapCredits { display:grid; gap:8px; padding:14px 0 4px; border-top:1px solid var(--map-edge); font-size:12px; line-height:1.55; overflow-wrap:anywhere; }
+#mapCredits h3 { margin:0; font-size:14px; }
+#mapCredits a { color:inherit; text-decoration:underline; }
+#basemapCreditLine { position:absolute; bottom:0; left:0; right:0; height:18px; padding:0 7px; background:var(--map-bar); color:var(--map-type); text-align:left; font:11px/18px system-ui,sans-serif; }
+#basemapCreditLine a { color:inherit; margin-right:6px; }
+.map-stage:has(#basemapCreditLine:not([hidden])) #map { height:calc(100% - 18px); }
 .legend-line { width: 22px; height: 0; border-top: 3px solid; display: inline-block; }
 .route-line { border-color: var(--rail); }
 .metro-line { border-color: var(--metro); }
@@ -465,3 +473,18 @@ tr:last-child td { border-bottom: 0; }
   }
   .assistant-window .app-shell > .assistant-panel {position:fixed;inset:0;width:100%}
 }
+.line-focus-bar {position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:700;display:flex;align-items:center;gap:.7em;max-width:76%;padding:.38em .55em .38em .8em;border-radius:8px;background:#172a31;color:#fff;box-shadow:0 2px 8px #0004;font-size:.85rem}
+.line-focus-bar[hidden] {display:none}
+.line-focus-bar span {min-width:0}
+.line-focus-bar small {color:#d8e4e7}
+.line-focus-bar button {white-space:nowrap;padding:.28em .55em;color:#142a30;background:#fff;border-radius:5px}
+.line-focused :is(.leaflet-overlay-pane,.leaflet-railOverview-pane,.leaflet-railDetail-pane,.leaflet-worldRail-pane,[class*="leaflet-station-layout-"]) {opacity:.23}
+.line-focused :is(.leaflet-tile-pane,.leaflet-vectorBasemap-pane) {opacity:.54}
+.line-focused .leaflet-tooltip:not(.station-label-focus) {opacity:.26 !important}
+.line-focused .station-label-focus {font-weight:700}
+.focus-palette {display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:.6em 0;border:0;padding:0}
+.focus-palette legend {padding:0 0 .45em}
+.focus-palette button {min-height:28px;width:28px;padding:0;border-radius:50%;border:1px solid #8887}
+.focus-palette button[aria-pressed=true]::after {content:"✓";color:white;font-weight:bold}
+.focus-palette label {display:inline-flex;align-items:center;gap:4px}
+.focus-palette input {width:32px;height:28px;padding:1px}

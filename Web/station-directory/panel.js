@@ -98,6 +98,7 @@ const StationPanel = (() => {
       if (/^[A-Z0-9]+$/.test(primary)) panel.append(link("在中国铁路地图核对车次",geo+"route/"+encodeURIComponent("CN/"+primary)));
     }
     function draw() {
+      if (content.children.length) options.endLine?.();
       content.replaceChildren();
       const isOriginal=source.value==="original", catalog=current(), name=StationCatalog.resolve(rawName,catalog);
       dateLabel.hidden=isOriginal;
@@ -106,12 +107,13 @@ const StationPanel = (() => {
       const section=node("section");
       section.append(node("h3",`途经线路 · ${lines.length}`)); content.append(section);
       for (const line of lines) {
-        disclosure(section,`${line.title} · ${line.stops.length} 个站所`, body=>{
+        const names=line.stops.map(s=>s[0]);
+        const points=names.map(n=>[n,options.coordinate?.(n)]).filter(([,p])=>p && Math.abs(p[0])>1 && Math.abs(p[1])>1);
+        const box=disclosure(section,`${line.title} · ${line.stops.length} 个站所`, body=>{
           if (line.stops.length) body.append(node("p",`${line.stops[0][0]} → ${line.stops.at(-1)[0]}`));
           if (line.id) body.append(link("原站全线图",geo+"rail/"+line.id));
           if (options.locate && line.stops.length) {
-            const points=line.stops.map(([n])=>[n,options.coordinate?.(n)]).filter(([,p])=>p);
-            if (points.length>1) body.append(button(`地图查看沿线站点（${points.length}）`,()=>options.locate(points)));
+            if (points.length) body.append(button(`地图查看沿线站点（${points.length}）`,()=>options.locate(points,line.title,names,true)));
           }
           const list=node("ol",null,"rail-sequence");
           line.stops.forEach(([n,km,note])=>{
@@ -119,6 +121,13 @@ const StationPanel = (() => {
             row.append(node("span",n),node("small",[km==null || km==="" ? "" : `${km}${Number.isFinite(Number(km)) ? " km" : ""}`,note].filter(Boolean).join(" · "))); list.append(row);
           });
           body.append(list);
+        });
+        box.addEventListener("toggle",()=>{
+          if(!root.isConnected) return;
+          if(box.open) {
+            for(const other of section.querySelectorAll("details[open]")) if(other!==box) other.open=false;
+            options.locate?.(points,line.title,names,false);
+          } else options.endLine?.(line.title);
         });
       }
       if (!lines.length) section.append(node("small","这份资料未收录本站所属线路。"));

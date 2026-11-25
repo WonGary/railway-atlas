@@ -28,11 +28,12 @@ struct MapScreen: View {
     @GestureState private var statusDrag = CGSize.zero
     @State private var controlFrames: [String: CGRect] = [:]
     @State private var statusContentHeight: CGFloat = 120
+    @State private var startupCredit = true
     var body: some View {
       GeometryReader { geometry in
         ZStack {
             Group {
-                if store.mapMode == .apple && (store.basemapStyle == .standard || connectivity.available) { AppleRailwayMap(store: store) }
+                if store.mapMode == .apple { AppleRailwayMap(store: store) }
                 else { OfflineRailwayMap() }
             }
             #if !os(macOS)
@@ -62,11 +63,17 @@ struct MapScreen: View {
                             desktopPanelButton(.right)
                             #endif
                         }.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12 * uiScale))
+                        if let focus = store.lineFocus {
+                            HStack(spacing: 8) {
+                                Text(focus.title).atlasFont(.caption.weight(.semibold)).lineLimit(2)
+                                Button("恢复全图") { store.clearLineFocus() }
+                            }.padding(7).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        }
                         #if !os(macOS)
                         MapScaleView(width: geometry.size.width, height: geometry.size.height)
                         #endif
-                        if store.basemapStyle != .standard && !connectivity.available {
-                            Text("卫星影像需要联网").atlasFont(.caption).atlasPadding(8)
+                        if store.activeBasemapNeedsNetwork && !connectivity.available {
+                            Text(store.activeBasemapOfflineStatus).atlasFont(.caption).atlasPadding(8)
                                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8 * uiScale))
                         }
                     }
@@ -128,34 +135,8 @@ struct MapScreen: View {
                         VStack(alignment: .trailing, spacing: 4 * uiScale) {
                             Text("N ↑").atlasFont(.system(size: 12, weight: .semibold))
                             Text(store.mapMode == .cached ? "缓存铁路 · 无街道底图" : "本地地图包 · 无街道底图").atlasFont(.system(size: 9))
-                            Link("© OpenStreetMap", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
-                                .atlasFont(.system(size: 9))
-                            Link("OpenRailwayMap", destination: URL(string: "https://openrailwaymap.app")!)
-                                .atlasFont(.system(size: 9))
-                            if store.fallbackTiles > 0 {
-                                Link("VersaTiles", destination: URL(string: "https://versatiles.org")!).atlasFont(.system(size: 9))
-                                HStack(spacing: 5 * uiScale) {
-                                    Link("OpenFreeMap", destination: URL(string: "https://openfreemap.org")!)
-                                    Link("© OpenMapTiles", destination: URL(string: "https://openmaptiles.org")!)
-                                }.atlasFont(.system(size: 9))
-                            }
                         }
                         .foregroundStyle(.secondary)
-                    } else {
-                        VStack(alignment: .trailing, spacing: 3 * uiScale) {
-                            Link("铁路 · OpenRailwayMap", destination: URL(string: "https://openrailwaymap.app")!)
-                            Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
-                            if store.fallbackTiles > 0 {
-                                HStack(spacing: 5 * uiScale) {
-                                    Link("OpenFreeMap", destination: URL(string: "https://openfreemap.org")!)
-                                    Link("© OpenMapTiles", destination: URL(string: "https://openmaptiles.org")!)
-                                    Link("VersaTiles", destination: URL(string: "https://versatiles.org")!)
-                                }
-                            }
-                        }
-                        .atlasFont(.system(size: 9))
-                        .atlasPadding(7)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8 * uiScale))
                     }
                 }
                 .background(measureControl("footer"))
@@ -216,6 +197,30 @@ struct MapScreen: View {
         }
       }
         .clipped()
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            let source = store.mapMode == .apple ? store.activeBasemapSource : nil
+            if startupCredit || source == .openStreetMap || source == .openFreeMap || source == .gaode {
+                HStack(spacing: 8) {
+                    Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
+                    if source == .openFreeMap {
+                        Link("© OpenMapTiles", destination: URL(string: "https://openmaptiles.org/")!)
+                    } else if source == .gaode {
+                        Link("高德地图", destination: URL(string: "https://lbs.amap.com/")!)
+                    }
+                    Spacer()
+                }
+                .font(.caption2).padding(.horizontal, 8).padding(.vertical, 2)
+                .background(.background).accessibilityIdentifier("basemap-credit-line")
+            }
+        }
+        .simultaneousGesture(TapGesture().onEnded { startupCredit = false })
+        .simultaneousGesture(DragGesture(minimumDistance: 4).onChanged { _ in
+            if startupCredit { startupCredit = false }
+        })
+        .task {
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled { startupCredit = false }
+        }
     }
 
     private func statusLayout(size: CGSize, drag: CGSize? = nil) -> MapStatusLayout {
@@ -356,17 +361,43 @@ struct OfflineRailwayMap: View {
                 for feature in details where feature.kind == .platform || feature.kind == .passage || feature.kind == .entrance {
                     feature.draw(&context, projection: projection, dark: scheme == .dark)
                 }
-                if !store.historyMapActive, let selected = store.visibleLines.first(where: { $0.id == store.selection?.id }) {
+                let focus = store.historyMapActive ? nil : store.lineFocus
+                if let focus {
+                    context.fill(Path(CGRect(origin:.zero,size:size)), with:.color(background.opacity(0.75)))
                     var path = Path()
-                    addLine(selected, to: &path, projection: projection)
-                    context.stroke(path, with: .color(.orange.opacity(0.25)), style: StrokeStyle(lineWidth: 11, lineCap: .round))
-                    draw(path, appearance: store.appearance(selected), context: &context)
+                    for part in focus.paths {
+                        guard let first = part.first else { continue }
+                        path.move(to: projection.screen(first))
+                        for p in part.dropFirst() { path.addLine(to: projection.screen(p)) }
+                    }
+                    context.stroke(path, with:.color(.white), style:StrokeStyle(lineWidth:7,lineCap:.round,lineJoin:.round))
+                    context.stroke(path, with:.color(store.renderSettings.focusInk.tint), style:StrokeStyle(lineWidth:4.4,lineCap:.round,lineJoin:.round))
+                    let groups = Dictionary(grouping: store.visibleLines.filter(focus.includes), by: store.appearance)
+                    let styled = groups.map { appearance, lines in
+                        var track = Path()
+                        for line in lines { addLine(line, to: &track, projection: projection) }
+                        return (appearance, track)
+                    }
+                    for (_, track) in styled {
+                        context.stroke(track, with:.color(.white), style:StrokeStyle(lineWidth:7,lineCap:.round,lineJoin:.round))
+                    }
+                    for (appearance, track) in styled {
+                        draw(track, appearance: appearance, context: &context, focused: true)
+                    }
                 }
                 let numbers = store.layoutLabels(in: projection.visibleBounds, zoom: zoom,
                     screen: CGRect(origin: .zero, size: size), project: projection.screen)
                 for number in numbers {
+                    var context = context
+                    if focus != nil { context.opacity = 0.25 }
                     if number.kind != .platform {
                         let ink = number.kind.ink(dark: scheme == .dark)
+                        if let start = number.leaderStart {
+                            var leader = Path()
+                            leader.move(to: start)
+                            leader.addLine(to: number.point)
+                            context.stroke(leader, with: .color(ink), lineWidth: uiScale)
+                        }
                         let circle = Path(ellipseIn: number.frame)
                         context.fill(circle, with: .color(scheme == .dark ? Color(red: 0.10, green: 0.13, blue: 0.18) : .white))
                         context.stroke(circle, with: .color(ink), lineWidth: 1.5 * uiScale)
@@ -384,9 +415,13 @@ struct OfflineRailwayMap: View {
                 }
                 var labels = numbers.map(\.frame)
                 let stations = (store.historyMapActive ? [] : store.visibleStations).sorted {
-                    ($0.id == store.selection?.id ? 0 : 1) < ($1.id == store.selection?.id ? 0 : 1)
+                    if let focus, focus.includes($0) != focus.includes($1) { return focus.includes($0) }
+                    return ($0.id == store.selection?.id ? 0 : 1) < ($1.id == store.selection?.id ? 0 : 1)
                 }
                 for station in stations {
+                    var context = context
+                    let member = focus?.includes(station) == true
+                    if focus != nil && !member { context.opacity = 0.25 }
                     let point = projection.screen(station.coordinate)
                     guard CGRect(origin: .zero, size: size).insetBy(dx: -20, dy: -20).contains(point) else { continue }
                     let selected = station.id == store.selection?.id
@@ -406,7 +441,7 @@ struct OfflineRailwayMap: View {
                                                          width: radius * 0.9, height: radius * 0.9))
                         context.stroke(inner, with: .color(style.filled ? .white : .secondary), lineWidth: style.ringWidth * 0.5)
                     }
-                    guard store.showsLabels && (RailDisplayPolicy.labelVisible(station, zoom: store.displayZoom) || selected) else { continue }
+                    guard store.showsLabels && (member || RailDisplayPolicy.labelVisible(station, zoom: store.displayZoom) || selected) else { continue }
                     let text = context.resolve(Text(station.name)
                         .atlasFont(StationLabelStyle.font(style.kind, selected: selected), scale: uiScale)
                         .foregroundStyle(scheme == .dark ? Color.white.opacity(0.85) : Color(red: 0.21, green: 0.28, blue: 0.30)))
@@ -418,17 +453,19 @@ struct OfflineRailwayMap: View {
                     context.draw(text, at: CGPoint(x: rect.minX + 4 * uiScale, y: rect.midY), anchor: .leading)
                 }
                 for line in store.experienceLines {
+                    var context = context
+                    if focus != nil { context.opacity = 0.25 }
                     guard let first = line.coordinates.first else { continue }
                     var path = Path()
                     path.move(to: projection.screen(first))
                     for p in line.coordinates.dropFirst() { path.addLine(to: projection.screen(p)) }
-                    let color = (RailColor(line.colour) ?? RailColor("#2DAD87")!).tint
+                    let color = (line.colour.flatMap(RailColor.init) ?? store.renderSettings.focusInk).tint
                     context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: line.uncertain ? 2 : 4,
                         lineCap: .round, dash: line.uncertain ? [4, 5] : []))
                 }
                 if let point = store.experienceMarker {
                     let p = projection.screen(point)
-                    context.fill(Path(ellipseIn: CGRect(x: p.x - 16, y: p.y - 16, width: 32, height: 32)), with: .color(.orange))
+                    context.fill(Path(ellipseIn: CGRect(x: p.x - 16, y: p.y - 16, width: 32, height: 32)), with: .color(store.renderSettings.focusInk.tint))
                     context.draw(Text(Image(systemName: "tram.fill")).font(.system(size: 18)).foregroundColor(.white), at: p)
                 }
             }
@@ -464,10 +501,12 @@ struct OfflineRailwayMap: View {
         }
     }
 
-    private func draw(_ path: Path, appearance: RailAppearance, context: inout GraphicsContext, extraWidth: Double = 0) {
-        for stroke in appearance.strokes(zoom: store.displayZoom, settings: store.renderSettings) {
+    private func draw(_ path: Path, appearance: RailAppearance, context: inout GraphicsContext, focused: Bool = false) {
+        let strokes = focused ? appearance.focusStrokes(zoom: store.displayZoom, settings: store.renderSettings) :
+            appearance.strokes(zoom: store.displayZoom, settings: store.renderSettings)
+        for stroke in strokes {
             context.stroke(path, with: .color(stroke.color.tint),
-                           style: StrokeStyle(lineWidth: stroke.width + extraWidth,
+                           style: StrokeStyle(lineWidth: stroke.width,
                                               lineCap: stroke.dash.isEmpty ? .round : .butt, lineJoin: .round,
                                               dash: stroke.dash.map { CGFloat($0) }, dashPhase: CGFloat(stroke.phase)))
         }
@@ -512,6 +551,7 @@ struct OfflineRailwayMap: View {
           }
         }
         if let nearest { store.select(RailwayMapStore.item(nearest.0)) }
+        else { store.clearLineFocus() }
     }
 
     private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }

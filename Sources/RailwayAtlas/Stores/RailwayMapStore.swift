@@ -12,6 +12,38 @@ final class RailwayMapStore: ObservableObject {
         return model
     }()
     @Published var stationBoardPins: [RailStation] = [] { didSet { previousVisibility=nil } }
+    @Published private(set) var lineFocus: MapLineFocus?
+
+    func clearLineFocus() {
+        guard lineFocus != nil else { return }
+        lineFocus = nil
+        if !stationBoardPins.isEmpty { stationBoardPins = []; rebuildVisible() }
+        labelRevision += 1
+    }
+
+    func focusRelation(_ route: RailRoute) {
+        clearLineFocus()
+        lineFocus = MapLineFocus(title: urbanRouteTitles[route.visibilityKey] ?? route.name, routeKey: route.visibilityKey)
+        labelRevision += 1
+    }
+
+    #if os(macOS)
+    func focusDirectoryLine(_ title: String, names: [String], fit: Bool) {
+        let stops = Set(names)
+        let pins = NationalDirectoryPins.all.filter { stops.contains($0.name) }
+        if lineFocus?.directory != true || lineFocus?.title != title || lineFocus?.stopNames != stops {
+            stationBoardPins = pins
+            lineFocus = MapLineFocus(title: title, trackName: title, stopNames: stops,
+                                     paths: MapContextFiles.parts(title, stops: stops), directory: true)
+            labelRevision += 1
+        }
+        if fit, !pins.isEmpty {
+            region = MapBounds(points: pins.map(\.coordinate)).region
+            cameraRevision += 1
+        }
+        rebuildVisible()
+    }
+    #endif
     @Published var experienceLines: [ExperienceMapLine] = []
     @Published var experienceMarker: Coordinate?
     @Published var experienceGeometryRevision = 0
@@ -54,7 +86,14 @@ final class RailwayMapStore: ObservableObject {
         let width = stationTrackCategories[station.id].map {
             RailAppearance(category: $0, colors: []).lineWidth(zoom: displayZoom, settings: renderSettings)
         }
-        return station.appearance(showMetroColors: showsMetroColors, lineWidth: width, zoom: displayZoom, settings: renderSettings)
+        let style = station.appearance(showMetroColors: showsMetroColors, lineWidth: width, zoom: displayZoom, settings: renderSettings)
+        guard lineFocus?.includes(station) == true else { return style }
+        let hasRouteColour = showsMetroColors && (station.routes ?? []).contains { $0.color != nil }
+        let tagged = (station.tags["colour"] ?? station.tags["color"]).flatMap(RailColor.init)
+        let category = RailCategory.classify(station.tags)
+        let fallback = category == .unknown || category == .urban ? renderSettings.focusInk : category.color
+        return StationAppearance(kind: style.kind, radius: max(4.5, style.radius + 1.2), filled: style.filled,
+            colors: hasRouteColour ? style.colors : [tagged ?? fallback])
     }
     func appearance(_ line: RailLine) -> RailAppearance {
         line.appearance(showMetroColors: showsMetroColors, depotBrightness: renderSettings.depotBrightness)
@@ -141,9 +180,9 @@ final class RailwayMapStore: ObservableObject {
     @Published var panelSize = MapPanelSize.medium
     @Published var panelLayout = MapPanelLayout.floating
     @Published var panelBackgroundOpacity = 1.0
-    @Published var inspectorVisible = false
+    @Published var inspectorVisible = false { didSet { if !inspectorVisible { clearLineFocus() } } }
     @Published var inspectorWidth = 380.0
-    @Published var inspectorPane = InspectorPane.feature
+    @Published var inspectorPane = InspectorPane.feature { didSet { if inspectorPane != .feature { clearLineFocus() } } }
     @Published var inspectorLayout = MapPanelLayout.docked
     @Published var inspectorBackgroundOpacity = 1.0
     @Published var statusVisible = true { didSet { persist(statusVisible, "railway.statusVisible") } }
@@ -259,6 +298,23 @@ final class RailwayMapStore: ObservableObject {
     @Published var labelRevision = 0
     @Published var selection: RailwaySelection? {
         didSet {
+            if let item = selection, let line = line(withID: item.id) {
+                clearLineFocus()
+                let routes = line.routes ?? []
+                let keys = Set(routes.map(\.visibilityKey))
+                lineFocus = MapLineFocus(title: item.name, featureID: line.id,
+                    routeKey: keys.count == 1 ? keys.first : nil,
+                    trackName: line.tags["name:zh"] ?? line.tags["name"])
+                labelRevision += 1
+            } else if let id = selection?.id, let station = station(withID: id) {
+                if lineFocus?.includes(station) != true {
+                    clearLineFocus()
+                    lineFocus = MapLineFocus(title: station.name, stationID: station.id)
+                }
+                labelRevision += 1
+            } else {
+                clearLineFocus()
+            }
             #if os(macOS)
             if selection != nil { inspectorPane = .feature; inspectorVisible = true }
             #endif

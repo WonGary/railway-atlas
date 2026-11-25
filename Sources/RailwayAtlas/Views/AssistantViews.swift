@@ -43,6 +43,7 @@ struct AtlasSettingsView: View {
                         .atlasFont(.caption).foregroundStyle(.secondary)
                     StationProportionPreview(settings: map.renderSettings).atlasFrame(height: 100)
                         .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 12))
+                    FocusColourPicker(hex: $map.renderSettings.focusColor)
                     Toggle("铁路使用空实相间线型", isOn: $map.renderSettings.railwayPattern)
                     parameter("车辆段亮度", value: $map.renderSettings.depotBrightness, range: 0.1...1, step: 0.05)
                     HStack {
@@ -108,6 +109,8 @@ struct AtlasSettingsView: View {
                     Text("更换地址后仍按现有规则尝试备用源。API key 不包含在配置文件中；仅本机钥匙串保存。铁路缓存上限 8 GB，Apple 底图和卫星影像不写入铁路缓存。")
                         .atlasFont(.caption).foregroundStyle(.secondary)
                   }
+                  Divider()
+                  mapCredits
                 }.textFieldStyle(.roundedBorder).atlasPadding(4)
             }
             if configuration.hasError && page != .config {
@@ -127,6 +130,25 @@ struct AtlasSettingsView: View {
         }.atlasPadding(24)
         .modifier(AtlasSheetLayout(scale: map.uiScale, width: 620, height: 680))
         .onAppear { draft = assistant.settings; page = initialPage }
+    }
+
+    private var mapCredits: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("地图来源与版权").atlasFont(.headline)
+            if map.mapMode == .apple {
+                if let url = map.activeBasemapAttributionURL {
+                    Link("当前底图 · \(map.activeBasemapAttributionTitle)", destination: url)
+                } else { Text("当前底图 · \(map.activeBasemapAttributionTitle)") }
+            }
+            Text("[© OpenStreetMap contributors](https://www.openstreetmap.org/copyright) · [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)")
+            Text("铁路瓦片与底图 · [OpenRailwayMap](https://openrailwaymap.app/) · [VersaTiles](https://versatiles.org/) · [OpenFreeMap](https://openfreemap.org/) · [© OpenMapTiles](https://openmaptiles.org/) · [Apple 地图](https://www.apple.com/maps/) · [高德地图](https://lbs.amap.com/)")
+            Text("新加坡车站出口 · [Land Transport Authority](https://data.gov.sg/datasets/d_b39d3a0871985372d7e1637193335da5/view) · [Singapore Open Data Licence](https://data.gov.sg/open-data-licence)")
+            Text("车次与径路 · [中国铁路地图](https://cnrail.geogv.com/) · [Jeremy Gao](https://github.com/wensimehrp/chinese-railway-gtfs)（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）。本机时刻库 · [路路通](http://www.lltskb.com/)")
+            Text("沿线地理 · [Natural Earth](https://www.naturalearthdata.com/) · 天地图 / 干旱区生态与资源科学数据中心")
+            Text("城轨配色 · [RMG Palette](https://github.com/railmapgen/rmg-palette)（[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)）· [Wikidata](https://www.wikidata.org/) · [Wikipedia](https://www.wikipedia.org/)")
+        }
+        .atlasFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+        .accessibilityIdentifier("settings-map-credits")
     }
 
     private var assistantSettings: some View {
@@ -269,6 +291,37 @@ struct AtlasSettingsView: View {
                 Text(String(format: "%.2f", value.wrappedValue)).monospacedDigit().foregroundStyle(.secondary)
             }
             Slider(value: value, in: range, step: step)
+        }
+    }
+}
+
+private struct FocusColourPicker: View {
+    @Binding var hex: String
+    @Environment(\.self) private var environment
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("旅行与无配色要素的高亮色")
+                Spacer()
+                ColorPicker("自定义高亮色", selection: Binding(get: {
+                    (RailColor(hex) ?? RailRenderSettings().focusInk).tint
+                }, set: { value in
+                    let c = value.resolve(in: environment)
+                    func byte(_ channel: Float) -> Int { Int((min(1, max(0, channel)) * 255).rounded()) }
+                    hex = String(format: "#%02X%02X%02X", byte(c.red), byte(c.green), byte(c.blue))
+                }), supportsOpacity: false).labelsHidden()
+            }
+            HStack {
+                ForEach(RailColor.focusPresets, id: \.hex) { preset in
+                    Button {
+                        hex = preset.hex
+                    } label: {
+                        Circle().fill(RailColor(preset.hex)!.tint).frame(width: 24, height: 24)
+                            .overlay { if hex.uppercased() == preset.hex { Image(systemName: "checkmark").foregroundStyle(.white) } }
+                    }.buttonStyle(.plain).help(preset.name).accessibilityLabel(preset.name)
+                    .accessibilityAddTraits(hex.uppercased() == preset.hex ? .isSelected : [])
+                }
+            }
         }
     }
 }

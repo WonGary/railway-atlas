@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 import Network
+import RailwayCore
 import SwiftUI
 
 enum BasemapStyle: String, CaseIterable, Identifiable {
@@ -19,6 +20,97 @@ enum BasemapStyle: String, CaseIterable, Identifiable {
         case .satellite: .satellite
         case .hybrid: .hybrid
         }
+    }
+}
+
+enum BasemapSource: String, CaseIterable, Identifiable {
+    case apple
+    case gaode
+    case openStreetMap
+    case openFreeMap
+    case versaTiles
+    case custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .apple: "Apple 地图"
+        case .gaode: "高德地图"
+        case .openStreetMap: "OpenStreetMap"
+        case .openFreeMap: "OpenFreeMap · 矢量"
+        case .versaTiles: "VersaTiles · 矢量"
+        case .custom: "自定义栅格瓦片"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .apple: "MapKit 原生底图"
+        case .gaode: "高德公开栅格瓦片"
+        case .openStreetMap: "OSM 标准栅格地图"
+        case .openFreeMap, .versaTiles: "街道、建筑和中文地名"
+        case .custom: "填写带 {z}、{x}、{y} 的 HTTPS 地址"
+        }
+    }
+
+    var defaultAlignment: MapAlignment {
+        switch self {
+        case .openStreetMap, .openFreeMap, .versaTiles, .custom: .wgs84
+        case .apple: .mainlandGCJ
+        case .gaode: .mainlandOnlyGCJ
+        }
+    }
+
+    var attributionTitle: String {
+        switch self {
+        case .apple: "Apple 地图"
+        case .gaode: "高德地图"
+        case .openStreetMap: "© OpenStreetMap contributors"
+        case .openFreeMap: "OpenFreeMap"
+        case .versaTiles: "VersaTiles"
+        case .custom: "自定义底图"
+        }
+    }
+
+    var attributionURL: URL? {
+        switch self {
+        case .apple: URL(string: "https://www.apple.com/maps/")
+        case .gaode: URL(string: "https://lbs.amap.com/")
+        case .openStreetMap: URL(string: "https://www.openstreetmap.org/copyright")
+        case .openFreeMap: URL(string:"https://openfreemap.org/")
+        case .versaTiles: URL(string:"https://versatiles.org/")
+        case .custom: nil
+        }
+    }
+
+    var isVector: Bool { self == .openFreeMap || self == .versaTiles }
+    static let standardChoices: [BasemapSource] = [.apple, .gaode, .openStreetMap, .versaTiles, .openFreeMap, .custom]
+    static let satelliteChoices: [BasemapSource] = [.apple, .gaode, .custom]
+
+    func template(for style: BasemapStyle, customStandard: String, customSatellite: String) -> String? {
+        switch self {
+        case .apple, .openFreeMap, .versaTiles:
+            return nil
+        case .gaode:
+            switch style {
+            case .standard:
+                return "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}"
+            case .satellite, .hybrid:
+                return "https://webst01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}"
+            }
+        case .openStreetMap:
+            guard style == .standard else { return nil }
+            return "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        case .custom:
+            let value = style == .standard ? customStandard : customSatellite
+            return Self.validatedTemplate(value)
+        }
+    }
+
+    static func validatedTemplate(_ value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return AtlasConfiguration.validStreetTemplate(value) ? value : nil
     }
 }
 

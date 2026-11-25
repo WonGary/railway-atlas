@@ -546,7 +546,7 @@ function drawSelectedRoute() {
       return;
     }
     const line = L.polyline(points, {
-      color: "#f2c94c", weight: 4.2, opacity: 0.88, lineCap: "round", lineJoin: "round",
+      color: AtlasPrefs.value.focusColor, weight: 4.2, opacity: 0.95, lineCap: "round", lineJoin: "round",
       className: "railway-track"
     }).addTo(state.routeLayer);
     state.routePolylines[index] = line;
@@ -555,7 +555,7 @@ function drawSelectedRoute() {
     const coordinate = getStopCoordinate(index);
     if (!coordinate) return;
     const marker = L.circleMarker(coordinate, {
-      radius: 5, color: "#152024", weight: 2, fillColor: "#ffe17a", fillOpacity: 1, bubblingMouseEvents: false
+      radius: 5, color: AtlasPrefs.value.focusColor, weight: 2, fillColor: "#fff", fillOpacity: 1, bubblingMouseEvents: false
     }).addTo(state.routeLayer);
     marker.on("click", () => selectStation(stop.name));
     StationLabels.bind(marker, stop.name, {
@@ -568,13 +568,20 @@ function drawSelectedRoute() {
     const first = route.stopCoordinates.find(Boolean);
     if (first) {
       state.playbackMarker = L.circleMarker(first, {
-        radius: 8, color: "#152024", weight: 3, fillColor: "#ffffff", fillOpacity: 1
+        radius: 8, color: "#ffffff", weight: 3, fillColor: AtlasPrefs.value.focusColor, fillOpacity: 1
       }).addTo(state.routeLayer).bindTooltip(route.train);
     }
   }
   setLayerVisible(state.routeLayer,state.playbackVisible);
   updatePlaybackBounds();
   updateZoom();
+}
+
+function recolorJourney() {
+  const color=AtlasPrefs.value.focusColor;
+  state.routePolylines.forEach(line=>line?.setStyle({color}));
+  state.stationMarkers.forEach(marker=>marker.setStyle({color}));
+  state.playbackMarker?.setStyle({fillColor:color});
 }
 
 function updatePlaybackBounds() {
@@ -597,6 +604,7 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   ++journeyRequest;
   const full = state.routes.find(item => item.id === id);
   if (!full) return;
+  LineFocus.clear();
   state.selectedMapFeature=null;
   to ??= full.stops.length - 1;
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to >= full.stops.length || from >= to) return;
@@ -675,6 +683,23 @@ function metroRouteLabel(route) {
   return route.ref ? `${route.ref} · ${route.name || "城市轨道"}` : route.name || "城市轨道";
 }
 
+function metroStopColors(detail,station) {
+  return AtlasPrefs.value.showsMetroColors ? detail?.stationMarkers.get(station.id)?.options.atlasColors || [] : [];
+}
+const MetroStationMarker=L.CircleMarker.extend({
+  _updatePath() {
+    L.CircleMarker.prototype._updatePath.call(this);
+    const ctx=this._renderer._ctx, colors=this.options.atlasColors;
+    if (!this._renderer._drawing || !ctx || !AtlasPrefs.value.showsMetroColors || colors?.length<2 || !colors || this._empty()) return;
+    ctx.save();ctx.globalAlpha=this.options.opacity;ctx.lineWidth=this.options.weight;ctx.setLineDash([]);ctx.lineCap="butt";
+    for (let i=0;i<colors.length;i++) {
+      ctx.beginPath();ctx.strokeStyle=colors[i];
+      ctx.arc(this._point.x,this._point.y,this._radius,2*Math.PI*i/colors.length,2*Math.PI*(i+1)/colors.length);ctx.stroke();
+    }
+    ctx.restore();
+  }
+});
+
 function buildMetroCityLayers(city, detail) {
   const routesLayer = L.layerGroup();
   const stationsLayer = L.layerGroup();
@@ -695,11 +720,12 @@ function buildMetroCityLayers(city, detail) {
       dashArray: construction ? "8 7" : null,
       lineCap: "round",
       lineJoin: "round",
-      className: construction ? "planned-metro" : "metro-track"
+      className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
     }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${city.name} · ${metroRouteLabel(route)}`}), { sticky: true });
     line.on("click", () => selectMetroRoute(city, route));
     line.addTo(routesLayer);
-    routeLines.push({ line, route, construction });
+    const facts=AtlasPrefs.classify({...route.tags,route:route.type,...(construction?{state:"construction"}:{})},true);
+    routeLines.push({line,route,construction,parts,identity:MetroHandoff.identity(facts,[route.id])});
   }
   const platformsByName = new Map();
   for (const station of detail.stations || []) {
@@ -711,7 +737,7 @@ function buildMetroCityLayers(city, detail) {
   for (const station of detail.stations || []) {
     const coordinate = pointToLatLng(station.coordinate);
     if (!coordinate) continue;
-    const marker = L.circleMarker(coordinate, {
+    const marker = new MetroStationMarker(coordinate, {
       radius: 3.5,
       color: "#172126",
       weight: 1.4,
@@ -721,6 +747,7 @@ function buildMetroCityLayers(city, detail) {
     const routesAtStop = platformsByName.get(station.name)
       .filter(platform => marker.getLatLng().distanceTo(platform.location) <= 350)
       .flatMap(platform => platform.routes);
+    marker.options.atlasColors=[...new Set(routesAtStop.map(r=>r.color).filter(Boolean))].sort();
     StationLabels.bind(marker, station.name, {
       id: station.id, minZoom: 13, important: StationLabels.prominent({}, routesAtStop),
       selected: () => state.selectedMetroStation?.city.id === city.id && state.selectedMetroStation.station.id === station.id
@@ -771,6 +798,7 @@ function refreshMetroDetailVisibility() {
     }
   }
   const activeCities = new Set();
+  const detailTracks=[];
   for (const [cityID, layers] of state.metroCityLayers) {
     const city = state.metroCities.find(item => item.id === cityID) || layers.city;
     const inView = metroCityBounds(city).intersects(bounds);
@@ -781,15 +809,16 @@ function refreshMetroDetailVisibility() {
     setLayerVisible(layers.stationsLayer, stationsVisible);
     const detailOpacity = zoom >= 10 ? 0.98 : 0.82;
     const visibleIDs=new Set();
-    layers.routeLines.forEach(({ line, construction, route }) => {
+    layers.routeLines.forEach(entry => {
+      const {line,construction,route}=entry;
       const visible=AtlasPrefs.visibleRoute(city.name,route) && (!construction || state.showConstruction) &&
         AtlasPrefs.visible(AtlasPrefs.classify({...route.tags,route:route.type,...(construction?{state:"construction"}:{})},true),zoom);
       if (visible) visibleIDs.add(route.id);
+      if (visible && detailedVisible) detailTracks.push(entry);
       if (visible !== layers.routesLayer.hasLayer(line)) visible ? layers.routesLayer.addLayer(line) : layers.routesLayer.removeLayer(line);
-      const selected = state.selectedMetroRoute?.city.id === cityID && state.selectedMetroRoute?.route.id === route.id;
       line.setStyle({
         color:construction?"#d5dce0":prefs.showsMetroColors && route.color || "#526672",
-        opacity: selected ? 1 : detailOpacity,weight:(selected ? 5 : 3.2)*prefs.metroWidthScale
+        opacity:detailOpacity,weight:3.2*prefs.metroWidthScale
       });
     });
     for (const station of layers.detail.stations) {
@@ -798,14 +827,27 @@ function refreshMetroDetailVisibility() {
       if (visible !== layers.stationsLayer.hasLayer(marker)) visible ? layers.stationsLayer.addLayer(marker) : layers.stationsLayer.removeLayer(marker);
       const selected = state.selectedMetroStation?.city.id === cityID && state.selectedMetroStation?.station.id === stationID;
       marker.setRadius((selected ? 5 : 2.8)*prefs.stationRadiusMultiplier);
-      marker.setStyle({fillColor: selected ? "#f2c94c" : "#ffffff"});
+      marker.setStyle({color:metroStopColors(layers,station)[0] || "#657d8a",fillColor:"#ffffff"});
     }
   }
-  state.metroPolylines.forEach(({ line, construction, record }) => {
-    const replacedByDetail = activeCities.has(record.city);
+  RailMapLayers.setMetroCities(detailTracks);
+  const coverage=RailMapLayers.metroCoverage();
+  state.metroPolylines.forEach(entry => {
+    const {line,construction,record,parts,identity}=entry;
     const route=record.route;
-    const visible = prefs.showsNationalMetroOverview && state.showMetro && prefs.mode!=="offline" && (!construction || state.showConstruction) && !replacedByDetail &&
+    let visible = prefs.showsNationalMetroOverview && state.showMetro && prefs.mode!=="offline" && (!construction || state.showConstruction) &&
       AtlasPrefs.visibleRoute(record.city,route) && AtlasPrefs.visible(AtlasPrefs.classify({...route.tags,...(construction?{state:"construction"}:{})},true),zoom,{overview:true});
+    if (visible && zoom>=8) visible=bounds.intersects(entry.bounds);
+    if (visible) {
+      const revision=zoom<8 ? -1 : `${zoom}/${coverage.revision}`;
+      if (entry.revision!==revision) {
+        const displayed=zoom<8 ? parts : MetroHandoff.remaining(parts,identity,coverage.indexes);
+        if (entry.displayed!==displayed) line.setLatLngs(displayed);
+        entry.displayed=displayed;
+        entry.revision=revision;
+      }
+      visible=entry.displayed.length>0;
+    }
     if(visible !== state.metroLayer.hasLayer(line)) visible ? state.metroLayer.addLayer(line) : state.metroLayer.removeLayer(line);
     line.setStyle({
       color:construction?"#d5dce0":prefs.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) || "#526672",
@@ -834,10 +876,13 @@ function drawMetro() {
         opacity: 0.22,
         dashArray: construction ? "7 7" : null,
         lineCap: "round",
-        className: construction ? "planned-metro" : "metro-track"
+        className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
       }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${record.city || ""} · ${route.name || "城市轨道"}`}), { sticky: true });
-      line.on("click",()=>RailMapLayers.inspect(route.name,route.tags,false,line.getBounds().getCenter()));
-      state.metroPolylines.push({ line, construction, record });
+      line.on("click",e=>RailMapLayers.inspect(route.name,route.tags,false,e.latlng,{parts:line.getLatLngs(),overview:true,
+        styleForPart:()=>({color:construction || AtlasPrefs.value.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) ? line.options.color : null,dashArray:line.options.dashArray})}));
+      const facts=AtlasPrefs.classify({...route.tags,...(construction?{state:"construction"}:{})},true);
+      state.metroPolylines.push({line,construction,record,parts:validParts,displayed:validParts,
+        bounds:line.getBounds(),identity:MetroHandoff.identity(facts,[route.id])});
       line.addTo(state.metroLayer);
     }
   }
@@ -1030,6 +1075,7 @@ function renderMetroStationInfo(city, station) {
 }
 
 function selectMetroStation(city, station, { pan = true } = {}) {
+  LineFocus.station(station.name,station.id,pointToLatLng(station.coordinate),()=>metroStopColors(state.metroCityLayers.get(city.id),station));
   renderMetroStationInfo(city, station);
   $("infoPanel").hidden = false;
   if (window.matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
@@ -1038,6 +1084,7 @@ function selectMetroStation(city, station, { pan = true } = {}) {
 }
 
 function selectMetroRoute(city, route) {
+  LineFocus.metro(city,route);
   state.selectedMapFeature=null;
   state.selectedMetroRoute = { city, route };
   state.selectedMetroStation = null;
@@ -1100,6 +1147,7 @@ function renderInfo(name) {
 }
 
 function selectStation(name, { pan = true } = {}) {
+  LineFocus.station(name,null,state.stationMarkers.get(name)?.getLatLng() || StationMapBoard.coordinate(name));
   state.selectedMetroStation = null;
   state.selectedMetroRoute = null;
   if (state.playbackVisible && !state.route?.stops.some(stop => stop.name === name)) {
@@ -1111,7 +1159,7 @@ function selectStation(name, { pan = true } = {}) {
   const marker = state.stationMarkers.get(name);
   state.stationMarkers.forEach((item, key) => item.setStyle({
     radius: key === name ? 7 : 5,
-    fillColor: key === name ? "#ffffff" : "#ffe17a"
+    color:AtlasPrefs.value.focusColor,fillColor:"#ffffff"
   }));
   renderInfo(name);
   $("infoPanel").hidden = false;
@@ -1734,7 +1782,9 @@ function setupPanels() {
     if (state.assistantWindow) window.close();
     else $("assistantPanel").hidden = true;
   });
-  $("closeInfo").addEventListener("click", () => { $("infoPanel").hidden = true; });
+  $("closeInfo").addEventListener("click", () => { $("infoPanel").hidden = true; LineFocus.clear(); });
+  new MutationObserver(()=>{if($("infoPanel").hidden) LineFocus.clear();})
+    .observe($("infoPanel"),{attributes:true,attributeFilter:["hidden"]});
   $("assistantMode").addEventListener("click", () => {
     AtlasPrefs.change("assistantPresentation",$("assistantPanel").classList.contains("floating")?"sidebar":"floating",false);
     $("assistantMode").title = $("assistantPanel").classList.contains("floating") ? "切换回侧栏" : "切换为浮窗";
@@ -1748,7 +1798,7 @@ function setupPanels() {
   $("openStationDialog").addEventListener("click", openStationDialog);
   $("closeDialog").addEventListener("click", () => $("stationDialog").close());
   $("stationDialog").addEventListener("click", event => { if (event.target === $("stationDialog")) $("stationDialog").close(); });
-  $("homeMap").addEventListener("click", () => {if(state.playbackVisible)closeJourney();nationalView();});
+  $("homeMap").addEventListener("click", () => {LineFocus.clear();if(state.playbackVisible)closeJourney();nationalView();});
   $("toggleJourney").addEventListener("click", () => setJourneyOpen(!journeyOpen()));
   $("closePlayback").addEventListener("click", closeJourney);
   $("playJourney").addEventListener("click", () => state.playbackTimer ? stopPlayback() : startPlayback());
@@ -1821,6 +1871,13 @@ function setupPanels() {
   $("shuffleDiscovery").onclick = $("discoverySearch").oninput = discoverPlaces;
   $("journeyForm").addEventListener("submit", saveJourney);
   $("importPassport").addEventListener("change", importPassportFile);
+  $("cardContourFile").addEventListener("change", importCardContours);
+  $("cardContextSettings").addEventListener("toggle",async event=>{
+    if(!event.currentTarget.open) return;
+    await CardMap.restore();
+    if(CardMap.hasContours && !$("cardContourStatus").dataset.feedback)
+      $("cardContourStatus").textContent="已载入本浏览器保存的陆界和省界。";
+  });
   $("exportPassport").addEventListener("click", exportPassportJSON);
   $("exportPassportCSV").addEventListener("click", exportPassportCSV);
   $("downloadPostcard").addEventListener("click", downloadPostcard);
@@ -1836,6 +1893,7 @@ function setupPanels() {
 }
 
 function setExperiencePage(page) {
+  $("cardContextSettings").hidden=page!=="passport" && page!=="postcard";
   document.querySelectorAll(".experience-tab").forEach(tab => tab.classList.toggle("selected", tab.dataset.experience === page));
   document.querySelectorAll(".experience-page").forEach(panel => { panel.hidden = panel.dataset.experiencePage !== page; });
   if (page === "passport") renderPassport();
@@ -1865,6 +1923,7 @@ function setBaseLayer(name) {
     if (layer !== selected && state.map.hasLayer(layer)) state.map.removeLayer(layer);
   }
   selected?.addTo(state.map);
+  updateBasemapCreditLine();
   updateBasemapAppearance();
   setRouteStatus();
   saveLayerPreferences();
@@ -2000,7 +2059,7 @@ async function loadData() {
   ]);
   state.corridor = corridors[0] || null;
   state.bundledJourneys = journeys;
-  state.metroRecords = metro.records || [];
+  state.metroRecords = (await MetroUpdates.restore(metro)).records;
   state.metroCities = metroIndex.cities || [];
   AtlasPrefs.indexRoutes();
   populateMetroCityPicker();
@@ -2122,7 +2181,11 @@ function renderPassport() {
         <button class="mini-button postcard-from-record" data-index="${index}">明信片</button>
         <button class="icon-button small remove-journey" data-index="${index}" title="移除记录" aria-label="移除旅程记录">×</button>
       </div>
+      <details class="passenger-map" data-index="${index}">
+        <summary>乘车区间图</summary><p class="panel-note" role="status"></p>
+      </details>
     </article>`).join("") || `<p class="panel-note">还没有旅程记录。</p>`;
+  $("passportList").querySelectorAll(".passenger-map").forEach(details=>details.addEventListener("toggle",()=>drawPassportSection(details)));
   $("passportList").querySelectorAll(".remove-journey").forEach(button => button.addEventListener("click", () => {
     state.journeys.splice(Number(button.dataset.index), 1);
     writeStored(STORAGE.passport, state.journeys);
@@ -2132,6 +2195,52 @@ function renderPassport() {
     const journey = state.journeys[Number(button.dataset.index)];
     fillPostcard(journey,journey.timetable);
   }));
+}
+
+async function importCardContours(event) {
+  const input=event.currentTarget, file=input.files[0];
+  if(!file) return;
+  const status=$("cardContourStatus");
+  input.disabled=true;
+  status.dataset.feedback="true";
+  status.textContent="正在校验轮廓文件…";
+  try {
+    const saved=await CardMap.install(file);
+    status.textContent=saved ? "已保存陆界和省界，离线也可使用。" : "本次已载入。浏览器未能保存文件，下次打开需重新选择。";
+    for(const details of $("passportList").querySelectorAll(".passenger-map")) {
+      details.querySelector("canvas")?.remove();
+      details.querySelector("small")?.remove();
+      if(details.open) void drawPassportSection(details);
+    }
+    if(!$("postcardPreview").closest("section").hidden) await refreshPostcard();
+  } catch(error) {
+    status.textContent=error.message;
+  } finally {
+    input.disabled=false;
+    input.value="";
+  }
+}
+
+function cardContextNote(hasGeography) {
+  if(CardMap.hasContours) return "";
+  return hasGeography ? " · 沿线城市及海岸" : " · 地理参照暂未载入";
+}
+async function drawPassportSection(details) {
+    if (!details.open || details.dataset.loading || details.querySelector("canvas")) return;
+    const journey=state.journeys[Number(details.dataset.index)],status=details.querySelector("p");
+    details.dataset.loading="true";status.textContent="正在读取乘车区间…";
+    try {
+      const [route,hasGeography]=await Promise.all([passengerSection(journey),CardMap.load().then(()=>true,()=>false)]);
+      if (!details.isConnected) return;
+      const canvas=document.createElement("canvas");canvas.width=1040;canvas.height=530;
+      canvas.setAttribute("role","img");canvas.setAttribute("aria-label",`${journey.from}至${journey.to}乘车区间图`);
+      const c=canvas.getContext("2d");c.scale(2,2);c.fillStyle="#e8eee9";c.fillRect(0,0,520,265);
+      CardMap.draw(c,route,[4,4,512,257],"#267c73","#e8eee9",3);
+      details.insertBefore(canvas,status);status.textContent=route.stops.map(s=>s.name).join(" → ")+cardContextNote(hasGeography);
+      const credit=document.createElement("small");credit.textContent=cardMapCredit();
+      details.append(credit);
+    } catch(error) {status.textContent=error.message;}
+    finally {delete details.dataset.loading;}
 }
 
 function journeyStatus(status) {
@@ -2205,6 +2314,28 @@ async function importPassportFile(event) {
 }
 
 let cardRequest=0, cardRoute=null, cardContext=null;
+async function passengerSection({train,date,from,to,timetable,departure}) {
+  if (!train || !date || !from || !to) throw Error("请补全车次、乘车日期和上下车站。");
+  const names=RailLibrary.trainNames(train.trim().toUpperCase()), candidates=[];
+  for (const route of state.routes) {
+    if (!route.geometryAvailable || !RailLibrary.trainNames(route.train).some(n=>names.includes(n))) continue;
+    if (timetable && (route.train!==timetable.train || route.serviceDate!==timetable.serviceDate ||
+      route.stops.length!==timetable.stops.length || !route.stops.every((s,i)=>
+        s.name===(timetable.stops[i].station??timetable.stops[i].name) &&
+        s.departure===(timetable.stops[i].departure??null) && s.arrival===(timetable.stops[i].arrival??null)))) continue;
+    route.stops.forEach((s,a)=>{
+      if (s.name!==from || StationCatalog.day(route.serviceDate,Math.floor(s.departure/1440))!==date ||
+          (departure && parseMinutes(departure)!==s.departure%1440)) return;
+      route.stops.forEach((stop,b)=>{
+        if (b>a && stop.name===to) candidates.push({...route,legs:route.legs.slice(a,b),stops:route.stops.slice(a,b+1)});
+      });
+    });
+  }
+  const route=candidates.length===1 ? candidates[0] : await RailPaths.find({train,date,from,to,boarding:true,
+    stops:timetable?.stops,routing:timetable?.routing,departure});
+  if (!route.geometryAvailable) throw Error(`缺少连续轨迹：${route.gaps.join("、")}`);
+  return route;
+}
 function fillPostcard(journey,timetable) {
   cardContext={timetable,departure:journey.departure,train:journey.train,from:journey.from,date:journey.date};
   for (const field of ["From","To","Train","Date"]) $("postcard"+field).value=journey[field.toLowerCase()]||"";
@@ -2219,25 +2350,13 @@ async function refreshPostcard() {
   if (!from || !to || !train || !date) { status.textContent="填写车次、乘车日期与上下车站。";return; }
   status.textContent="正在读取乘车区间…";
   try {
+    const geography=CardMap.load().then(()=>true,()=>false);
     const ctx=cardContext?.train===train && cardContext.date===date ? cardContext : null;
-    // A full geometry imported by the user must also be bound to its own origin date and clocks.
-    const candidates=state.routes.filter(r=>r.geometryAvailable && RailLibrary.trainNames(r.train).includes(train) ||
-      r.geometryAvailable && r.train===train).flatMap(r=>{
-        const pairs=[];
-        r.stops.forEach((s,a)=>{ if(s.name!==from || StationCatalog.day(r.serviceDate,Math.floor(s.departure/1440))!==date) return;
-          if(ctx?.departure && ctx.from===from && parseMinutes(ctx.departure)!==s.departure%1440) return;
-          r.stops.forEach((e,b)=>{ if(b>a && e.name===to) pairs.push({...r,legs:r.legs.slice(a,b),stops:r.stops.slice(a,b+1)}); });
-        });return pairs;
-      });
-    const route=candidates.length===1 && (!ctx?.timetable || candidates[0].train===ctx.timetable.train && candidates[0].serviceDate===ctx.timetable.serviceDate &&
-      state.routes.find(r=>r.id===candidates[0].id)?.stops.every((s,i)=>s.name===(ctx.timetable.stops[i]?.station??ctx.timetable.stops[i]?.name) &&
-        s.departure===(ctx.timetable.stops[i]?.departure??null) && s.arrival===(ctx.timetable.stops[i]?.arrival??null))) ? candidates[0] :
-      await RailPaths.find({train,date,from,to,boarding:true,stops:ctx?.timetable?.stops,routing:ctx?.timetable?.routing,
-        departure:ctx?.from===from ? ctx.departure : null});
+    const route=await passengerSection({train,date,from,to,timetable:ctx?.timetable,departure:ctx?.from===from ? ctx.departure : null});
+    const hasGeography=await geography;
     if(serial!==cardRequest) return;
-    if(!route.geometryAvailable) throw Error(`缺少连续轨迹：${route.gaps.join("、")}`);
     cardRoute=route; $("downloadPostcard").disabled=false;
-    status.textContent=`${from} → ${to} · ${route.stops.length} 站 · ${route.source?.title || "随包轨迹"}`;
+    status.textContent=`${from} → ${to} · ${route.stops.length} 站 · ${route.source?.title || "随包轨迹"}${cardContextNote(hasGeography)}`;
   } catch(error) { if(serial===cardRequest) status.textContent=error.message; }
   if(serial===cardRequest) drawPostcard();
 }
@@ -2247,8 +2366,8 @@ function drawPostcard() {
   if (!canvas) return;
   const context = canvas.getContext("2d");
   if (!context) return;
-  const width = canvas.width;
-  const height = canvas.height;
+  const width = 640, height = 360;
+  context.setTransform(canvas.width/width,0,0,canvas.height/height,0,0);
   const style = $("postcardStyle").value;
   const palettes = {
     red: { paper: "#f5d5cc", ink: "#372727", accent: "#a6313c" },
@@ -2260,6 +2379,22 @@ function drawPostcard() {
   };
   const palette = palettes[style] || palettes.red;
   if (["paper","magnetic","voucher"].includes(style)) {drawTicketFace(context,style,palette,cardRoute);return;}
+  if (["map","night","ink"].includes(style)) {
+    const c=context;
+    c.save();c.fillStyle=palette.paper;c.fillRect(0,0,width,height);
+    c.fillStyle=palette.ink;c.font='600 24px "Songti SC",serif';
+    c.fillText(`${$("postcardFrom").value || "出发站"} → ${$("postcardTo").value || "到达站"}`,25,37,width-169);
+    c.textAlign="right";c.font="600 17px monospace";c.fillText($("postcardTrain").value,width-25,35,110);c.textAlign="left";
+    c.strokeStyle=palette.accent+"66";c.lineWidth=.75;c.strokeRect(22,51,width-44,height-115);
+    if(cardRoute) CardMap.draw(c,cardRoute,[23,52,width-46,height-117],palette.accent,palette.paper,3);
+    else {c.font="14px sans-serif";c.fillText("乘车区间待匹配",36,height/2);}
+    c.fillStyle=palette.ink;c.font='16px "Songti SC",serif';c.fillText($("postcardCaption").value,25,height-36,width-145);
+    c.font="12px monospace";c.textAlign="right";c.fillText($("postcardDate").value,width-25,height-36);
+    c.font="10px sans-serif";c.textAlign="left";
+    c.fillText(CardMap.hasContours?"乘车 ━　国界 ━·━　省界 ···":"乘车 ━",25,height-12);
+    c.textAlign="right";c.fillText(cardMapCredit(),width-25,height-12,width-218);
+    c.restore();return;
+  }
   context.lineWidth=1;
   context.fillStyle = palette.paper;
   context.fillRect(0, 0, width, height);
@@ -2293,7 +2428,7 @@ function drawPostcard() {
   context.font = "20px Menlo, monospace";
   context.fillText($("postcardTrain").value || "车次", 36, 174);
   if (cardRoute) {
-    drawCardTrack(context,cardRoute,[48,196,width-96,100],palette.accent,5);
+    CardMap.draw(context,cardRoute,[36,193,width-72,105],palette.accent,palette.paper,3);
   } else {
     context.font="15px sans-serif"; context.fillText("乘车区间待匹配",36,245);
   }
@@ -2304,8 +2439,11 @@ function drawPostcard() {
   context.font = "13px sans-serif";
   context.textAlign = "right";
   context.fillText(`${$("postcardDate").value || ""} · 纪念设计`, width - 36, height - 42);
-  if (cardRoute) {context.font="10px sans-serif";context.fillText("Jeremy Gao · China Railway GTFS / © OpenStreetMap contributors",width-24,height-16);}
+  if (cardRoute) {context.font="10px sans-serif";context.fillText(cardMapCredit(),width-24,height-16,width-48);}
   context.textAlign = "left";
+}
+function cardMapCredit() {
+  return `${CardMap.hasContours?"天地图 / 干旱区生态与资源科学数据中心 · ":""}Natural Earth · Jeremy Gao / © OpenStreetMap contributors`;
 }
 
 function downloadPostcard() {
@@ -2426,12 +2564,38 @@ function closeTopMapPanel() {
   if(journeyOpen()){closeJourney();return true;}
   if(document.querySelector(".workspace-open")){setWorkspaceOpen(false);return true;}return false;
 }
+let startupCredit=true;
+function updateBasemapCreditLine() {
+  const source=AtlasPrefs.value.mode==="online" ? $("baseLayer").value : "";
+  const providers={
+    hybrid:["© CARTO","https://carto.com/attribution/"],
+    "openfreemap-vector":["© OpenMapTiles","https://openmaptiles.org/"],
+    railway:["OpenRailwayMap","https://www.openrailwaymap.org/"]
+  };
+  const partner=providers[source], link=$("basemapPartnerCredit"), line=$("basemapCreditLine");
+  link.hidden=!partner;
+  $("railStyleCredit").hidden=source!=="railway";
+  if (partner) [link.textContent,link.href]=partner;
+  const hidden=!startupCredit && source!=="osm" && !partner;
+  if (hidden!==line.hidden) {
+    line.hidden=hidden;
+    requestAnimationFrame(()=>state.map.invalidateSize({pan:false}));
+  }
+}
+
 function initializeMap() {
-  state.map = L.map("map", { zoomControl: true, preferCanvas: true,minZoom:2,maxZoom:19 });
+  state.map = L.map("map", { zoomControl:true, attributionControl:false, preferCanvas:true,minZoom:2,maxZoom:19 });
   // Several active layers credit the same providers. Let Leaflet reference-count
   // each credit independently, including when the last layer is switched off.
-  const credits=state.map.attributionControl;
-  credits.setPrefix(false);
+  const credits=L.control.attribution({prefix:false}).addTo(state.map);
+  const activeCredits=credits.getContainer();
+  activeCredits.className="active-sources";
+  $("activeMapCredits").replaceChildren(activeCredits);
+  updateBasemapCreditLine();
+  const collapseCredit=()=>{if(startupCredit){startupCredit=false;updateBasemapCreditLine();}};
+  state.map.getContainer().addEventListener("pointerdown",collapseCredit,{once:true});
+  state.map.getContainer().addEventListener("wheel",collapseCredit,{once:true,passive:true});
+  setTimeout(collapseCredit,5000);
   for (const method of ["addAttribution","removeAttribution"]) {
     const update=credits[method].bind(credits);
     credits[method]=text=>{
@@ -2470,6 +2634,7 @@ function initializeMap() {
   RailMapLayers.setup(state.map);
   StationMapBoard.setup(state.map);
   StationLayoutLayer.setup(state.map);
+  LineFocus.setup(state.map);
 }
 
 function setupPassportDefaults() {

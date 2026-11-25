@@ -25,15 +25,19 @@ extension RailwayMapStore {
     }
 
     func refreshNationalMetroOverview() {
-        guard showsNationalMetroOverview, mapMode == .apple, nationalMetroWork == nil else { return }
+        guard nationalMetroWork == nil else { return }
         nationalMetroLoading = true
         nationalMetroStatus = "正在更新全国地铁概览 · 继续显示已有线路"
         let repository = nationalMetroRepository
         nationalMetroWork = Task { [weak self] in
             do {
-                let snapshot = try await repository.refresh()
+                let update = try await repository.refreshIncrementally()
                 guard !Task.isCancelled, let self else { return }
-                self.acceptNationalMetro(snapshot)
+                if update.changed != 0 || self.nationalMetroSnapshot?.sourceDate != update.snapshot.sourceDate {
+                    self.acceptNationalMetro(update.snapshot)
+                }
+                self.nationalMetroStatus = (update.changed == 0 ? "已是发布版本，下载 0 个分块" :
+                    "已更新 \(update.changed) 个城市或网络") + " · " + (update.snapshot.sourceDate ?? "")
             } catch {
                 guard !Task.isCancelled, let self else { return }
                 self.nationalMetroStatus = "全国地铁更新暂不可用 · 保留已有概览"

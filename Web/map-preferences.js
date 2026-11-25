@@ -16,7 +16,7 @@ const AtlasPrefs = (() => {
     metroWidthScale:1,railwayWidthScale:1,stationRadiusMultiplier:1.25,depotBrightness:.5,railwayPattern:true,viewportBuffer:.2,
     basemapDarkness:0,mapAppearance:"system",mode:"online",uiScale:1,panelWidth:320,inspectorWidth:380,panelSize:"medium",panelLayout:"floating",
     inspectorLayout:"docked",panelVisible:false,panelBackgroundOpacity:1,inspectorBackgroundOpacity:1,statusVisible:true,
-    assistantPresentation:"sidebar",statusX:0,statusY:0
+    assistantPresentation:"sidebar",statusX:0,statusY:0,focusColor:"#D45212"
   };
   const ranges = {metroWidthScale:[.5,2],railwayWidthScale:[.5,2],stationRadiusMultiplier:[.5,3],depotBrightness:[.1,1],
     viewportBuffer:[0,.5],basemapDarkness:[0,1],uiScale:[.75,1.6],panelWidth:[250,560],inspectorWidth:[200,560],
@@ -37,6 +37,7 @@ const AtlasPrefs = (() => {
         ok = Array.isArray(val) && val.length <= 10000 && val.every(v => typeof v === "string" && v.length <= 500 && (!allowed || Object.hasOwn(allowed,v)));
       } else if (ranges[k]) ok = Number.isFinite(val) && val >= ranges[k][0] && val <= ranges[k][1];
       else if (enums[k]) ok = enums[k].includes(val);
+      else if (k==="focusColor") ok=typeof val==="string" && /^#[0-9a-f]{6}$/i.test(val);
       else ok = typeof val === "boolean";
       if (!ok) throw Error(`地图设置字段无效：${k}`);
       result[k] = Array.isArray(val) ? [...new Set(val)] : val;
@@ -111,10 +112,17 @@ const AtlasPrefs = (() => {
     updateBasemapAppearance();
     StationLabels.schedule();
     $("assistantPanel").classList.toggle("floating",p.assistantPresentation==="floating");
-    if (redraw) {setBaseLayer($("baseLayer").value); drawMetro(); RailMapLayers.toggle(true);}
+    if (redraw) {setBaseLayer($("baseLayer").value); drawMetro(); RailMapLayers.toggle(true);LineFocus.refresh();recolorJourney();}
     requestAnimationFrame(()=>state.map.invalidateSize({pan:false}));
   }
-  function change(k,v,redraw=true) {p[k]=v;persist();apply(redraw);}
+  function change(k,v,redraw=true) {
+    p[k]=v;persist();
+    if (k==="focusColor") {
+      recolorJourney();LineFocus.refresh();
+      for (const b of document.querySelectorAll("[data-focus-ink]")) b.setAttribute("aria-pressed",b.dataset.focusInk===v.toUpperCase());
+      const picker=$("pref-focusColor");if(picker)picker.value=v;
+    } else apply(redraw);
+  }
   function section(parent,id,title,open=true) {
     const d=make("details");d.append(make("summary",title)); const old=readStored("railway-atlas-layer-folds",{});
     d.open=old[id] ?? open; d.ontoggle=()=>writeStored("railway-atlas-layer-folds",{...readStored("railway-atlas-layer-folds",{}),[id]:d.open});
@@ -155,6 +163,9 @@ const AtlasPrefs = (() => {
     range(basemap,"basemapDarkness","底图暗化",.05,false);
     const vis=section(l,"visibility","线路显示");
     toggle(vis,"automaticDetail","随缩放调整图层");toggle(vis,"showsNationalMetroOverview","全国城市轨道概览");
+    const updater=make("button","检查城轨增量更新");updater.id="updateNationalMetro";updater.className="text-button";updater.type="button";
+    updater.onclick=()=>MetroUpdates.sync();vis.append(updater);
+    const edition=make("p");edition.id="metroUpdateStatus";edition.className="panel-note";edition.setAttribute("role","status");vis.append(edition);MetroUpdates.status();
     toggle(vis,"prioritizesUrbanTransit","优先显示都市轨道");toggle(station,"showsStations","车站位置");toggle(station,"showsLabels","放大后显示站名");
     toggle(station,"showsStationLayouts","站区细节",false);
     const detailControls=make("div");detailControls.id="stationDetailOptions";station.append(detailControls);
@@ -183,6 +194,14 @@ const AtlasPrefs = (() => {
     const source=section(s,"source","地图模式");select(source,"mode","数据来源",{online:"在线与本机缓存",cached:"仅随包与本机缓存",offline:"仅区域地图"});
     const render=section(s,"render","地图绘制");
     button(render,"调整底图与站点",openBasemap);
+    const palette=make("fieldset");palette.className="focus-palette";palette.append(make("legend","旅行与无配色要素的高亮色"));
+    for (const [name,hex] of [["朱橙","#D45212"],["湖蓝","#237BB5"],["青碧","#008778"],["鸢紫","#8057AB"],["玫红","#BE4771"],["琥珀","#B98213"]]) {
+      const b=make("button");b.type="button";b.title=name;b.setAttribute("aria-label",name);b.dataset.focusInk=hex;
+      b.setAttribute("aria-pressed",p.focusColor.toUpperCase()===hex);b.style.backgroundColor=hex;
+      b.onclick=()=>change("focusColor",hex,false);palette.append(b);
+    }
+    const label=make("label","自定义 "),picker=make("input");picker.type="color";picker.id="pref-focusColor";picker.value=p.focusColor;
+    picker.oninput=()=>change("focusColor",picker.value.toUpperCase(),false);label.append(picker);palette.append(label);render.append(palette);
     range(render,"railwayWidthScale","铁路线宽",.05);range(render,"metroWidthScale","地铁线宽",.05);range(render,"stationRadiusMultiplier","站点半径",.05);
     toggle(render,"railwayPattern","铁路轨枕纹理");range(render,"depotBrightness","站场轨道亮度",.05);range(render,"viewportBuffer","视野边缘预绘制比例",.05);
     const ui=section(s,"ui","界面与面板",false);range(ui,"uiScale","界面缩放",.05,false);
@@ -229,5 +248,5 @@ const AtlasPrefs = (() => {
       }catch(error){showToast(error.message);}
     };
   }
-  return {get value(){return p;},categories,visible,classify,restore,setup,routeList,visibleRoute,indexRoutes,change,apply};
+  return {get value(){return p;},categories,visible,classify,restore,setup,routeList,visibleRoute,routeKey,indexRoutes,change,apply};
 })();

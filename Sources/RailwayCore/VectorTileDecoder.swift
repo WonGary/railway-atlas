@@ -214,7 +214,7 @@ public enum VectorTileDecoder {
         return result
     }
 
-    private static func value(_ data: Data) throws -> String {
+    static func value(_ data: Data) throws -> String {
         var reader = ProtoReader(data)
         var result = ""
         while let field = try reader.field() {
@@ -235,7 +235,7 @@ public enum VectorTileDecoder {
     private static func invalid() -> DataError { .invalid("铁路矢量瓦片无效或超出大小限制") }
 }
 
-private struct ProtoReader {
+struct ProtoReader {
     let data: Data
     var offset = 0
     init(_ data: Data) { self.data = Data(data) }

@@ -98,6 +98,33 @@ struct LayerControlsContent: View {
             // appearance change. Refresh only this control, never the map.
             .id(colorScheme)
             .disabled(store.mapMode != .apple)
+            Picker("标准地图来源", selection: $store.standardBasemapSource) {
+                ForEach(BasemapSource.standardChoices) { source in
+                    Text(source.title).tag(source)
+                }
+            }
+            .foregroundStyle(.primary)
+            .id(colorScheme)
+            .disabled(store.mapMode != .apple)
+            if store.standardBasemapSource == .custom {
+                BasemapTemplateEditor(title: "标准地图瓦片地址", value: $store.customStandardTileTemplate)
+                    .disabled(store.mapMode != .apple)
+            }
+            Picker("卫星地图来源", selection: $store.satelliteBasemapSource) {
+                ForEach(BasemapSource.satelliteChoices) { source in
+                    Text(source.title).tag(source)
+                }
+            }
+            .foregroundStyle(.primary)
+            .id(colorScheme)
+            .disabled(store.mapMode != .apple)
+            if store.satelliteBasemapSource == .custom {
+                BasemapTemplateEditor(title: "卫星地图瓦片地址", value: $store.customSatelliteTileTemplate)
+                    .disabled(store.mapMode != .apple)
+            }
+            Text(store.activeBasemapStatus)
+                .atlasFont(.caption2)
+                .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4 * uiScale) {
                 HStack {
                     Text("底图暗化").atlasFont(.caption)
@@ -128,8 +155,14 @@ struct LayerControlsContent: View {
                 }
             }
             settingToggle("放大后显示站名", isOn: $store.showsLabels)
-            Picker("坐标对齐", selection: $store.alignment) {
-                ForEach(MapAlignment.allCases) { Text($0.title).tag($0) }
+            Picker("坐标对齐", selection: Binding<String>(get: {
+                store.automaticAlignment ? "auto" : store.alignment.rawValue
+            }, set: { choice in
+                store.automaticAlignment = choice == "auto"
+                store.alignment = MapAlignment(rawValue: choice) ?? store.activeBasemapSource.defaultAlignment
+            })) {
+                Text("随底图来源").tag("auto")
+                ForEach(MapAlignment.allCases) { Text($0.title).tag($0.rawValue) }
             }
             .foregroundStyle(.primary)
             .id(colorScheme)
@@ -338,6 +371,30 @@ struct LayerControlsContent: View {
     private func note(_ value: String) -> some View {
         LayerControlsText(value: value, font: .caption2)
             .foregroundStyle(.secondary)
+    }
+}
+
+private struct BasemapTemplateEditor: View {
+    let title: String
+    @Binding var value: String
+    @State private var draft = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField(title, text: $draft, prompt: Text("https://example.com/{z}/{x}/{y}.png"))
+                .textFieldStyle(.roundedBorder).onSubmit { apply() }
+            if draft != value {
+                if BasemapSource.validatedTemplate(draft) != nil {
+                    Button("使用这个地址") { apply() }
+                } else {
+                    Text("使用含 {z}、{x}、{y} 的 HTTPS 地址，请移除账号和密钥。").foregroundStyle(.secondary)
+                }
+            }
+        }.atlasFont(.caption)
+            .onAppear { draft = value }
+            .onChange(of: value) { _, newValue in draft = newValue }
+    }
+    private func apply() {
+        if let valid = BasemapSource.validatedTemplate(draft) { value = valid }
     }
 }
 

@@ -122,7 +122,7 @@ public actor NationalJourneyPaths {
         try result.validate(for:table)
         return result
     }
-    private static func decode(_ text: String) throws -> [Coordinate] {
+    public static func decode(_ text: String, densify: Bool = true) throws -> [Coordinate] {
         let bytes = Array(text.utf8)
         var at = 0, lon = 0, lat = 0, points: [Coordinate] = []
         func delta() throws -> Int {
@@ -145,7 +145,7 @@ public actor NationalJourneyPaths {
                 guard distance<33_000 else { throw DataError.invalid("原始轨迹有缺口") }
                 // Preserve the published shape, interpolating along its own straight
                 // segments for the existing kilometre-scale playback validator.
-                let count=max(1,Int(ceil(distance/1800)))
+                let count=densify ? max(1,Int(ceil(distance/1800))) : 1
                 for j in 1..<count {
                     let f=Double(j)/Double(count)
                     points.append(.init(prev.latitude+(p.latitude-prev.latitude)*f,prev.longitude+(p.longitude-prev.longitude)*f))

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// A simplified projection of source relations, not complete infrastructure or
 /// station coverage. Source city labels are retained verbatim, including labels
@@ -12,13 +13,13 @@ public struct NationalMetroSnapshot: Sendable {
     public let colouredRouteCount: Int
     public var vertexCount: Int { lines.reduce(0) { $0 + $1.coordinates.count } }
 
-    private let records: [Record]
+    fileprivate let records: [Record]
     private let index: RailSpatialIndex
     public static let maximumBytes = 32 * 1024 * 1024
     private static let maximumVertices = 1_500_000
     private static let maximumParts = 100_000
 
-    private init(records input: [Record], fetchedAt: Date, sourceDate: String?) {
+    fileprivate init(records input: [Record], fetchedAt: Date, sourceDate: String?) {
         // One representative per source relation is enough for the existing
         // global colour policy. Preserve each relation's original colour,
         // including an explicitly empty value, before propagating a sibling's.
@@ -143,11 +144,14 @@ public struct NationalMetroSnapshot: Sendable {
     /// Compact, versioned JSON: route metadata occurs once per relation/city,
     /// coordinates are [longitude, latitude] pairs, and gaps remain separate.
     public func encode() throws -> Data {
+        try archive(manifest: nil)
+    }
+    fileprivate func archive(manifest: MetroFeedManifest?) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(Archive(version: 1, fetchedAt: fetchedAt,
-                                              sourceDate: sourceDate, records: records))
+                                              sourceDate: sourceDate, records: records, metroFeed: manifest))
         guard data.count <= Self.maximumBytes else { throw Self.invalid("快照超过 32 MB") }
         return data
     }
@@ -179,7 +183,7 @@ public struct NationalMetroSnapshot: Sendable {
              sourceDate: sourceDate == other.sourceDate ? sourceDate : nil)
     }
 
-    fileprivate func validateReplacement(of previous: Self) throws {
+    public func validateReplacement(of previous: Self) throws {
         guard Set(previous.cityNames).isSubset(of: Set(cityNames)) else {
             throw Self.invalid("更新缺少已有城市，保留原概览")
         }
@@ -197,13 +201,14 @@ public struct NationalMetroSnapshot: Sendable {
         }
     }
 
-    private struct Archive: Codable {
+    fileprivate struct Archive: Codable {
         let version: Int
         let fetchedAt: Date
         let sourceDate: String?
         let records: [Record]
+        let metroFeed: MetroFeedManifest?
     }
-    private struct Record: Codable, Sendable {
+    fileprivate struct Record: Codable, Sendable, Equatable {
         var route: RailRoute
         let city: String
         var parts: [[Coordinate]]
@@ -344,6 +349,7 @@ public actor NationalMetroRepository {
     public let cacheURL: URL
     private let session: URLSession
     private var current: NationalMetroSnapshot?
+    private var updating = false
 
     public init(directory: URL, session: URLSession? = nil) {
         cacheURL = directory.appendingPathComponent(Self.cacheFilename)
@@ -424,6 +430,88 @@ public actor NationalMetroRepository {
         throw lastError
     }
 
+    /// The snapshot and its city fingerprints share a single atomic cache write.
+    public func refreshIncrementally(from feed: URL = URL(string: "https://wongary.github.io/railway-atlas/data/metro-updates/")!)
+        async throws -> (snapshot: NationalMetroSnapshot, changed: Int) {
+        guard !updating else { throw DataError.invalid("全国城轨正在更新") }
+        updating = true
+        defer { updating = false }
+        let old = try load()
+        let manifestBytes = try await download(feed.appendingPathComponent("manifest.json"), limit: 128 * 1024)
+        let manifest = try JSONDecoder().decode(MetroFeedManifest.self, from: manifestBytes)
+        let date = try manifest.validate()
+        guard (old.sourceDate ?? "") <= manifest.sourceDate else { throw DataError.invalid("本机资料日期较新") }
+        var byCity = Dictionary(grouping: old.records, by: \.city)
+        let next = Dictionary(uniqueKeysWithValues: manifest.chunks.map { ($0.city, $0) })
+        for (city, rows) in byCity {
+            guard let chunk = next[city], chunk.count * 5 >= rows.count * 4 else {
+                throw DataError.invalid("\(city)的更新记录不完整")
+            }
+        }
+        let receipt = (try? Self.read(cacheURL)).flatMap { try? JSONDecoder().decode(MetroFeedReceipt.self, from: $0).metroFeed }
+        var known = [String: String]()
+        if let receipt, (try? receipt.validate()) != nil {
+            known = Dictionary(uniqueKeysWithValues: receipt.chunks.map { ($0.city, $0.hash) })
+        } else if let bytes = try? Self.bundled("national-metro-baseline"),
+                  let base = try? JSONDecoder().decode(MetroFeedManifest.self, from: bytes),
+                  (try? base.validate()) != nil, let packaged = try? Self.bundled("china-metro-overview"),
+                  Self.digest(packaged) == base.snapshotHash {
+            // Older caches have no fingerprints. Reuse cities identical to the shipped edition.
+            let cached = try? Self.read(cacheURL)
+            if cached == nil || cached == packaged {
+                known = Dictionary(uniqueKeysWithValues: base.chunks.map { ($0.city, $0.hash) })
+            } else {
+                let baseline = Dictionary(grouping: try NationalMetroSnapshot.decode(packaged).records, by: \.city)
+                for chunk in base.chunks where baseline[chunk.city] == byCity[chunk.city] { known[chunk.city] = chunk.hash }
+            }
+        }
+        let changes = manifest.chunks.filter { known[$0.city] != $0.hash || byCity[$0.city] == nil }
+        if changes.isEmpty, old.sourceDate == manifest.sourceDate { return (old, 0) }
+        for chunk in changes {
+            let bytes = try await download(feed.appendingPathComponent(chunk.hash + ".json"), limit: chunk.bytes)
+            guard bytes.count == chunk.bytes, Self.digest(bytes) == chunk.hash else {
+                throw DataError.invalid("\(chunk.city)的文件校验失败")
+            }
+            let rows = try JSONDecoder().decode([NationalMetroSnapshot.Record].self, from: bytes)
+            guard rows.count == chunk.count, rows.allSatisfy({ $0.city == chunk.city && !$0.parts.isEmpty }) else {
+                throw DataError.invalid("\(chunk.city)的线路记录无效")
+            }
+            byCity[chunk.city] = rows
+        }
+        let records = manifest.chunks.flatMap { byCity[$0.city] ?? [] }
+        // Decode through the ordinary archive validator before constructing spatial indexes.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let archive = NationalMetroSnapshot.Archive(version: 1, fetchedAt: date, sourceDate: manifest.sourceDate,
+                                                    records: records, metroFeed: manifest)
+        let encoded = try encoder.encode(archive)
+        let snapshot = try NationalMetroSnapshot.decode(encoded)
+        try snapshot.validateReplacement(of: old)
+        try Task.checkCancellation()
+        try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoded.write(to: cacheURL, options: .atomic)
+        current = snapshot
+        return (snapshot, changes.count)
+    }
+
+    private static func bundled(_ name: String) throws -> Data {
+        let url = Bundle.main.url(forResource: name, withExtension: "json", subdirectory: "Resources")
+            ?? Bundle.module.url(forResource: name, withExtension: "json")
+        guard let url else { throw DataError.invalid("未找到随包城轨数据") }
+        return try read(url)
+    }
+
+    private func download(_ url: URL, limit: Int) async throws -> Data {
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        let (bytes, response) = try await session.bytes(for: request)
+        defer { bytes.task.cancel() }
+        guard (response as? HTTPURLResponse)?.statusCode == 200, response.expectedContentLength <= limit else {
+            throw DataError.invalid("全国城轨更新文件下载失败")
+        }
+        return try await Self.readBytes(bytes, limit: limit)
+    }
+    private static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+
     private static func read(_ url: URL) throws -> Data {
         guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size <= NationalMetroSnapshot.maximumBytes else { throw DataError.invalid("概览文件超过 32 MB") }
@@ -432,13 +520,35 @@ public actor NationalMetroRepository {
 
     // AsyncBytes.next is nonisolated; avoid a hop to the repository actor for
     // every byte of a national response.
-    private nonisolated static func readBytes(_ bytes: URLSession.AsyncBytes) async throws -> Data {
+    private nonisolated static func readBytes(_ bytes: URLSession.AsyncBytes, limit: Int = NationalMetroSnapshot.maximumBytes) async throws -> Data {
         var data = Data()
         data.reserveCapacity(1024 * 1024)
         for try await byte in bytes {
             data.append(byte)
-            guard data.count <= NationalMetroSnapshot.maximumBytes else { throw DataError.invalid("概览响应超过 32 MB") }
+            guard data.count <= limit else { throw DataError.invalid("概览更新超过大小限制") }
         }
         return data
+    }
+}
+
+private struct MetroFeedReceipt: Decodable { let metroFeed: MetroFeedManifest? }
+fileprivate struct MetroFeedManifest: Codable {
+    struct Chunk: Codable { let city, hash: String; let count, bytes: Int }
+    let version: Int
+    let sourceDate, fetchedAt, snapshotHash: String
+    let chunks: [Chunk]
+    func validate() throws -> Date {
+        let invalid = DataError.invalid("全国城轨更新清单无效")
+        guard version == 1, sourceDate.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil,
+              let date = ISO8601DateFormatter().date(from: fetchedAt), (1...512).contains(chunks.count),
+              Set(chunks.map(\.city)).count == chunks.count else { throw invalid }
+        var bytes = 0, count = 0
+        for chunk in chunks {
+            guard !chunk.city.isEmpty, chunk.hash.utf8.count == 64, chunk.hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+                  (2...NationalMetroSnapshot.maximumBytes).contains(chunk.bytes), (1...20_000).contains(chunk.count) else { throw invalid }
+            bytes += chunk.bytes; count += chunk.count
+        }
+        guard bytes <= NationalMetroSnapshot.maximumBytes, count <= 20_000 else { throw invalid }
+        return date
     }
 }

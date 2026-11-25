@@ -40,13 +40,15 @@ struct StationInspectorBoard: View {
     }
     private func handle(_ event: StationBoardAction) {
         if event.mode == "line" {
-            let wanted = Set((event.names ?? []).prefix(1000))
-            let pins = NationalDirectoryPins.all.filter { wanted.contains($0.name) }
-            guard pins.count > 1 else { return }
-            map.stationBoardPins = pins
-            let bounds=MapBounds(points:pins.map(\.coordinate))
-            map.region=bounds.region
-            map.cameraRevision += 1; map.rebuildVisible()
+            if let title = event.line, let names = event.names {
+                map.focusDirectoryLine(title, names: Array(names.prefix(1000)), fit: event.fit == true)
+            }
+            return
+        }
+        if event.mode == "endLine" {
+            if map.lineFocus?.directory == true && (event.line == nil || map.lineFocus?.title == event.line) {
+                map.clearLineFocus()
+            }
             return
         }
         guard let number=event.train, let date=event.date, let stops=event.stops, stops.count>=2 else { return }
@@ -76,6 +78,7 @@ struct StationInspectorBoard: View {
 
 struct StationBoardAction: Decodable {
     var mode: String
+    var line: String?, fit: Bool?
     var train: String?, date: String?, station: String?, names: [String]?, stops: [RailTimetable.Stop]?
 }
 

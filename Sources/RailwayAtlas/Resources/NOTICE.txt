@@ -6,6 +6,12 @@ Rail geometry and station tags are community-contributed OpenStreetMap data.
 They may be incomplete or out of date. A missing attribute means unknown.
 Apple basemap tiles are not bundled or exported.
 
+新加坡地铁出口另用新加坡陆路交通管理局的 LTA MRT Station Exit（GEOJSON）。
+本版于 2026-11-23 从 data.gov.sg 取得。原始数据和 Singapore Open Data Licence 1.0 见
+https://data.gov.sg/datasets/d_b39d3a0871985372d7e1637193335da5/view
+https://data.gov.sg/open-data-licence
+world-stations/index.json 单列这份资料的文件、来源和校验值。
+
 mainland-osm-mask.json: WGS84 display-coordinate mask derived from OpenStreetMap
 relations 270056 (China), 913110 (Hong Kong), and 1867188 (Macao), downloaded
 2026-11-04 from https://polygons.openstreetmap.fr/ (params=0, full precision).

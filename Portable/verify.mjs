@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import fs from "node:fs";
 import vm from "node:vm";
 import {fileURLToPath} from "node:url";
@@ -8,11 +9,25 @@ import "./check-station-layouts.mjs";
 const root = fileURLToPath(new URL("../Web/",import.meta.url));
 const text = file=>fs.readFileSync(join(root,file),"utf8");
 const json = file=>JSON.parse(text(file));
+const metroFeed=json("data/metro-updates/manifest.json");
+assert.equal(metroFeed.version,1);
+assert.equal(new Set(metroFeed.chunks.map(c=>c.city)).size,metroFeed.chunks.length);
+for(const chunk of metroFeed.chunks) {
+  const bytes=fs.readFileSync(join(root,"data/metro-updates",chunk.hash+".json"));
+  assert.equal(bytes.length,chunk.bytes);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"),chunk.hash);
+  const rows=JSON.parse(bytes);
+  assert.ok(rows.length===chunk.count && rows.every(row=>row.city===chunk.city));
+}
 for (const file of fs.readdirSync(root).filter(file=>file.endsWith(".js"))) new vm.Script(text(file),{filename:file});
 const sw = {self:{registration:{scope:"https://example.test/railway-atlas/"},addEventListener(){}},URL};
 vm.createContext(sw);vm.runInContext(text("sw.js"),sw);
 const files = vm.runInContext("[...files]",sw);
 for (const file of files) assert.ok(fs.existsSync(join(root,file)),file);
+assert.ok(!files.includes("station-directory/card-contours.json"),"Local boundary data must be optional offline");
+const contextMap=json("station-directory/card-geography.json");
+assert.deepEqual(Object.keys(contextMap).sort(),["cities","coastLines","hainan","source"]);
+assert.ok(contextMap.cities.length && contextMap.coastLines.length && contextMap.hainan.length);
 assert.ok(text("index.html").includes(`id="versionBadge">${vm.runInContext("VERSION",sw)}<`));
 const ids = [...text("index.html").matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
 assert.equal(new Set(ids).size, ids.length);

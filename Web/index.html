@@ -15,7 +15,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.9</span></div>
+    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.12</span></div>
     <div class="top-actions">
       <button id="toggleWorkspace" class="text-button" aria-controls="workspacePanel" title="打开图层与工作区">图层</button>
       <button id="homeMap" class="text-button" title="返回全国视野">全国</button>
@@ -104,6 +104,12 @@
             <button class="experience-tab" data-experience="history">时光机</button>
             <button class="experience-tab" data-experience="quiz">猜城市</button>
           </div>
+          <details id="cardContextSettings">
+            <summary>区间图地理轮廓</summary>
+            <p class="panel-note">海岸线、沿线城市随网页提供。选择本机的 card-contours.json，可在护照和明信片上叠加陆地国界与省界。</p>
+            <label class="file-button">导入陆界和省界<input id="cardContourFile" type="file" accept=".json,application/json"></label>
+            <p id="cardContourStatus" class="panel-note" role="status">文件只保存在当前浏览器。</p>
+          </details>
           <section class="experience-page" data-experience-page="passport">
             <form id="journeyForm" class="local-form">
               <h3>记录旅程</h3>
@@ -145,7 +151,7 @@
                 <option value="night">夜行线路卡</option><option value="ink">黑白线路卡</option>
               </select>
             </label>
-            <canvas id="postcardPreview" class="postcard-preview" width="640" height="360"></canvas>
+            <canvas id="postcardPreview" class="postcard-preview" width="1280" height="720"></canvas>
             <p id="postcardStatus" role="status" class="panel-note"></p>
             <button id="downloadPostcard" class="primary-button wide-button">导出 PNG 明信片</button>
           </section>
@@ -207,6 +213,16 @@
           <div id="mapSettings"></div>
           <button class="text-button" id="exportMapSettings">导出地图设置</button>
           <label class="file-button">导入地图设置 JSON<input type="file" id="importMapSettings" accept=".json,application/json"></label>
+          <footer id="mapCredits" aria-labelledby="creditsHeading">
+            <h3 id="creditsHeading">地图来源与版权</h3>
+            <div>当前图层 <div id="activeMapCredits"></div></div>
+            <p>铁路、城市轨道和站区数据 © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>，采用 <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL 1.0</a>。</p>
+            <p>底图与瓦片 · <a href="https://openrailwaymap.app/">OpenRailwayMap</a>、<a href="https://versatiles.org/">VersaTiles</a>、<a href="https://openfreemap.org/">OpenFreeMap</a>、<a href="https://openmaptiles.org/">© OpenMapTiles</a>、<a href="https://www.earthdata.nasa.gov/data/tools/gibs">NASA GIBS / Blue Marble</a>、<a href="https://carto.com/attribution/">© CARTO</a></p>
+            <p>车次与径路 · <a href="https://cnrail.geogv.com/">中国铁路地图</a>、<a href="https://github.com/wensimehrp/chinese-railway-gtfs">Jeremy Gao</a>（<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>）。本机时刻库 · <a href="http://www.lltskb.com/">路路通</a></p>
+            <p>沿线地理 · <a href="https://www.naturalearthdata.com/">Natural Earth</a>。本机导入的陆界和省界来源见轮廓文件。</p>
+            <p>新加坡车站出口 · <a href="https://data.gov.sg/datasets/d_b39d3a0871985372d7e1637193335da5/view">Land Transport Authority</a>，采用 <a href="https://data.gov.sg/open-data-licence">Singapore Open Data Licence</a>。</p>
+            <p><a href="./licenses/NATIONAL-METRO-LICENCE.txt">全国城轨资料</a> · <a href="./licenses/METRO-PALETTE-LICENCE.txt">线路配色许可</a> · <a href="./licenses/components.txt">软件与数据许可</a> · <a href="./licenses/NOTICE.txt">完整来源说明</a></p>
+          </footer>
         </section>
       </div>
     </aside>
@@ -215,6 +231,12 @@
 
     <section class="map-stage">
       <div id="map" role="application" aria-label="铁道漫游地图"></div>
+      <div id="basemapCreditLine" hidden>
+        <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>
+        <a id="basemapPartnerCredit" hidden></a>
+        <a id="railStyleCredit" hidden href="https://creativecommons.org/licenses/by-sa/2.0/">CC BY-SA 2.0</a>
+      </div>
+      <div id="lineFocusBar" class="line-focus-bar" hidden><span aria-live="polite"><strong id="lineFocusName"></strong> <small id="lineFocusNote"></small></span><button id="clearLineFocus" type="button">恢复全图</button></div>
       <div id="playbackBar" class="playback-bar" hidden>
         <button id="playJourney" class="play-button" title="播放沿线旅行" aria-label="播放沿线旅行">▶</button>
         <div class="playback-main">
@@ -381,10 +403,13 @@
   <script src="./library.js"></script>
   <script src="./cache-client.js"></script>
   <script src="./map-preferences.js"></script>
+  <script src="./metro-updates.js"></script>
   <script src="./station-labels.js"></script>
+  <script src="./line-focus.js"></script>
   <script src="./data/station-layouts.js"></script>
   <script src="./station-layout-layer.js"></script>
   <script src="./world-rail.js"></script>
+  <script src="./metro-handoff.js"></script>
   <script src="./rail-layers.js"></script>
   <link rel="stylesheet" href="./station-directory/panel.css">
   <script src="./station-directory/national.js"></script>
@@ -393,6 +418,7 @@
   <script src="./station-directory/paths/manifest.js"></script>
   <script src="./station-directory/paths.js"></script>
   <script src="./ticket-face.js"></script>
+  <script src="./card-map.js"></script>
   <script src="./station-directory/panel.js"></script>
   <script src="./station-board.js"></script>
   <script src="./app.js"></script>
