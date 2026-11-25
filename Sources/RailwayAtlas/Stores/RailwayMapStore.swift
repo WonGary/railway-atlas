@@ -21,10 +21,22 @@ final class RailwayMapStore: ObservableObject {
     private var requestedCity: String?
     private var retryCityAfter = Date.distantPast
     private var pendingDirection: String?
+    private var manualRequest = false
+
+    func chooseDirectionCity(_ city: MetroCitySpec, centerMap: Bool) {
+        if centerMap {
+            selection = nil
+            region = city.area.region
+            cameraRevision += 1
+        }
+        loadDirections(city,manual:true)
+    }
 
     func loadDirections(_ city: MetroCitySpec, manual: Bool = false) {
+        if !manual, manualRequest, directionTask != nil { return }
         if !manual, requestedCity == city.id, directionTask != nil || directionCity?.id == city.id || retryCityAfter > Date() {return}
         directionTask?.cancel()
+        manualRequest=manual
         requestedCity=city.id
         directionStatus="正在读取\(city.name)的城轨资料…"
         let online=mapMode == .apple
@@ -44,7 +56,7 @@ final class RailwayMapStore: ObservableObject {
                 directionStatus="\(city.name) · \(error.localizedDescription)"
                 retryCityAfter=Date().addingTimeInterval(90)
             }
-            directionTask=nil
+            directionTask=nil;manualRequest=false
         }
     }
     func loadViewportDirections() {

@@ -32,11 +32,19 @@ enum OnlineUIValidation {
                 try await checkMetroDirection(store, window: window, directory: directory)
                 if arguments.contains("--live-city-check"),
                    let spec=MetroCitySpec.directory.first(where:{ $0.name=="维也纳" && $0.data==nil }) {
-                    store.mapMode = .apple
                     let center=spec.area.center
-                    store.viewportChanged(MKCoordinateRegion(center:center.location,span:.init(latitudeDelta:0.08,longitudeDelta:0.12)))
-                    for _ in 0..<1000 {
+                    store.changeMode(.apple)
+                    store.goTo(AtlasPlace(name:spec.name,coordinate:center,span:0.08))
+                    func findMap(_ view:NSView)->MKMapView? {
+                        if let map=view as? MKMapView { return map }
+                        return view.subviews.lazy.compactMap(findMap).first
+                    }
+                    for tick in 0..<1000 {
                         if store.directionCity?.id==spec.id {break}
+                        if tick<30,tick.isMultiple(of:5),let map=window?.contentView.flatMap(findMap),
+                           abs(map.region.center.longitude-center.longitude)>0.15 {
+                            map.setRegion(MKCoordinateRegion(center:center.location,span:.init(latitudeDelta:0.08,longitudeDelta:0.12)),animated:false)
+                        }
                         try await Task.sleep(for:.milliseconds(150))
                     }
                     guard let city=store.directionCity,city.id==spec.id,
@@ -300,7 +308,7 @@ enum OnlineUIValidation {
         let expected = ["马连洼","上地软件园","东北旺","龙泽西","回龙观西大街","文华路","回龙观东大街","霍营东","天通苑","太平庄","天通苑东"]
         func load(_ id:String) async throws -> MetroDirectionCatalog.City {
             guard let city=MetroCitySpec.directory.first(where:{ $0.id==id }) else {throw DataError.invalid("城市目录缺少 \(id)")}
-            store.loadDirections(city,manual:true)
+            store.chooseDirectionCity(city,centerMap:true)
             for _ in 0..<200 {
                 if let loaded=store.directionCity, loaded.id==id {return loaded}
                 try await Task.sleep(for:.milliseconds(50))

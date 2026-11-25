@@ -50,8 +50,7 @@ struct MetroCityBrowser: View {
             }
             Button("加载城市线路和站序") {
                 let city=MetroCitySpec.directory.first { $0.id == cityID } ?? .at(Coordinate(store.region.center.latitude,store.region.center.longitude))
-                if !cityID.isEmpty {store.region=city.area.region;store.cameraRevision+=1}
-                store.loadDirections(city,manual:true)
+                store.chooseDirectionCity(city,centerMap:!cityID.isEmpty)
             }
             Text(store.directionStatus).font(.caption).foregroundStyle(.secondary)
             if let city=store.directionCity, !city.routes.isEmpty {
