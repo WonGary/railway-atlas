@@ -62,6 +62,9 @@ public struct RailStation: Codable, Equatable, Identifiable, Sendable {
     public var coordinate: Coordinate
     public var tags: [String: String]
     public var routes: [RailRoute]? = nil
+    public init(id: String, name: String, coordinate: Coordinate, tags: [String: String], routes: [RailRoute]? = nil) {
+        self.id = id; self.name = name; self.coordinate = coordinate; self.tags = tags; self.routes = routes
+    }
 }
 
 public struct RailwayDataset: Codable, Sendable {

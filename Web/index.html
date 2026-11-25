@@ -15,7 +15,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.13</span></div>
+    <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.15</span></div>
     <div class="top-actions">
       <button id="toggleWorkspace" class="text-button" aria-controls="workspacePanel" title="打开图层与工作区">图层</button>
       <button id="homeMap" class="text-button" title="返回全国视野">全国</button>
@@ -39,9 +39,15 @@
       </nav>
       <div class="workspace-content">
         <section class="workspace-page" data-page="route" hidden>
+          <div class="journey-range">
+            <label>始发日期<input id="libraryDate" type="date"></label>
+            <label>查车次<input id="libraryTrain" type="search" placeholder="例如 Z58"></label>
+          </div>
           <label>选择车次
             <select id="routeSelect"></select>
           </label>
+          <p id="libraryStatus" class="panel-note" role="status"></p>
+          <div id="libraryResults" class="directory-list journey-results"></div>
           <div id="routeSummary" class="route-card selected"></div>
           <div class="journey-range" aria-label="乘车区间">
             <label>上车站<select id="routeFrom"></select></label>
@@ -52,14 +58,10 @@
           <p id="matchStatus" class="panel-note" role="status" hidden></p>
           <label class="file-button">导入时刻/径路 JSON<input id="importTimetable" type="file" accept=".json,application/json"></label>
           <p class="panel-note">有轨道资料的车次可以回放。仅含时刻的车次可查经停表；有经由和里程时，还可用本机瓦片匹配径路。</p>
-          <details><summary>本机时刻库</summary>
+          <details><summary>同步或导入路路通时刻库</summary>
             <label class="file-button">导入时刻库或路路通 APK<input id="libraryFile" type="file" accept=".json,.apk,application/json,application/vnd.android.package-archive"></label>
-            <button id="syncTimetable" class="text-button" hidden>从路路通同步时刻库</button>
-            <p class="panel-note">可选择原生版导出的 JSON，或从<a href="http://www.lltskb.com/" target="_blank" rel="noopener noreferrer">路路通官网</a>取得 Android 安装包，在这里选取文件即可。</p>
-            <p id="libraryStatus" class="panel-note" role="status">时刻资料保存在本浏览器。</p>
-            <label>始发日期<input id="libraryDate" type="date"></label>
-            <label>查车次<input id="libraryTrain" type="search" placeholder="例如 G337"></label>
-            <div id="libraryResults" class="directory-list"></div>
+            <button id="syncTimetable" class="text-button">从路路通同步时刻库</button>
+            <p class="panel-note">也可从<a href="http://www.lltskb.com/android1/lltskb.html" target="_blank" rel="noopener noreferrer">路路通官网</a>下载 APK，在此选取文件。时刻库保存在此浏览器。</p>
           </details>
           <div class="subsection">
             <div class="subsection-heading"><span class="subsection-title">经停站</span><button id="refreshData" class="icon-button small" title="重新读取本地资料" aria-label="重新读取本地资料">↻</button></div>
@@ -404,15 +406,19 @@
   <script src="./cache-client.js"></script>
   <script src="./map-preferences.js"></script>
   <script src="./metro-updates.js"></script>
+  <script src="./metro-source.js"></script>
+  <script src="./metro-loader.js"></script>
   <script src="./station-labels.js"></script>
   <script src="./line-focus.js"></script>
   <script src="./data/station-layouts.js"></script>
   <script src="./station-layout-layer.js"></script>
   <script src="./world-rail.js"></script>
   <script src="./metro-handoff.js"></script>
+  <script src="./packed-rail.js"></script>
   <script src="./rail-layers.js"></script>
   <link rel="stylesheet" href="./station-directory/panel.css">
   <script src="./station-directory/national.js"></script>
+  <script src="./data/journey-aliases.js"></script>
   <script src="./station-directory/cnrail.js"></script>
   <script src="./station-directory/catalog.js"></script>
   <script src="./station-directory/paths/manifest.js"></script>

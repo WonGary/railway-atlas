@@ -59,6 +59,8 @@ mkdir -p "$ATLAS_APP/Contents/MacOS" "$ATLAS_APP/Contents/Resources"
 cp "$ATLAS_BIN/RailwayAtlas" "$ATLAS_APP/Contents/MacOS/RailwayAtlas"
 cp Config/Info.plist "$ATLAS_APP/Contents/Info.plist"
 ditto --norsrc --noextattr Web/station-directory "$ATLAS_APP/Contents/Resources/station-directory"
+ditto --norsrc --noextattr Web/data/metro "$ATLAS_APP/Contents/Resources/metro"
+cp Web/data/metro-index.json Web/metro-source.js "$ATLAS_APP/Contents/Resources/"
 cp Web/library.js "$ATLAS_APP/Contents/Resources/library.js"
 cp Design/RailwayAtlas.icns "$ATLAS_APP/Contents/Resources/RailwayAtlas.icns"
 # App bundles read their resources directly, independent of the source checkout.

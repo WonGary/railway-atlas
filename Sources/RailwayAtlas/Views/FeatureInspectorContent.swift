@@ -52,6 +52,12 @@ struct FeatureInspectorContent: View {
                 }
             }
             Divider()
+            if let id = store.lineFocus?.directionID, let entry = store.directions.entries[id] {
+                MetroDirectionInspector(entry: entry)
+                Divider()
+            } else if let focus = store.lineFocus, focus.routeKey != nil, !focus.paths.isEmpty {
+                FeatureInspectorText(value: "已显示线路走向。这个方向暂无详细站序。", font: .caption)
+            }
             essentials(model)
             routeSection(model)
             interchangeSection(model)
@@ -158,6 +164,12 @@ struct FeatureInspectorContent: View {
             FeatureInspectorText(value: model.interchange != nil ? "换乘关联线路" : model.featureColor != nil ? "要素标注色" :
                                     (model.isStation ? "关联线路" : "所属线路"), font: .caption2)
                 .foregroundStyle(.secondary)
+            if let id = model.item.osmReference, model.isStation,
+               let directions = store.directions.byStop[id] {
+                ForEach(directions.filter { d in
+                    !(model.interchange?.documentedRoutes ?? model.routes).contains { $0.id == d.id }
+                }) { direction in focusButton(direction.route, compact: false) }
+            }
             if let group = model.interchange {
                 ForEach(group.documentedRoutes, id: \.visibilityKey) { route in
                     focusButton(route, compact: true)
@@ -180,7 +192,7 @@ struct FeatureInspectorContent: View {
                     FeatureInspectorText(value: color.hex, font: .caption.monospaced())
                         .textSelection(.enabled)
                 }
-            } else {
+            } else if store.directions.byStop[model.item.osmReference ?? ""] == nil {
                 FeatureInspectorText(value: "未提供线路记录", font: .caption)
                     .foregroundStyle(.secondary)
             }
@@ -195,7 +207,7 @@ struct FeatureInspectorContent: View {
     private func focusButton(_ route: RailRoute, compact: Bool) -> some View {
         Button { store.focusRelation(route) } label: {
             FeatureInspectorRouteMarker(route: route, compactTitle: compact ? routeTitle(route) : nil)
-        }.buttonStyle(.plain).help("在地图上高亮\(routeTitle(route))")
+        }.buttonStyle(.plain).help("查看\(routeTitle(route))的线路走向和站点")
     }
 
     @ViewBuilder

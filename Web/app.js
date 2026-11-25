@@ -45,7 +45,7 @@ const state = {
   metroCities: [],
   metroDetails: new Map(),
   metroDetailPromises: new Map(),
-  metroDetailErrors: new Set(),
+  metroDetailErrors: new Map(),
   historyEvents: [],
   routes: [],
   route: null,
@@ -727,7 +727,7 @@ function buildMetroCityLayers(city, detail) {
       lineJoin: "round",
       className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
     }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${city.name} · ${metroRouteLabel(route)}`}), { sticky: true });
-    line.on("click", () => selectMetroRoute(city, route));
+    line.on("click", () => selectMetroRoute(city, route,{fit:true}));
     line.addTo(routesLayer);
     const facts=AtlasPrefs.classify({...route.tags,route:route.type,...(construction?{state:"construction"}:{})},true);
     routeLines.push({line,route,construction,parts,identity:MetroHandoff.identity(facts,[route.id])});
@@ -775,22 +775,23 @@ function buildMetroCityLayers(city, detail) {
 
 function loadMetroCity(city, { retry = false } = {}) {
   if (state.metroDetails.has(city.id)) return Promise.resolve(state.metroDetails.get(city.id));
-  if (!retry && state.metroDetailErrors.has(city.id)) return Promise.resolve(null);
+  if (!retry && (state.metroDetailErrors.get(city.id) || 0) > Date.now()) return Promise.resolve(null);
   if (state.metroDetailPromises.has(city.id)) return state.metroDetailPromises.get(city.id);
   state.metroDetailErrors.delete(city.id);
-  const request = loadJSON(`${DATA.metroDetailBase}${city.id}.json`).then(detail => {
+  const request = MetroLoader.load(city,AtlasPrefs.value.mode).then(detail => {
     if (detail.id !== city.id || !Array.isArray(detail.routes) || !Array.isArray(detail.stations)) {
       throw new Error(`${city.name} 的城市轨道资料格式不正确。`);
     }
     state.metroDetails.set(city.id, detail);
+    city.sourceDate=detail.sourceDate; city.source=detail.source;
+    city.routeCount=detail.routes.length; city.stationCount=detail.stations.length;
     state.metroCityLayers.set(city.id, buildMetroCityLayers(city, detail));
     AtlasPrefs.routeList();
     refreshMetroDetailVisibility();
     return detail;
   }).catch(error => {
-    state.metroDetailErrors.add(city.id);
-    showToast(`${city.name}详细资料加载失败，可稍后重试。`);
-    console.error(error);
+    state.metroDetailErrors.set(city.id,Date.now()+60000);
+    if (retry) showToast(`${city.name} · ${error.message}`);
     return null;
   }).finally(() => {
     state.metroDetailPromises.delete(city.id);
@@ -810,8 +811,15 @@ function refreshMetroDetailVisibility() {
   const bounds = state.map.getBounds().pad(prefs.viewportBuffer);
   const shouldLoad = state.showMetro && prefs.mode!=="offline" && zoom >= 7;
   if (shouldLoad) {
-    for (const city of state.metroCities) {
-      if (metroCityBounds(city).intersects(bounds)) loadMetroCity(city);
+    // Static packs can be prefetched. Wait for the map to settle at city scale
+    // before sending a bounded query to a public service.
+    const center=state.map.getCenter();
+    const near=state.metroCities.filter(city=>metroCityBounds(city).intersects(bounds))
+      .sort((a,b)=>center.distanceTo(metroCityBounds(a).getCenter())-center.distanceTo(metroCityBounds(b).getCenter()));
+    for (const city of near.filter(c=>c.data).slice(0,3)) loadMetroCity(city);
+    if (zoom>=10 && !state.map._animatingZoom) {
+      const city=near.find(c=>metroCityBounds(c).contains(center)) || MetroSource.cell(center.lat,center.lng);
+      if (city && !city.data) queueMetroArea(city);
     }
   }
   const activeCities = new Set();
@@ -897,8 +905,15 @@ function drawMetro() {
         lineCap: "round",
         className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
       }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${record.city || ""} · ${route.name || "城市轨道"}`}), { sticky: true });
-      line.on("click",e=>RailMapLayers.inspect(route.name,route.tags,false,e.latlng,{parts:validParts,overview:true,
-        styleForPart:()=>({color:construction || AtlasPrefs.value.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) ? line.options.color : null,dashArray:line.options.dashArray})}));
+      line.on("click",async e=>{
+        RailMapLayers.inspect(route.name,route.tags,false,e.latlng,{parts:validParts,overview:true,
+          styleForPart:()=>({color:construction || AtlasPrefs.value.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) ? line.options.color : null,dashArray:line.options.dashArray})});
+        const focus=LineFocus.active,city=state.metroCities.find(c=>c.name===record.city);
+        if (!city) return;
+        const detail=await loadMetroCity(city,{retry:true});
+        const direction=detail?.routes.find(r=>r.id===route.id);
+        if (direction && LineFocus.active===focus) selectMetroRoute(city,direction,{fit:true});
+      });
       const facts=AtlasPrefs.classify({...route.tags,...(construction?{state:"construction"}:{})},true);
       state.metroPolylines.push({line,construction,record,parts:validParts,displayed:validParts,
         bounds:line.getBounds(),identity:MetroHandoff.identity(facts,[route.id])});
@@ -1109,9 +1124,10 @@ function selectMetroRoute(city, route, {fit = false} = {}) {
   $("infoContent").innerHTML = `
     <div class="info-block"><div class="info-label">线路资料</div>
       <div class="info-value">${escapeHTML(city.name)} · ${escapeHTML(route.network || "城市轨道")}${route.openingDate ? `<br>开通日期：${escapeHTML(route.openingDate)}` : ""}${route.operator ? `<br>运营方：${escapeHTML(route.operator)}` : ""}</div></div>
-    <div class="info-block"><div class="info-label">沿线站点 · ${stops.length}</div>
-      <div class="metro-stop-list">${stops.map((stop, index) => `<button class="metro-stop-button" data-metro-stop="${escapeHTML(stop.id)}"><span class="station-index">${String(index + 1).padStart(2, "0")}</span><span>${escapeHTML(stop.name || "未命名站点")}</span><span class="muted">${escapeHTML(stop.role || "")}</span></button>`).join("") || `<p class="muted">线路资料没有提供站序。</p>`}</div></div>
-    <div class="info-block"><div class="info-label">数据来源</div><div class="info-value">${escapeHTML(city.name)} · OSM ${escapeHTML(city.sourceDate || "未记录")} · ODbL 1.0</div></div>`;
+    <div class="info-block"><div class="info-label">${route.stopCoverage==="operator"?"全线站点":"已收录站点"} · ${stops.length}</div>
+      ${route.stopNote?`<p class="muted">${escapeHTML(route.stopNote)}，站表可能不完整。</p>`:""}
+      <div class="metro-stop-list">${stops.map((stop, index) => `<button class="metro-stop-button" data-metro-stop="${escapeHTML(stop.id)}"><span class="station-index">${String(index + 1).padStart(2, "0")}</span><span>${escapeHTML(stop.name || "未命名站点")}</span><span class="muted">${escapeHTML(({stop_entry_only:"只上客",stop_exit_only:"只下客"})[stop.role] || "")}</span></button>`).join("") || `<p class="muted">线路资料没有提供站序。</p>`}</div></div>
+    <div class="info-block"><div class="info-label">数据来源</div><div class="info-value">${route.stopCoverage==="operator"?'<a href="https://www.bjsubway.com/station/zjgls/" target="_blank" rel="noopener">北京地铁站序</a> · ':''}${escapeHTML(city.name)} · OSM ${escapeHTML(city.sourceDate || "未记录")} · ODbL 1.0</div></div>`;
   $("infoContent").querySelectorAll("[data-metro-stop]").forEach(button => button.addEventListener("click", () => {
     const station = state.metroDetails.get(city.id)?.stations.find(item => item.id === button.dataset.metroStop);
     if (station) selectMetroStation(city, station);
@@ -1240,9 +1256,26 @@ function populateMetroCityPicker() {
   picker.innerHTML = [
     `<option value="">全部已加载城市</option>`,
     ...state.metroCities.map(city =>
-      `<option value="${escapeHTML(city.id)}">${escapeHTML(city.name)} · ${Number(city.stationCount || 0).toLocaleString()} 站</option>`)
+      `<option value="${escapeHTML(city.id)}">${escapeHTML(city.name)}${city.country?" · "+escapeHTML(city.country):""} · ${city.stationCount == null ? "在线查询" : Number(city.stationCount).toLocaleString()+" 个站点对象"}</option>`)
   ].join("");
   if (state.metroCities.some(city => city.id === selected)) picker.value = selected;
+}
+
+let metroAreaTimer, pendingMetroArea;
+function queueMetroArea(city) {
+  if (state.metroDetails.has(city.id) || state.metroDetailPromises.has(city.id) || pendingMetroArea===city.id ||
+      (state.metroDetailErrors.get(city.id)||0)>Date.now()) return;
+  clearTimeout(metroAreaTimer);
+  pendingMetroArea=city.id;
+  metroAreaTimer=setTimeout(()=>{
+    pendingMetroArea=null;
+    if (!state.showMetro || state.map.getZoom()<10 || !metroCityBounds(city).contains(state.map.getCenter())) return;
+    if (state.metroDetailPromises.size>=3) {queueMetroArea(city);return;}
+    if (!state.metroCities.some(c=>c.id===city.id)) {
+      state.metroCities.push(city);populateMetroCityPicker();
+    }
+    void loadMetroCity(city);
+  },450);
 }
 
 async function discoverPlaces() {
@@ -1817,7 +1850,11 @@ function setupPanels() {
   $("playbackSpeed").addEventListener("change", () => {
     if (state.playbackTimer) startPlayback();
   });
-  $("routeSelect").addEventListener("change", event => selectRoute(event.target.value));
+  $("routeSelect").addEventListener("change", event => {
+    const id=event.target.value;
+    if (id.startsWith("search:")) journeyChoices[Number(id.slice(7))]?.open();
+    else selectRoute(id);
+  });
   function setJourneyRange() {
     const from=Number($("routeFrom").value);
     selectRoute(state.route.id,{from,to:Math.max(from+1,Number($("routeTo").value))});
@@ -1971,9 +2008,19 @@ async function loadJSON(path) {
   return response.json();
 }
 
+let journeyChoices=[];
 function populateRoutePicker() {
-  $("routeSelect").innerHTML = state.routes.map(route => `
-    <option value="${escapeHTML(route.id)}">${escapeHTML(route.train)} · ${escapeHTML(route.serviceDate || "日期未记录")}</option>`).join("");
+  const picker=$("routeSelect"), selected=state.route?.id;
+  picker.replaceChildren(new Option("选择车次加载走行路线",""));
+  const group=(name,rows)=>{
+    if (!rows.length) return;
+    const options=document.createElement("optgroup");options.label=name;
+    for(const [text,value] of rows) options.append(new Option(text,value));
+    picker.append(options);
+  };
+  group("当日车次",journeyChoices.map((item,i)=>[item.label,"search:"+i]));
+  group("已载入的行程与示例",state.routes.map(r=>[`${r.train} · ${r.serviceDate}`,r.id]));
+  if (selected && state.routes.some(r=>r.id===selected)) picker.value=selected;
 }
 
 let journeyRequest = 0;
@@ -1991,6 +2038,18 @@ async function openTimetableJourney(timetable, trip) {
       const record=await RailPaths.find({train:base.train,date:base.serviceDate,stops:base.stops,routing:base.routing,trip});
       route={...base,...record,id:base.id};
     } catch (error) { route={...base,indexed:true,gaps:[error.message]}; }
+  }
+  if (serial!==journeyRequest) return;
+  if (!route.geometryAvailable && base.routing && LocalRailCache.loaded) {
+    try {
+      const found=await LocalRailCache.match(base.routing,base.stops.map(s=>s.name));
+      const legs=found.map(part=>part.map(pointToLatLng));
+      if (legs.length===base.stops.length-1 && legs.every((part,i)=>part.length>=2 && part.every(Boolean) &&
+        (!i || L.latLng(legs[i-1].at(-1)).distanceTo(part[0])<=120))) {
+        route={...route,legs,geometryAvailable:true,cacheMatched:true,gaps:[],
+          stopCoordinates:[legs[0][0],...legs.map(part=>part.at(-1))]};
+      }
+    } catch { /* Keep the verified national sections and their gap descriptions. */ }
   }
   if (serial!==journeyRequest) return;
   displayTimetableJourney(route);
@@ -2011,53 +2070,75 @@ function openStationTrain(data,origin,mode,station) {
 function setupLibrary() {
   const date = $("libraryDate"), query = $("libraryTrain"), list = $("libraryResults");
   date.value = todayLocal();
+  let limit=40;
+  const national=globalThis.atlasRailDirectory, calendars=national.calendars.map(d=>new Set(d));
+  const aliases=globalThis.atlasJourneyAliases?.edition===national.edition ? atlasJourneyAliases.byTrip : {};
+  const nationalRows=national.trains.map(([train,calendar,stops,trip])=>({
+    train,calendar,trip,aliases:aliases[trip] || [],from:national.names[stops[0][0]],to:national.names[stops.at(-1)[0]]
+  }));
+  async function openNational(row,day) {
+    const serial=++journeyRequest;
+    $("libraryStatus").textContent=`正在读取 ${row.train} 的走行路线…`;
+    try {
+      const route=await RailPaths.find({train:row.train,date:day,trip:row.trip});
+      if (serial!==journeyRequest) return;
+      displayTimetableJourney(route);render();
+    } catch(error) {if(serial===journeyRequest)$("libraryStatus").textContent=error.message;}
+  }
   function render() {
     list.replaceChildren();
-    const library = RailLibrary.current;
-    const text=query.value.trim().toUpperCase();
-    const matches = library ? RailLibrary.search(text,date.value) : [];
-    $("libraryStatus").textContent = (library ? `${library.edition} · ${library.services.length.toLocaleString()} 条排图记录` : "全国快照 · 输入完整车次即可出图") +
-      (query.value.trim() ? ` · 找到 ${matches.length} 条，显示前 ${Math.min(40,matches.length)} 条` : "");
-    for (const row of matches.slice(0,40)) {
-      const button = document.createElement("button");
-      button.className = "directory-item";
-      button.textContent = `${row.train} · ${row.stops[0].station} → ${row.stops.at(-1).station}`;
-      button.onclick = () => {
-        const timetable = RailLibrary.timetable(row,date.value);
-        void openTimetableJourney(timetable);
-      };
-      list.append(button);
+    const library=RailLibrary.current, text=query.value.trim().toUpperCase(), day=date.value;
+    const dateKey=day.replaceAll("-","");
+    const matchesText=row=>!text || RailLibrary.trainNames(row.train).some(n=>n.includes(text));
+    const localRows=library?.services.filter(row=>RailLibrary.runsOn(row,day) && matchesText(row)) || [];
+    const covered=new Set(localRows.flatMap(row=>RailLibrary.trainNames(row.train)));
+    const matches=[...localRows];
+    for (const row of nationalRows) {
+      if (!calendars[row.calendar].has(dateKey) || covered.has(row.train)) continue;
+      const names=[row.train,...new Set(row.aliases.filter(([,start,end])=>start<=day && day<=end).flatMap(([names])=>names))];
+      if (names.some(n=>covered.has(n)) || (text && !names.some(n=>n.includes(text)))) continue;
+      matches.push(names.length===1 ? row : {...row,train:names.join("/")});
     }
+    if (text) matches.sort((a,b)=>Number(RailLibrary.trainNames(b.train).includes(text))-Number(RailLibrary.trainNames(a.train).includes(text)));
+    const picks=matches.slice(0,limit).map(row=>({
+      label:`${row.train} · ${row.from ?? row.stops[0].station} → ${row.to ?? row.stops.at(-1).station}`,
+      open:()=>row.stops ? openTimetableJourney(RailLibrary.timetable(row,day)) : openNational(row,day)
+    }));
     if (/^[A-Z]?\d+$/.test(text) && !matches.some(row=>RailLibrary.trainNames(row.train).includes(text))) {
-      const button=document.createElement("button"); button.textContent=`在全国快照查 ${text}`; list.prepend(button);
-      button.onclick=async()=>{
-        const day=date.value, serial=++journeyRequest;
-        try {
-          const r=await RailPaths.find({train:text,date:day});
-          if (serial!==journeyRequest || query.value.trim().toUpperCase()!==text || date.value!==day) return;
-          displayTimetableJourney(r);
-        } catch(error) { if(serial===journeyRequest) $("libraryStatus").textContent=error.message; }
-      };
+      picks.unshift({label:`在全国快照查 ${text}`,open:()=>openNational({train:text},day)});
+    }
+    journeyChoices=picks;populateRoutePicker();
+    $("libraryStatus").textContent=`${library ? `本机时刻库 ${library.edition} / 全国快照` : `全国快照 ${national.edition}`} · ${matches.length.toLocaleString()} 条匹配记录`;
+    if(text) for(const choice of picks) {
+      const button=document.createElement("button");button.className="directory-item";
+      button.textContent=choice.label;button.onclick=choice.open;list.append(button);
+    }
+    if (matches.length>limit) {
+      const more=document.createElement("button"); more.className="text-button";
+      more.textContent=`再显示 ${Math.min(40,matches.length-limit)} 条`; more.onclick=()=>{limit+=40;render();};list.append(more);
     }
   }
   let timer;
-  query.oninput = () => { clearTimeout(timer); timer = setTimeout(render,120); };
-  date.onchange = render;
+  query.oninput = () => { ++journeyRequest;limit=40;clearTimeout(timer); timer = setTimeout(render,120); };
+  date.onchange = () => {++journeyRequest;limit=40;render();};
   const input=$("libraryFile"), sync=$("syncTimetable");
-  sync.hidden=location.origin!=="http://127.0.0.1:18763";
+  const portable=location.origin==="http://127.0.0.1:18763";
+  const mac=/Mac/.test(navigator.platform) && navigator.maxTouchPoints<2;
+  if (!portable) sync.textContent=mac ? "从本机 App 同步路路通" : "选择路路通离线包";
   async function install(file) {
     input.disabled = sync.disabled = true;
     $("libraryStatus").textContent = file ? "正在检查时刻库…" : "正在从路路通读取时刻与径路资料…";
-    try { await RailLibrary.install(file); render(); renderDirectory(); StationMapBoard.reload(); }
+    try { await RailLibrary.install(file || (!portable ? await RailLibrary.fromMac() : null)); render(); renderDirectory(); StationMapBoard.reload(); }
     catch (error) { $("libraryStatus").textContent = `导入失败。${error.message}`; }
     finally { input.disabled = sync.disabled = false; }
   }
-  sync.onclick=()=>install();
+  sync.onclick=()=>portable || mac ? install() : input.click();
   input.onchange = () => {
     const file=input.files[0]; input.value="";
     if (file) install(file);
   };
-  RailLibrary.restore().then(()=>{render(); renderDirectory(); if(RailLibrary.current) StationMapBoard.reload();}).catch(() => { $("libraryStatus").textContent = "浏览器无法读取本机时刻库存储。"; });
+  render();
+  RailLibrary.restore().then(()=>{render(); renderDirectory(); if(RailLibrary.current) StationMapBoard.reload();}).catch(() => {render();});
 }
 
 async function loadData() {

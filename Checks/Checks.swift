@@ -13,6 +13,12 @@ struct Checks {
 
     static func run() async throws {
         let arguments = CommandLine.arguments
+        if arguments.count == 3, arguments[1] == "--validate-config" {
+            let value = try AtlasConfiguration.decode(Data(contentsOf: URL(fileURLWithPath: arguments[2])))
+            _ = try AtlasConfiguration.decode(value.encoded())
+            print("配置载入及保存格式回读通过。")
+            return
+        }
         if arguments.count >= 6, arguments[1] == "--benchmark-journey-paths" {
             let directory = URL(fileURLWithPath: arguments[2], isDirectory: true)
             let day = arguments[4]

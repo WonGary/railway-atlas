@@ -253,6 +253,9 @@ public struct RailRoute: Codable, Hashable, Identifiable, Sendable {
     public var tags: [String: String]
     /// Relation supplying the colour tag, including inherited route_master colours.
     public var colourSourceID: String?
+    public init(id: String, name: String, tags: [String: String], colourSourceID: String? = nil) {
+        self.id = id; self.name = name; self.tags = tags; self.colourSourceID = colourSourceID
+    }
     public var isUrbanTransit: Bool { RailUrbanService.route(tags) }
 
     /// Directions and tiles of a physical line share one switch and colour.

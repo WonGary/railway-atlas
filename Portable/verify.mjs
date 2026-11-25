@@ -39,6 +39,7 @@ for (const size of [192,512]) {
 }
 const index=json("data/metro-index.json");
 for (const city of index.cities) {
+  if (!city.data) {assert.equal(city.bounds.length,4);continue;}
   const detail=json("data/"+city.data);
   assert.equal(detail.id,city.id);assert.equal(detail.routes.length,city.routeCount);assert.equal(detail.stations.length,city.stationCount);
   const routes = new Set(detail.routes.map(r=>r.id)), stations=new Set(detail.stations.map(s=>s.id));
@@ -119,4 +120,4 @@ for (const [tags,expected] of [
 assert.equal(tiles.length,12);for (const tile of tiles) assert.ok(fs.existsSync(join(root,"data/rail",tile.file)));
 assert.equal(json("data/discovery.json").length,325);
 assert.equal(json("data/railway-experience-timetables.json").timetables.find(t=>t.train==="G337").stops.length,7);
-console.log(`网页检查通过，${files.length} 项离线资源，${index.cities.length} 城详细站表，${tiles.length} 张铁路概览瓦片。`);
+console.log(`网页检查通过，${files.length} 项离线资源，${index.cities.length} 个城市入口，${index.cities.filter(c=>c.data).length} 个详情包，${tiles.length} 张铁路概览瓦片。`);

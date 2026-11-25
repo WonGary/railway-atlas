@@ -374,7 +374,7 @@ struct OfflineRailwayMap: View {
                         for p in part.dropFirst() { path.addLine(to: projection.screen(p)) }
                     }
                     context.stroke(path, with:.color(.white), style:StrokeStyle(lineWidth:7,lineCap:.round,lineJoin:.round))
-                    context.stroke(path, with:.color(store.renderSettings.focusInk.tint), style:StrokeStyle(lineWidth:4.4,lineCap:.round,lineJoin:.round))
+                    context.stroke(path, with:.color((focus.pathColor ?? store.renderSettings.focusInk).tint), style:StrokeStyle(lineWidth:4.4,lineCap:.round,lineJoin:.round))
                     let groups = Dictionary(grouping: store.focusedLines(focus), by: store.appearance)
                     let styled = groups.map { appearance, lines in
                         var track = Path()

@@ -28,6 +28,31 @@ enum OnlineUIValidation {
             window?.setContentSize(NSSize(width: 1240, height: 820))
             window?.center()
             window?.title = "铁道图鉴 · 本地验证"
+            if arguments.contains("--metro-direction-check") {
+                try await checkMetroDirection(store, window: window, directory: directory)
+                if arguments.contains("--live-city-check"),
+                   let spec=MetroCitySpec.directory.first(where:{ $0.name=="维也纳" && $0.data==nil }) {
+                    store.mapMode = .apple
+                    let center=spec.area.center
+                    store.viewportChanged(MKCoordinateRegion(center:center.location,span:.init(latitudeDelta:0.08,longitudeDelta:0.12)))
+                    for _ in 0..<1000 {
+                        if store.directionCity?.id==spec.id {break}
+                        try await Task.sleep(for:.milliseconds(150))
+                    }
+                    guard let city=store.directionCity,city.id==spec.id,
+                          let route=city.routes.first(where:{$0.stops.count>=5 && !$0.parts.isEmpty}) else {
+                        throw DataError.invalid("维也纳视野自动加载失败 \(store.directionStatus)")
+                    }
+                    let offline=try await MetroCityReader().load(spec,online:false,refresh:false)
+                    guard offline.routes.count==city.routes.count else {throw DataError.invalid("离线站序缺失")}
+                    store.showMetroDirection(.init(city:city.name,date:city.sourceDate,direction:route),fit:true)
+                    _ = try await capture("vienna-live",directory:directory,window:window)
+                    try Data("\(city.name) \(city.sourceDate) · \(city.routes.count) 个方向 · \(route.name) \(route.stops.count) 站 · 已从独立读取器离线回读\n".utf8)
+                        .write(to:directory.appendingPathComponent("live-city.txt"))
+                }
+                NSApp.terminate(nil)
+                return
+            }
             if arguments.contains("--line-focus-check") {
                 try await checkFocusAndCards(store, window:window, directory:directory)
                 NSApp.terminate(nil)
@@ -269,6 +294,45 @@ enum OnlineUIValidation {
             print(report)
             exit(1)
         }
+    }
+
+    private static func checkMetroDirection(_ store: RailwayMapStore, window: NSWindow?, directory: URL) async throws {
+        let expected = ["马连洼","上地软件园","东北旺","龙泽西","回龙观西大街","文华路","回龙观东大街","霍营东","天通苑","太平庄","天通苑东"]
+        func load(_ id:String) async throws -> MetroDirectionCatalog.City {
+            guard let city=MetroCitySpec.directory.first(where:{ $0.id==id }) else {throw DataError.invalid("城市目录缺少 \(id)")}
+            store.loadDirections(city,manual:true)
+            for _ in 0..<200 {
+                if let loaded=store.directionCity, loaded.id==id {return loaded}
+                try await Task.sleep(for:.milliseconds(50))
+            }
+            throw DataError.invalid(store.directionStatus)
+        }
+        var counts=[String]()
+        for id in ["shanghai","paris","singapore","beijing"] {
+            let city=try await load(id)
+            guard let route=city.routes.first(where:{ $0.stops.count>3 && !$0.parts.isEmpty }) else {throw DataError.invalid("线路详情缺失：\(id)")}
+            store.focusRelation(route.route)
+            guard store.lineFocus?.directionID == route.id, store.stationBoardPins.count>3 else { throw DataError.invalid("选线失败：\(id)") }
+            counts.append("\(city.name) \(city.routes.count)")
+        }
+        guard let entry = store.directions.entries["relation/20010805"],
+              entry.direction.stops.map(\.name) == expected,
+              let reverse = store.directions.reverse(of:entry),
+              reverse.stops.map(\.name) == Array(expected.reversed()),
+              MetroCitySpec.directory.count > 80 else { throw DataError.invalid("随包线路或站序缺失") }
+        store.focusRelation(entry.direction.route)
+        guard let stop = store.stationBoardPins.first(where: { $0.name == "东北旺" }) else { throw DataError.invalid("缺少东北旺定位点") }
+        store.select(RailwayMapStore.item(stop))
+        guard store.selection?.id == stop.id, store.lineFocus?.directionID == entry.direction.id,
+              store.lineFocus?.pathColor?.hex.lowercased() == entry.direction.color.lowercased() else { throw DataError.invalid("点站后线路高亮丢失") }
+        store.focusRelation(reverse.route)
+        guard store.lineFocus?.directionID == reverse.id, store.stationBoardPins.map(\.name) == Array(expected.reversed()),
+              let focus=store.lineFocus, !focus.paths.isEmpty else { throw DataError.invalid("反方向线路或站点未加载") }
+        store.inspectorWidth = 380
+        try await Task.sleep(for:.milliseconds(900))
+        _ = try await capture("metro-direction", directory: directory, window: window)
+        try Data("PASS \(MetroCitySpec.directory.count) cities; \(counts.joined(separator:", ")); Beijing 18 both directions, 11 pins, station selection, route colour and full geometry.\n".utf8)
+            .write(to:directory.appendingPathComponent("metro-direction.txt"))
     }
 
     private static func benchmarkJourneyFrames(_ store: RailwayMapStore, window: NSWindow?, directory: URL, libraryFile: String) async throws {

@@ -38,6 +38,7 @@ extension RailwayMapStore {
 
     func refreshViewport(force: Bool = false) {
         scheduleStationLayouts()
+        loadViewportDirections()
         guard mapMode != .offline else { return }
         let plan = RailTilePlan(bounds: MapBounds(region: region), width: viewportWidth)
         guard force || lastTileKeys != plan.keys else { return }

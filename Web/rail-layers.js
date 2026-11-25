@@ -292,9 +292,16 @@ const RailMapLayers = (() => {
   }
   async function onlineTile({x,y,z}, signal) {
     if (Date.now()>=primaryRetryAt) {
-      const layers="railway_line_high,railway_text_km,"+(z<8 ? "standard_railway_text_stations_med" : "standard_railway_text_stations");
+      const layers="railway_line_high,railway_text_km";
       try {
-        return await primaryTile(`https://openrailwaymap.app/${layers}/${z}/${x}/${y}`,signal);
+        const track=await primaryTile(`https://openrailwaymap.app/${layers}/${z}/${x}/${y}`,signal);
+        if (z>=9) {
+          try {
+            const stations=AtlasVector.decode(await timedResponse(`https://openrailwaymap.app/standard_railway_text_stations/${z}/${x}/${y}`,signal));
+            return {layers:{...track.layers,...stations.layers}};
+          } catch (error) { if(signal.aborted) throw error; }
+        }
+        return track;
       } catch (error) {
         if (signal.aborted) throw error;
         primaryReady=false;primaryRetryAt=Date.now()+60000;
@@ -329,7 +336,15 @@ const RailMapLayers = (() => {
         entry.promise = (async () => {
           const local = (await LocalRailCache.read(coords)).map(bytes => AtlasVector.decode(bytes));
           controller.signal.throwIfAborted();
-          const tiles = local.length || AtlasPrefs.value.mode !== "online" ? local : [await onlineTile(coords,controller.signal)];
+          const primary=local.some(t=>t.layers.railway_line_high);
+          const packed=primary ? null : await PackedRail.tile(coords).catch(()=>null);
+          controller.signal.throwIfAborted();
+          const tiles=packed ? [packed,...local] : local;
+          if (!local.length && AtlasPrefs.value.mode==="online") {
+            const remote=onlineTile(coords,controller.signal);
+            if (packed) request.supplement=remote.then(t=>[packed,t],()=>null);
+            else tiles.push(await remote);
+          }
           request.ready = true;
           for (const [oldKey, old] of parents) {
             if (parents.size <= 24) break;
@@ -340,7 +355,7 @@ const RailMapLayers = (() => {
         parents.set(key, entry);
       }
       entry.users++;
-      return {promise:entry.promise,release(){
+      return {promise:entry.promise,get supplement(){return entry.supplement;},release(){
         if (--entry.users === 0 && !entry.ready && parents.get(key)===entry) {
           parents.delete(key);entry.controller.abort();
         }
@@ -357,27 +372,30 @@ const RailMapLayers = (() => {
         const source=acquire({x:Math.floor(x/magnification),y:Math.floor(y/magnification),z:nativeZ});
         let unloaded=false;
         canvas.abortTile = () => {if (!unloaded) {unloaded=true;source.release();}};
-        (async () => {
-          const tiles = await source.promise;
+        function paint(tiles) {
           if (unloaded) return;
+          ctx.clearRect(0,0,size,size);
           canvas.hits = [];
           canvas.stationNames = [];
           canvas.metroTracks=new MetroHandoff.Tracks();
           // Imported caches can contain primary and backup representations of one cell.
           const hasPrimary=tiles.some(t=>t.layers.railway_line_high);
+          const packed=!hasPrimary && tiles.find(t=>t.layers.atlas_rail_detail)?.layers.atlas_rail_detail;
           const hasShortbread=tiles.some(t=>t.layers.streets);
-          const hasDetail=hasPrimary || hasShortbread || tiles.some(t=>t.layers.transportation);
-          canvas.detailReady=hasPrimary;
+          const hasDetail=hasPrimary || packed || hasShortbread || tiles.some(t=>t.layers.transportation);
+          const backup=hasShortbread || tiles.some(t=>t.layers.transportation);
+          const covered=packed && backup && PackedRail.mask(packed,magnification,dx,dy);
+          canvas.detailReady=!!(hasPrimary || packed);
           for (const tile of tiles) {
           for (const layerName of Object.keys(tile.layers).filter(name =>
-            ["poi","public_transport","railway_line_high"].includes(name) ||
+            ["poi","public_transport","railway_line_high"].includes(name) || !hasPrimary && name==="atlas_rail_detail" ||
             !hasPrimary && (name==="streets" || !hasShortbread && name==="transportation") ||
             !hasDetail && z<=9 && name==="speed_railway_line_low" ||
             name.startsWith("standard_railway_text_stations"))) {
             const layer = tile.layers[layerName];
             for (let i=0; i<(layer?.length || 0); i++) {
               const feature = layer.feature(i), tags = feature.properties;
-              const line = feature.type === 2 && (["railway_line_high","speed_railway_line_low"].includes(layerName) ||
+              const line = feature.type === 2 && (["railway_line_high","speed_railway_line_low","atlas_rail_detail"].includes(layerName) ||
                 (["rail","transit"].includes(tags.class) && /^(rail|subway|light_rail|tram|monorail|narrow_gauge|funicular)$/.test(tags.subclass)) ||
                 (layerName === "streets" && [true,1,"yes"].includes(tags.rail) &&
                   /^(rail|light_rail|subway|tram|monorail|narrow_gauge|funicular|disused|abandoned)$/.test(tags.kind)));
@@ -386,6 +404,10 @@ const RailMapLayers = (() => {
                 /^(station|halt|tram_stop|subway)$/.test(tags.subclass) ||
                 (layerName === "public_transport" && /^(station|halt|tram_stop|subway_station|railway_station)$/.test(tags.kind)));
               if (!line && !station) continue;
+              const backupRail=line && ["streets","transportation"].includes(layerName) && !AtlasPrefs.classify(tags).urban;
+              // At overview scales a generic transportation tile supplies neither
+              // a speed nor a railway classification. Keep the classified overview.
+              if(backupRail && !packed && z<=9 && AtlasPrefs.classify(tags).category==="unknown") continue;
               const visual = style(tags,false,station,z);
               if (!visual.visible) continue;
               const factor = size * magnification / feature.extent;
@@ -412,7 +434,7 @@ const RailMapLayers = (() => {
                   canvas.hits.push({x:px,y:py,tags,station:true});
                 } else {
                   const points=path.map(p=>[p.x*factor-dx,p.y*factor-dy]);
-                  let strokes=[points];
+                  let strokes=backupRail && covered ? PackedRail.outside(points,covered) : [points];
                   const facts=AtlasPrefs.classify(tags);
                   if (z>=8 && (facts.urban || regionRail.bounds)) {
                     // A tile can include a large buffer (especially overzoomed parent
@@ -420,8 +442,8 @@ const RailMapLayers = (() => {
                     const way=tags.osm_id || /^(\d+)-\d+$/.exec(tags.id)?.[1];
                     const identity=facts.urban ? MetroHandoff.identity(facts) : railwayIdentity(way);
                     const extent=L.bounds([0,0],[size,size]), clipped=[];
-                    for (let j=1;j<points.length;j++) {
-                      const segment=L.LineUtil.clipSegment(L.point(points[j-1]),L.point(points[j]),extent);
+                    for (const stroke of strokes) for (let j=1;j<stroke.length;j++) {
+                      const segment=L.LineUtil.clipSegment(L.point(stroke[j-1]),L.point(stroke[j]),extent);
                       if (!segment) continue;
                       const last=clipped.at(-1);
                       if (last && last.at(-1).equals(segment[0])) last.push(segment[1]);
@@ -443,7 +465,6 @@ const RailMapLayers = (() => {
                     stroke.forEach(([x,y],i)=>i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
                     canvas.hits.push({points:stroke,tags,id:tags.id ?? feature.id,source:layerName});
                   }
-                  if (path.length>1 && !facts.urban && hasDetail) canvas.detailReady=true;
                 }
                 ctx.stroke();
                 if(line && !visual.dashArray && AtlasPrefs.value.railwayPattern && !AtlasPrefs.classify(tags).urban && z>=11){
@@ -454,7 +475,18 @@ const RailMapLayers = (() => {
           }
           canvas.hasRail = canvas.hits.length>0;
           }
-        })().then(() => {if(!unloaded)done(null,canvas);},error => {if(!unloaded)done(error,canvas);});
+        }
+        source.promise.then(tiles=>{
+          if(unloaded)return;
+          paint(tiles);
+          done(null,canvas);
+          source.supplement?.then(next=>{
+            if(!next || unloaded)return;
+            paint(next); showDetail(coords,canvas.detailReady); StationLabels.schedule(); invalidateMetro();
+            const focus=LineFocus.active;
+            if(focus?.match) collectTile(focus.match,coords,canvas);
+          });
+        }).catch(error=>{if(!unloaded)done(error,canvas);});
         return canvas;
       }
     });

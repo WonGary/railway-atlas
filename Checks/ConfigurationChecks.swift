@@ -23,6 +23,17 @@ enum ConfigurationChecks {
                   && value.interface.inspectorWidth == 380 && value.interface.inspectorTab == "feature",
                   "pre-panel config migrates to floating medium panel and closed feature inspector")
         let restored = try AtlasConfiguration.decode(value.encoded())
+        let profiles = try AtlasConfiguration.decode(Data("""
+        {"assistant":{"provider":"deepseek","compatible":{"deepseek":{"model":"saved-model","maxOutputTokens":4096}}}}
+        """.utf8))
+        let saved = try AtlasConfiguration.decode(profiles.encoded()).assistant
+        try check(saved.provider == .deepseek && saved.selectedModel == "saved-model" && saved.outputLimit == 4096
+                  && saved.compatibleProfile.endpoint == AssistantProvider.deepseek.compatibleDefault?.endpoint
+                  && Set(saved.compatible.keys) == ["deepseek"], "saved compatible profile reloads with its overrides and sparse defaults")
+        let bundled = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Config/default-config.json")
+        try check(try Set(AtlasConfiguration.decode(Data(contentsOf: bundled)).assistant.compatible.keys) == ["deepseek","doubao","custom"],
+                  "bundled configuration accepts all supported compatible profiles")
         var stationDetail = try AtlasConfiguration.decode(Data(#"{"layers":{"showsStationLayouts":false}}"#.utf8))
         try check(stationDetail.layers.showsStationLayouts == false && stationDetail.layers.showsPlatforms
                   && stationDetail.layers.showsStationOutlines && stationDetail.layers.showsConcourses && stationDetail.layers.showsPassengerPassages
@@ -77,6 +88,10 @@ enum ConfigurationChecks {
             ("invalid inspector pane", #"{"interface":{"inspectorTab":"unknown"}}"#),
             ("invalid inspector width", #"{"interface":{"inspectorWidth":40}}"#),
             ("credentials in config", #"{"assistant":{"apiKey":"secret"}}"#),
+            ("unknown compatible provider", #"{"assistant":{"compatible":{"deepsekk":{}}}}"#),
+            ("unknown compatible field", #"{"assistant":{"compatible":{"deepseek":{"apiKey":"secret"}}}}"#),
+            ("invalid compatible endpoint", #"{"assistant":{"compatible":{"deepseek":{"endpoint":"http://example.test"}}}}"#),
+            ("invalid compatible token type", #"{"assistant":{"compatible":{"deepseek":{"maxOutputTokens":"3000"}}}}"#),
             ("invalid endpoint", #"{"assistant":{"endpoint":"http://example.test/v1/responses"}}"#),
             ("invalid standard basemap source", #"{"map":{"standardBasemapSource":"unknownProvider"}}"#),
             ("vector street source used as satellite", #"{"map":{"satelliteBasemapSource":"versaTiles"}}"#),

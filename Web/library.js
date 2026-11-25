@@ -145,5 +145,21 @@ const RailLibrary = (() => {
     }
     return matches.length===1 ? matches[0] : null;
   }
-  return { index, install, restore, search, runsOn, timetable, plan, trainNames, get current() { return current; } };
+  async function fromMac() {
+    // The URL opens the installed app. Only a short-lived, explicit request can
+    // read its public timetable, never the passport or configuration.
+    const nonce=crypto.randomUUID(), link=document.createElement("a");
+    link.href=`railwayatlas://timetable-sync/${nonce}`;link.click();
+    const until=Date.now()+90000;
+    while (Date.now()<until) {
+      await new Promise(resolve=>setTimeout(resolve,900));
+      try {
+        const response=await fetch(`http://127.0.0.1:18765/timetable/${nonce}`,
+          {credentials:"omit",cache:"no-store",signal:AbortSignal.timeout(12000)});
+        if (response.ok) return new File([await response.blob()],"lulutong.json");
+      } catch {}
+    }
+    throw Error("未连接到本机 App。可以导入官网 APK 或本机的 lulutong.json。");
+  }
+  return { index, install, restore, search, runsOn, timetable, plan, trainNames, fromMac, get current() { return current; } };
 })();

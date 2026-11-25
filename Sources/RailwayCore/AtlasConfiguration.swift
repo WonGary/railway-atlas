@@ -104,7 +104,15 @@ public struct AtlasConfiguration: Codable, Sendable {
         func merge(_ input: [String: Any], _ defaults: [String: Any], path: String) throws -> [String: Any] {
             var result = defaults
             for (key, value) in input {
-                guard let fallback = defaults[key], !(value is NSNull) else {
+                // Profiles are stored sparsely. An empty dictionary in a fresh
+                // configuration is not the schema of a saved provider profile.
+                let template: Any?
+                if path == "assistant.compatible.", let profile = AssistantProvider(rawValue: key)?.compatibleDefault {
+                    template = try JSONSerialization.jsonObject(with: JSONEncoder().encode(profile))
+                } else {
+                    template = defaults[key]
+                }
+                guard let fallback = template, !(value is NSNull) else {
                     throw DataError.invalid("配置字段无效：\(path)\(key)")
                 }
                 if let object = fallback as? [String: Any] {

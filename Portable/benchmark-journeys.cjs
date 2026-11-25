@@ -30,7 +30,7 @@ const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
       for(const run of ["cold","warm"]) {
         await page.evaluate(({day,train})=>{
           setWorkspaceView("route");setWorkspaceOpen(true);
-          const input=document.getElementById("libraryTrain");input.closest("details").open=true;
+          const input=document.getElementById("libraryTrain");
           document.getElementById("libraryDate").value=day;
           input.value=train;input.dispatchEvent(new Event("input",{bubbles:true}));
         },{day,train});

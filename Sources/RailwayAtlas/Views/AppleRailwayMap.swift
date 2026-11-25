@@ -344,7 +344,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 if key != "directory", firstDetailInk == nil { firstDetailInk = overlays[1] }
                 next[key] = FocusPiece(paths: paths, overlays: overlays)
             }
-            sync("directory", focus.paths, [rim,RailStroke(color: store.renderSettings.focusInk, width: 4.4)])
+            sync("directory", focus.paths, [rim,RailStroke(color: focus.pathColor ?? store.renderSettings.focusInk, width: 4.4)])
             for line in store.focusedLines(focus) {
                 sync(line.id,[line.coordinates],[rim]+store.appearance(line).focusStrokes(zoom: store.displayZoom, settings: store.renderSettings))
             }

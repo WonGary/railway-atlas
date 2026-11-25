@@ -11,6 +11,9 @@ struct MapLineFocus {
     var trackName: String?
     var stopNames = Set<String>()
     var paths: [[Coordinate]] = []
+    var pathColor: RailColor?
+    var directionID: String?
+    var directionStops = Set<String>()
     var directory = false
 
     func includes(_ line: RailLine) -> Bool {
@@ -21,6 +24,7 @@ struct MapLineFocus {
     }
 
     func includes(_ station: RailStation) -> Bool {
+        if directionID != nil { return directionStops.contains(station.id) || directionStops.contains(station.tags["atlas:osm"] ?? "") }
         if let stationID { return station.id == stationID }
         if stopNames.contains(station.name) || stopNames.contains(String(station.name.dropLast(station.name.hasSuffix("站") ? 1 : 0))) { return true }
         guard let routeKey else { return false }

@@ -98,6 +98,14 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             if url.scheme == "railwayatlas", url.host == "map" { store.changeMode(.apple) }
+            #if os(macOS)
+            if url.scheme=="railwayatlas",url.host=="timetable-sync",let id=UUID(uuidString:url.lastPathComponent) {
+                Task {
+                    do {try await BrowserTimetableShare.shared.start(id:id,library:store.journeyWorkspace.library)}
+                    catch {store.showMessage(error.localizedDescription,error:true)}
+                }
+            }
+            #endif
         }
     }
 }
@@ -328,6 +336,7 @@ struct DataControls: View {
             }
             Text("手动检查发布版本，只下载有变化的城市或网络。更新需要联网，下载中仍可使用地图。")
                 .atlasFont(.caption2).foregroundStyle(.secondary)
+            MetroCityBrowser()
             Divider()
             SectionCaption(title: "本地缓存数据库", detail: "自动保存")
             HStack(alignment: .firstTextBaseline) {

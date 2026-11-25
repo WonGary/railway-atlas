@@ -276,6 +276,8 @@ struct AtlasInspectorView: View {
                 if let selection = map.selection {
                     FeatureDetails(item: selection)
                         .atlasPadding(14)
+                } else if let id=map.lineFocus?.directionID, let entry=map.directions.entries[id] {
+                    MetroDirectionInspector(entry:entry).atlasPadding(14)
                 } else {
                     VStack(alignment: .leading, spacing: 12 * scale) {
                         Image(systemName: "cursorarrow.click.2")

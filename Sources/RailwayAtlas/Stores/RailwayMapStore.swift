@@ -13,8 +13,47 @@ final class RailwayMapStore: ObservableObject {
     }()
     @Published var stationBoardPins: [RailStation] = [] { didSet { previousVisibility=nil } }
     @Published private(set) var lineFocus: MapLineFocus?
+    private(set) var directions = MetroDirectionCatalog()
+    private let cityReader = MetroCityReader()
+    @Published var directionCity: MetroDirectionCatalog.City?
+    @Published var directionStatus = "放大到城市后自动加载线路和站序。"
+    private var directionTask: Task<Void,Never>?
+    private var requestedCity: String?
+    private var retryCityAfter = Date.distantPast
+    private var pendingDirection: String?
+
+    func loadDirections(_ city: MetroCitySpec, manual: Bool = false) {
+        if !manual, requestedCity == city.id, directionTask != nil || directionCity?.id == city.id || retryCityAfter > Date() {return}
+        directionTask?.cancel()
+        requestedCity=city.id
+        directionStatus="正在读取\(city.name)的城轨资料…"
+        let online=mapMode == .apple
+        directionTask=Task {
+            do {
+                if !manual {try await Task.sleep(for:.milliseconds(400))}
+                let result=try await cityReader.load(city,online:online,refresh:manual)
+                try Task.checkCancellation()
+                directions.accept(result)
+                directionCity=result
+                directionStatus=result.routes.isEmpty ? "\(city.name) · 此范围暂未收录城轨线路" : "\(city.name) · \(result.routes.count) 条方向记录 · \(result.sourceDate)"
+                if let id=pendingDirection, let entry=directions.entries[id] {
+                    pendingDirection=nil;showMetroDirection(entry,fit:false)
+                }
+            } catch {
+                guard !Task.isCancelled else {return}
+                directionStatus="\(city.name) · \(error.localizedDescription)"
+                retryCityAfter=Date().addingTimeInterval(90)
+            }
+            directionTask=nil
+        }
+    }
+    func loadViewportDirections() {
+        guard displayZoom >= 9 else { return }
+        loadDirections(MetroCitySpec.at(Coordinate(region.center.latitude,region.center.longitude)))
+    }
 
     func clearLineFocus() {
+        pendingDirection=nil
         guard lineFocus != nil else { return }
         lineFocus = nil
         if !stationBoardPins.isEmpty { stationBoardPins = []; rebuildVisible() }
@@ -22,9 +61,42 @@ final class RailwayMapStore: ObservableObject {
     }
 
     func focusRelation(_ route: RailRoute) {
+        if let entry = directions.entries[route.id] {
+            showMetroDirection(entry, fit: true)
+            return
+        }
         clearLineFocus()
-        lineFocus = MapLineFocus(title: urbanRouteTitles[route.visibilityKey] ?? route.name, routeKey: route.visibilityKey)
+        pendingDirection=route.id
+        let paths = nationalMetroSnapshot?.lines.filter { $0.routes?.contains(where: { $0.id == route.id }) == true }.map(\.coordinates) ?? []
+        lineFocus = MapLineFocus(title: urbanRouteTitles[route.visibilityKey] ?? route.name, routeKey: route.visibilityKey,
+                                 paths: paths, pathColor: (route.tags["colour"] ?? route.tags["color"]).flatMap(RailColor.init))
+        if !paths.isEmpty { region = MapBounds(points: paths.flatMap { $0 }).region; cameraRevision += 1 }
+        loadDirections(MetroCitySpec.at(Coordinate(region.center.latitude,region.center.longitude)))
         labelRevision += 1
+    }
+
+    func showMetroDirection(_ entry: MetroDirectionCatalog.Entry, fit: Bool) {
+        let direction = entry.direction, paths = direction.paths
+        var ids = Set<String>()
+        let pins = direction.stops.compactMap { stop -> RailStation? in
+            guard let location = stop.location, ids.insert(stop.id).inserted else { return nil }
+            return RailStation(id: stop.id, name: stop.name, coordinate: location,
+                               tags: ["railway":"station","station":direction.type,"atlas:osm":stop.id,
+                                      "atlas:source":"OpenStreetMap · \(entry.city)"],
+                               routes: (directions.byStop[stop.id] ?? [direction]).map(\.route))
+        }
+        stationBoardPins = pins
+        lineFocus = MapLineFocus(title: direction.name, paths: paths, pathColor: RailColor(direction.color),
+                                 directionID: direction.id, directionStops: ids)
+        #if os(macOS)
+        inspectorPane = .feature; inspectorVisible = true
+        #endif
+        if fit {
+            let points = paths.flatMap { $0 } + pins.map(\.coordinate)
+            if points.count >= 2 { region = MapBounds(points: points).region; cameraRevision += 1 }
+        }
+        labelRevision += 1
+        rebuildVisible()
     }
 
     #if os(macOS)
@@ -319,6 +391,10 @@ final class RailwayMapStore: ObservableObject {
                 lineFocus = MapLineFocus(title: item.name, featureID: line.id,
                     routeKey: keys.count == 1 ? keys.first : nil,
                     trackName: name, paths: name.map { MapContextFiles.parts($0) } ?? [])
+                if let route = routes.first, Set(routes.map(\.id)).count == 1 {
+                    if let entry = directions.entries[route.id] { showMetroDirection(entry, fit: false) }
+                    else { pendingDirection=route.id;loadDirections(MetroCitySpec.at(item.coordinate)) }
+                }
                 labelRevision += 1
             } else if let id = selection?.id, let station = station(withID: id) {
                 if lineFocus?.includes(station) != true {
@@ -767,8 +843,14 @@ final class RailwayMapStore: ObservableObject {
         }
         #endif
         if showsStations, !stationBoardPins.isEmpty {
-            let existing=Set(displayedStations.map(\.name))
-            displayedStations += stationBoardPins.filter { !existing.contains($0.name) }
+            if lineFocus?.directionID != nil {
+                let ids = Set(stationBoardPins.map(\.id))
+                displayedStations.removeAll { ids.contains($0.id) || ids.contains($0.tags["atlas:osm"] ?? "") }
+                displayedStations += stationBoardPins
+            } else {
+                let existing=Set(displayedStations.map(\.name))
+                displayedStations += stationBoardPins.filter { !existing.contains($0.name) }
+            }
         }
         visibleStations = displayedStations
         renderGroups = grouped.map { style, lines in

@@ -1,14 +1,14 @@
-const VERSION = "0.8.13";
+const VERSION = "0.8.15";
 const SHELL = `railway-atlas-web-${VERSION}-r1`;
-// City snapshots still carry the same 2026-11-05 edition. Reuse downloads on upgrade.
+// Retain immutable track, station and timetable chunks. City projections are versioned below.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
 const address = path => new URL(path, base).href;
 const files = [
-  "ticket-face.js","line-focus.js","metro-handoff.js","metro-updates.js","card-map.js","station-directory/card-geography.json","station-directory/lines/index.json",
-  "station-directory/national.js","station-directory/cnrail.js","station-directory/catalog.js","station-directory/panel.js","station-directory/panel.css","station-directory/paths.js","station-directory/paths/manifest.js",
+  "ticket-face.js","line-focus.js","metro-handoff.js","metro-updates.js","metro-source.js","metro-loader.js","card-map.js","station-directory/card-geography.json","station-directory/lines/index.json",
+  "station-directory/national.js","data/journey-aliases.js","station-directory/cnrail.js","station-directory/catalog.js","station-directory/panel.js","station-directory/panel.css","station-directory/paths.js","station-directory/paths/manifest.js",
   "index.html","styles.css","app.js","library.js","timetable-package.mjs","map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js","cache-worker.mjs",
-  "world-rail.js","data/rail/world-z2.json","data/rail/world-z4.json","data/rail/world-z6.json",
+  "world-rail.js","packed-rail.js","data/rail/detail/index.json","data/rail/world-z2.json","data/rail/world-z4.json","data/rail/world-z6.json",
   "data/rail/speed-z2.json","data/rail/speed-z4.json","data/rail/speed-z6.json",
   "station-layout-layer.js","data/station-layouts.js","data/station-layouts.json","data/world-stations/index.json",
   "vendor/sqlite/index.mjs","vendor/sqlite/sqlite3.wasm","vendor/sqlite/sqlite3-opfs-async-proxy.js",
@@ -53,14 +53,15 @@ self.addEventListener("fetch", event => {
       // manual redirect mode rejects that cached redirect chain when offline.
       return page.redirected ? new Response(page.body, {headers:page.headers, status:page.status}) : page;
     })());
-  } else if (/^station-directory\/(?:lines|paths)\/[A-Z0-9]+-[0-9a-f]{12}\.json$/.test(path) || /^data\/(?:metro\/[a-z]+\.json|regions\/[a-z-]+\.railmap|world-stations\/(?:sg-lta-)?-?\d+_-?\d+\.[0-9a-f]{12}\.json)$/.test(path)) {
+  } else if (/^station-directory\/(?:lines|paths)\/[A-Z0-9]+-[0-9a-f]{12}\.json$/.test(path) || /^data\/(?:rail\/detail\/\d+-\d+-[0-9a-f]{12}\.json|metro\/[a-z0-9-]+\.json|regions\/[a-z-]+\.railmap|world-stations\/(?:sg-lta-)?-?\d+_-?\d+\.[0-9a-f]{12}\.json)$/.test(path)) {
     event.respondWith((async () => {
       const cache = await caches.open(DETAILS);
-      const hit = await cache.match(request);
+      const cacheKey=path.startsWith("data/metro/") ? address(path+"?edition="+VERSION) : request;
+      const hit = await cache.match(cacheKey);
       if (hit) return hit;
       const response = await fetch(request);
       if (response.ok && !response.redirected) {
-        try { await cache.put(request,response.clone()); } catch { /* A full cache still permits online use. */ }
+        try { await cache.put(cacheKey,response.clone()); } catch { /* A full cache still permits online use. */ }
       }
       return response;
     })());
