@@ -800,6 +800,9 @@ function loadMetroCity(city, { retry = false } = {}) {
   return request;
 }
 
+function applyTrackStyle(line,values) {
+  if (Object.keys(values).some(key=>line.options[key]!==values[key])) line.setStyle(values);
+}
 function refreshMetroDetailVisibility() {
   if (!state.map) return;
   const zoom = state.map.getZoom();
@@ -821,6 +824,7 @@ function refreshMetroDetailVisibility() {
     if (detailedVisible) activeCities.add(city.name);
     setLayerVisible(layers.routesLayer, detailedVisible);
     setLayerVisible(layers.stationsLayer, stationsVisible);
+    if (!detailedVisible) continue;
     const detailOpacity = zoom >= 10 ? 0.98 : 0.82;
     const visibleIDs=new Set();
     layers.routeLines.forEach(entry => {
@@ -830,7 +834,7 @@ function refreshMetroDetailVisibility() {
       if (visible) visibleIDs.add(route.id);
       if (visible && detailedVisible) detailTracks.push(entry);
       if (visible !== layers.routesLayer.hasLayer(line)) visible ? layers.routesLayer.addLayer(line) : layers.routesLayer.removeLayer(line);
-      line.setStyle({
+      applyTrackStyle(line,{
         color:construction?"#d5dce0":prefs.showsMetroColors && route.color || "#526672",
         opacity:detailOpacity,weight:3.2*prefs.metroWidthScale
       });
@@ -840,8 +844,9 @@ function refreshMetroDetailVisibility() {
       const visible=station.routes.some(r=>visibleIDs.has(r.id));
       if (visible !== layers.stationsLayer.hasLayer(marker)) visible ? layers.stationsLayer.addLayer(marker) : layers.stationsLayer.removeLayer(marker);
       const selected = state.selectedMetroStation?.city.id === cityID && state.selectedMetroStation?.station.id === stationID;
-      marker.setRadius((selected ? 5 : 2.8)*prefs.stationRadiusMultiplier);
-      marker.setStyle({color:metroStopColors(layers,station)[0] || "#657d8a",fillColor:"#ffffff"});
+      const radius=(selected ? 5 : 2.8)*prefs.stationRadiusMultiplier;
+      if (marker.getRadius()!==radius) marker.setRadius(radius);
+      applyTrackStyle(marker,{color:metroStopColors(layers,station)[0] || "#657d8a",fillColor:"#ffffff"});
     }
   }
   RailMapLayers.setMetroCities(detailTracks);
@@ -853,7 +858,7 @@ function refreshMetroDetailVisibility() {
       AtlasPrefs.visibleRoute(record.city,route) && AtlasPrefs.visible(AtlasPrefs.classify({...route.tags,...(construction?{state:"construction"}:{})},true),zoom,{overview:true});
     if (visible && zoom>=8) visible=bounds.intersects(entry.bounds);
     if (visible) {
-      const revision=zoom<8 ? -1 : `${zoom}/${coverage.revision}`;
+      const revision=zoom<8 ? -1 : `${Math.round(zoom)}/${coverage.revision}`;
       if (entry.revision!==revision) {
         const displayed=zoom<8 ? parts : MetroHandoff.remaining(parts,identity,coverage.indexes);
         if (entry.displayed!==displayed) line.setLatLngs(displayed);
@@ -863,7 +868,7 @@ function refreshMetroDetailVisibility() {
       visible=entry.displayed.length>0;
     }
     if(visible !== state.metroLayer.hasLayer(line)) visible ? state.metroLayer.addLayer(line) : state.metroLayer.removeLayer(line);
-    line.setStyle({
+    if (visible) applyTrackStyle(line,{
       color:construction?"#d5dce0":prefs.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) || "#526672",
       opacity: visible ? (construction ? 0.22 : 0.16) + Math.max(0, Math.min(1, (zoom - 4) / 5)) * 0.44 : 0,
       weight: (construction ? 1.6 : 1.6 + Math.max(0, Math.min(1, (zoom - 4) / 5)) * 1.3)*prefs.metroWidthScale
@@ -892,7 +897,7 @@ function drawMetro() {
         lineCap: "round",
         className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
       }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${record.city || ""} · ${route.name || "城市轨道"}`}), { sticky: true });
-      line.on("click",e=>RailMapLayers.inspect(route.name,route.tags,false,e.latlng,{parts:line.getLatLngs(),overview:true,
+      line.on("click",e=>RailMapLayers.inspect(route.name,route.tags,false,e.latlng,{parts:validParts,overview:true,
         styleForPart:()=>({color:construction || AtlasPrefs.value.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) ? line.options.color : null,dashArray:line.options.dashArray})}));
       const facts=AtlasPrefs.classify({...route.tags,...(construction?{state:"construction"}:{})},true);
       state.metroPolylines.push({line,construction,record,parts:validParts,displayed:validParts,
@@ -901,16 +906,10 @@ function drawMetro() {
     }
   }
   const zoom = state.map.getZoom();
-  const detail = Math.max(0, Math.min(1, (zoom - 4) / 5));
   const hasMetro = state.map.hasLayer(state.metroLayer);
   if (state.showMetro && !hasMetro) state.metroLayer.addTo(state.map);
   if (!state.showMetro && hasMetro) state.map.removeLayer(state.metroLayer);
   state.metroVisible = state.showMetro && zoom >= 6;
-  state.metroPolylines.forEach(({ line, construction }) => line.setStyle({
-    opacity: state.showMetro && (!construction || state.showConstruction)
-      ? (construction ? 0.22 + detail * 0.42 : 0.16 + detail * 0.44) : 0,
-    weight: construction ? 1.6 + detail * 0.7 : 1.6 + detail * 1.3
-  }));
   refreshMetroDetailVisibility();
 }
 
@@ -1955,15 +1954,14 @@ function updateBasemapAppearance() {
     : baseID === "satellite" ? "纯卫星影像。线路和站名来自铁道漫游。"
     : "这款底图自带标注。选择「简洁街道」可避免和铁路图层重叠。";
   const brightness = 1 - basemapDarkness;
-  const rasterBrightness = brightness * (dark && !imagery ? 0.34 : 1);
   const surface = state.map.getContainer();
   surface.dataset.stationInk = imagery || dark || brightness <= 0.54 ? "light" : "dark";
   StationLayoutLayer.refresh();
   // Transparent or missing tiles reveal the map surface, including in offline mode.
   const background = imagery ? [46, 54, 59] : dark ? [34, 43, 46] : [240, 240, 233];
-  surface.style.backgroundColor = `rgb(${background.map(c => Math.round(c * brightness)).join(",")})`;
-  state.map.getPane("tilePane").style.filter = `brightness(${rasterBrightness})`;
-  state.map.getPane("vectorBasemap").style.filter = `brightness(${brightness})`;
+  surface.style.backgroundColor = `rgb(${background.join(",")})`;
+  const rasterNight=mode==="online" && !baseID.endsWith("-vector") && dark && !imagery;
+  state.map.getPane("basemapShade").style.opacity=String(1-brightness*(rasterNight ? .34 : 1));
   AtlasVectorBasemap.setTheme(dark, state.baseLayers[$("baseLayer").value], state.map);
 }
 
@@ -2596,7 +2594,22 @@ function updateBasemapCreditLine() {
 }
 
 function initializeMap() {
-  state.map = L.map("map", { zoomControl:true, attributionControl:false, preferCanvas:true,minZoom:2,maxZoom:19 });
+  state.map = L.map("map", { zoomControl:true, attributionControl:false, preferCanvas:true,minZoom:2,maxZoom:19,
+    zoomSnap:.25,zoomDelta:.5,wheelPxPerZoomLevel:100 });
+  const map=state.map;
+  const shades=[["basemapShade",205],["focusShade",610]].map(([name,z])=>{
+    const pane=map.createPane(name);
+    pane.classList.add("map-shade");pane.style.zIndex=z;
+    return pane;
+  });
+  function placeShades() {
+    const size=map.getSize(), topLeft=map.containerPointToLayerPoint([-256,-256]);
+    for (const shade of shades) {
+      shade.style.width=(size.x+512)+"px";shade.style.height=(size.y+512)+"px";
+      L.DomUtil.setPosition(shade,topLeft);
+    }
+  }
+  map.on("move resize viewreset",placeShades);
   // Several active layers credit the same providers. Let Leaflet reference-count
   // each credit independently, including when the last layer is switched off.
   const credits=L.control.attribution({prefix:false}).addTo(state.map);

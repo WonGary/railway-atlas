@@ -348,6 +348,9 @@ struct OfflineRailwayMap: View {
                     }
                 }
                 let zoom = RailDisplayPolicy.zoom(longitudeSpan: projection.visibleRegion.span.longitudeDelta, width: size.width)
+                if store.basemapDarkness > 0 {
+                    context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.black.opacity(store.basemapDarkness)))
+                }
                 let details = store.stationLayouts(in: projection.visibleBounds, zoom: zoom)
                 for kind in [StationLayoutKind.outline, .concourse] {
                     for feature in details where feature.kind == kind {
@@ -372,7 +375,7 @@ struct OfflineRailwayMap: View {
                     }
                     context.stroke(path, with:.color(.white), style:StrokeStyle(lineWidth:7,lineCap:.round,lineJoin:.round))
                     context.stroke(path, with:.color(store.renderSettings.focusInk.tint), style:StrokeStyle(lineWidth:4.4,lineCap:.round,lineJoin:.round))
-                    let groups = Dictionary(grouping: store.visibleLines.filter(focus.includes), by: store.appearance)
+                    let groups = Dictionary(grouping: store.focusedLines(focus), by: store.appearance)
                     let styled = groups.map { appearance, lines in
                         var track = Path()
                         for line in lines { addLine(line, to: &track, projection: projection) }
@@ -513,11 +516,9 @@ struct OfflineRailwayMap: View {
     }
 
     private func addLine(_ line: RailLine, to path: inout Path, projection: RailProjection) {
-        for segment in store.clippedGeometry[line.id] ?? [] {
-            guard let first = segment.first else { continue }
-            path.move(to: projection.screen(first))
-            for coordinate in segment.dropFirst() { path.addLine(to: projection.screen(coordinate)) }
-        }
+        guard let first = line.coordinates.first else { return }
+        path.move(to: projection.screen(first))
+        for coordinate in line.coordinates.dropFirst() { path.addLine(to: projection.screen(coordinate)) }
     }
 
     private func drawGrid(context: inout GraphicsContext, size: CGSize, projection: RailProjection) {

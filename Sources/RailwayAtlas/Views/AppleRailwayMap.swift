@@ -75,14 +75,13 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                                   style: store.basemapStyle,
                                   template: store.activeBasemapTemplate, dark: colorScheme == .dark)
         if coordinator.shade == nil {
-            let shade = BasemapShade()
+            let shade = Coordinator.shadePolygon("basemap-shade")
             coordinator.shade = shade
             map.addOverlay(shade, level: .aboveLabels)
         }
-        if let shade = coordinator.shade, let renderer = map.renderer(for: shade) as? BasemapShadeRenderer,
-           renderer.darkness != store.basemapDarkness {
-            renderer.darkness = store.basemapDarkness
-            renderer.setNeedsDisplay()
+        if let shade = coordinator.shade, let renderer = map.renderer(for: shade),
+           renderer.alpha != store.basemapDarkness {
+            renderer.alpha = store.basemapDarkness
         }
         let layoutChanged = coordinator.updateLayouts(map, dark: lightLabels)
         if coordinator.renderRevision != store.renderRevision {
@@ -135,7 +134,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                     // Put the replacement into MapKit before retiring its
                     // predecessor. The old vector remains visible until the
                     // new renderer has had a chance to paint.
-                    map.addOverlay(multi, level: .aboveLabels)
+                    coordinator.addBackground(multi, to: map)
                 }
                 coordinator.groups[key] = overlays
                 coordinator.retire(old, immediately: userVisibilityChanged, on: map)
@@ -172,17 +171,16 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             // New groups arrive after retained overlays in MapKit. Restore
             // the prepared paint order so a late neutral track cannot cover
             // an already-coloured route. Reordering keeps vector geometry.
-            let ordered: [any MKOverlay] = (coordinator.shade.map { [$0 as any MKOverlay] } ?? [])
-                + coordinator.overlays(for: .outline)
+            let ordered: [any MKOverlay] = coordinator.overlays(for: .outline)
                 + coordinator.overlays(for: .concourse)
                 + displayGroups.flatMap {
                     coordinator.groups[.init(token: $0.geometryToken, alignment: store.alignment), default: []]
                         .map { $0 as any MKOverlay }
                 } + coordinator.overlays(for: .platform) + coordinator.overlays(for: .passage) + coordinator.overlays(for: .entrance)
                 + coordinator.experienceOverlays.map { $0 as any MKOverlay }
-                + (coordinator.focusVeil.map { [$0 as any MKOverlay] } ?? [])
-                + coordinator.highlights.map { $0 as any MKOverlay }
-            var actual = map.overlays(in: .aboveLabels)
+            let wanted = Set(ordered.map(ObjectIdentifier.init))
+            // Retiring geometry, the fixed tints and the foreground never trade places.
+            var actual = map.overlays(in: .aboveLabels).filter { wanted.contains(ObjectIdentifier($0)) }
             var positions = Dictionary(uniqueKeysWithValues: actual.enumerated().map { (ObjectIdentifier($0.element), $0.offset) })
             for (target, overlay) in ordered.enumerated() {
                 guard let current = positions[ObjectIdentifier(overlay)], current != target else { continue }
@@ -243,7 +241,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 let overlay = MKMultiPolyline(parts)
                 overlay.title = "experience|\(key)"
                 coordinator.experienceOverlays.append(overlay)
-                map.addOverlay(overlay, level: .aboveLabels)
+                coordinator.addBackground(overlay, to: map)
             }
         }
         if let point = store.experienceMarker {
@@ -271,50 +269,87 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var cameraRevision = -1
         var cameraUpdatePending = false
         var selectedID: String?
-        var highlights: [MKMultiPolyline] = []
+        struct FocusPiece {
+            let paths: [[Coordinate]]
+            let overlays: [MKMultiPolyline]
+        }
+        var focusPieces: [String: FocusPiece] = [:]
+        var focusAlignment: MapAlignment?
         var focusRevision: UUID?
         var focusInk: RailColor?
-        var focusVeil: FocusVeil?
+        var focusVeil: MKPolygon?
+        static func shadePolygon(_ name: String) -> MKPolygon {
+            let w = MKMapRect.world.width
+            // Intermediate vertices keep each edge shorter than half a wrapped world.
+            let points = [0.0,0.25,0.5,0.75,1.0].map { MKMapPoint(x: $0*w, y: 0) }
+                + [1.0,0.75,0.5,0.25,0.0].map { MKMapPoint(x: $0*w, y: w) }
+            let polygon = MKPolygon(points: points, count: points.count)
+            polygon.title = name
+            return polygon
+        }
+        func addBackground(_ overlay: any MKOverlay, to map: MKMapView) {
+            if let focusVeil { map.insertOverlay(overlay, below: focusVeil) }
+            else { map.addOverlay(overlay, level: .aboveLabels) }
+        }
         func updateFocus(_ focus: MapLineFocus?, on map: MKMapView) {
-            stationStyles.removeAll(keepingCapacity: true)
+            let changed = focusRevision != focus?.revision || focusAlignment != store.alignment
+            if changed { stationStyles.removeAll(keepingCapacity: true) }
             focusRevision = focus?.revision
-            for overlay in highlights { styles.removeValue(forKey: ObjectIdentifier(overlay)) }
-            map.removeOverlays(highlights)
-            highlights = []
+            focusAlignment = store.alignment
+            var old = focusPieces
+            func removeOld() {
+                let overlays = old.values.flatMap(\.overlays)
+                guard !overlays.isEmpty else { return }
+                map.removeOverlays(overlays)
+                for overlay in overlays { styles.removeValue(forKey: ObjectIdentifier(overlay)) }
+            }
             guard let focus else {
+                focusPieces.removeAll()
+                removeOld()
                 if let focusVeil { map.removeOverlay(focusVeil); self.focusVeil = nil }
                 return
             }
             if focusVeil == nil {
-                let veil = FocusVeil()
+                let veil = Self.shadePolygon("focus-shade")
                 focusVeil = veil
                 map.addOverlay(veil, level: .aboveLabels)
             }
-            var directory: [MKPolyline] = []
-            for path in focus.paths {
-                for segment in store.alignment.displaySegments(path) {
-                    let points = segment.map(\.location)
-                    directory.append(MKPolyline(coordinates: points, count: points.count))
-                }
-            }
-            func add(_ parts: [MKPolyline], _ stroke: RailStroke) {
-                guard !parts.isEmpty else { return }
-                let multi = MKMultiPolyline(parts)
-                multi.title = stroke.color.hex == "#FFFFFF" && stroke.width == 7 ? "focus-rim" : "focus-rail"
-                styles[ObjectIdentifier(multi)] = stroke
-                highlights.append(multi)
-                map.addOverlay(multi, level: .aboveLabels)
-            }
-            let groups = Dictionary(grouping: store.visibleLines.filter(focus.includes), by: store.appearance)
+            var next: [String: FocusPiece] = [:]
+            var firstDetailInk: MKMultiPolyline?
             let rim = RailStroke(color: RailColor("#FFFFFF")!, width: 7)
-            add(directory, rim)
-            add(directory, RailStroke(color: store.renderSettings.focusInk, width: 4.4))
-            let styled = groups.map { appearance, lines in
-                (appearance.focusStrokes(zoom: store.displayZoom, settings: store.renderSettings),
-                 lines.flatMap { geometry[$0.id]?.2 ?? [] })
+            func sync(_ key: String, _ paths: [[Coordinate]], _ strokes: [RailStroke]) {
+                guard !paths.isEmpty else { return }
+                if !changed, let piece = old[key], piece.paths == paths, piece.overlays.count == strokes.count {
+                    for (overlay, stroke) in zip(piece.overlays, strokes) where styles[ObjectIdentifier(overlay)] != stroke {
+                        styles[ObjectIdentifier(overlay)] = stroke
+                        if let renderer = map.renderer(for: overlay) as? MKOverlayPathRenderer { apply(stroke, to: renderer) }
+                    }
+                    next[key] = old.removeValue(forKey: key)
+                    if key != "directory", firstDetailInk == nil { firstDetailInk = piece.overlays[1] }
+                    return
+                }
+                let parts = paths.flatMap { store.alignment.displaySegments($0) }.map { path in
+                    let coordinates = path.map(\.location)
+                    return MKPolyline(coordinates: coordinates, count: coordinates.count)
+                }
+                var overlays: [MKMultiPolyline] = []
+                for (i,stroke) in strokes.enumerated() {
+                    let multi = MKMultiPolyline(parts)
+                    multi.title = i == 0 ? "focus-rim" : "focus-rail"
+                    styles[ObjectIdentifier(multi)] = stroke
+                    if i == 0, key != "directory", let firstDetailInk { map.insertOverlay(multi, below: firstDetailInk) }
+                    else { map.addOverlay(multi, level: .aboveLabels) }
+                    overlays.append(multi)
+                }
+                if key != "directory", firstDetailInk == nil { firstDetailInk = overlays[1] }
+                next[key] = FocusPiece(paths: paths, overlays: overlays)
             }
-            add(styled.flatMap(\.1), rim)
-            for (strokes, paths) in styled { for stroke in strokes { add(paths, stroke) } }
+            sync("directory", focus.paths, [rim,RailStroke(color: store.renderSettings.focusInk, width: 4.4)])
+            for line in store.focusedLines(focus) {
+                sync(line.id,[line.coordinates],[rim]+store.appearance(line).focusStrokes(zoom: store.displayZoom, settings: store.renderSettings))
+            }
+            focusPieces = next
+            removeOld()
         }
         var historyActive = false
         var experienceRevision = -1
@@ -345,7 +380,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var stations: [String: StationAnnotation] = [:]
         var basemapOverlay: BasemapTileOverlay?
         var basemapKey = ""
-        var shade: BasemapShade?
+        var shade: MKPolygon?
         var labelRevision = -1
         var uiScale = 1.0
         var lightStationLabels = false
@@ -387,7 +422,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 let overlay = feature.overlay(alignment: store.alignment)
                 layouts[feature.id] = (feature, overlay)
                 layoutKinds[ObjectIdentifier(overlay)] = feature.kind
-                map.addOverlay(overlay, level: .aboveLabels)
+                addBackground(overlay, to: map)
                 changed = true
             }
             return changed
@@ -483,9 +518,12 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             }
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: any MKOverlay) -> MKOverlayRenderer {
-            if overlay is FocusVeil {
-                let renderer = BasemapShadeRenderer(overlay: overlay)
-                renderer.darkness = 0.50
+            if let polygon = overlay as? MKPolygon, polygon === shade || polygon === focusVeil {
+                let renderer = MKPolygonRenderer(polygon: polygon)
+                renderer.shouldRasterize = false
+                renderer.fillColor = .black
+                renderer.strokeColor = nil
+                renderer.alpha = polygon === shade ? store.basemapDarkness : 0.50
                 return renderer
             }
             if let tile = overlay as? BasemapTileOverlay {
@@ -498,11 +536,6 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 else if let line = overlay as? MKMultiPolyline { renderer = MKMultiPolylineRenderer(multiPolyline: line) }
                 else { return MKOverlayRenderer(overlay: overlay) }
                 paintLayout(kind, renderer)
-                return renderer
-            }
-            if overlay is BasemapShade {
-                let renderer = BasemapShadeRenderer(overlay: overlay)
-                renderer.darkness = store.basemapDarkness
                 return renderer
             }
             let renderer: MKOverlayPathRenderer
@@ -815,23 +848,5 @@ final class StationAnnotation: NSObject, MKAnnotation {
         self.station = station
         self.alignment = alignment
         coordinate = alignment.display(station.coordinate).location
-    }
-}
-
-final class BasemapShade: NSObject, MKOverlay {
-    let coordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
-    let boundingMapRect = MKMapRect.world
-}
-
-final class FocusVeil: NSObject, MKOverlay {
-    let coordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
-    let boundingMapRect = MKMapRect.world
-}
-
-private final class BasemapShadeRenderer: MKOverlayRenderer {
-    var darkness: Double = 0
-    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
-        context.setFillColor(CGColor(gray: 0, alpha: darkness))
-        context.fill(rect(for: mapRect))
     }
 }

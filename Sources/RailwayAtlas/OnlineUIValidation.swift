@@ -332,15 +332,34 @@ enum OnlineUIValidation {
         store.region=MKCoordinateRegion(center:.init(latitude:35.4,longitude:115.6),span:.init(latitudeDelta:2.4,longitudeDelta:3.0))
         store.cameraRevision += 1
         try await Task.sleep(for:.milliseconds(650))
-        guard let map=child(root,MKMapView.self), map.overlays.contains(where:{$0 is FocusVeil}),
-              map.overlays.contains(where:{($0 as? MKMultiPolyline)?.title=="focus-rail"}) else { throw DataError.invalid("主地图未绘出高亮") }
+        guard let map=child(root,MKMapView.self),
+              let veil=map.overlays.compactMap({$0 as? MKPolygon}).first(where:{$0.title=="focus-shade"}),
+              let base=map.overlays.compactMap({$0 as? MKPolygon}).first(where:{$0.title=="basemap-shade"}),
+              let track=map.overlays.compactMap({$0 as? MKMultiPolyline}).first(where:{$0.title=="focus-rail" && $0.polylines.count>1})
+        else { throw DataError.invalid("主地图未绘出高亮") }
+        let initial=map.region
+        for (offset,scale) in [(0.15,0.9),(-0.35,0.7),(0,1.0)] {
+            var next=initial
+            next.center.longitude+=offset; next.span.longitudeDelta*=scale; next.span.latitudeDelta*=scale
+            map.setRegion(next,animated:true)
+            try await Task.sleep(for:.milliseconds(420))
+            let layers=map.overlays(in:.aboveLabels).map(ObjectIdentifier.init)
+            guard let a=layers.firstIndex(of:ObjectIdentifier(base)), let b=layers.firstIndex(of:ObjectIdentifier(veil)),
+                  let c=layers.firstIndex(of:ObjectIdentifier(track)), a<b,b<c else { throw DataError.invalid("移动时替换了高亮或暗化层") }
+        }
         _ = try await capture("native-line-focus",directory:directory,window:window)
         _ = try await board.evaluateJavaScript("[...document.querySelectorAll('summary')].find(s=>s.textContent.startsWith('京西联络线 ·')).click()")
         for _ in 0..<40 where store.lineFocus?.title != "京西联络线" { try await Task.sleep(for:.milliseconds(80)) }
         guard store.lineFocus?.title=="京西联络线" else { throw DataError.invalid("线路没有切换") }
         store.inspectorVisible=false
         try await Task.sleep(for:.milliseconds(180))
-        guard store.lineFocus==nil,store.stationBoardPins.isEmpty,!map.overlays.contains(where:{$0 is FocusVeil}) else { throw DataError.invalid("关闭后地图仍然暗化") }
+        guard store.lineFocus==nil,store.stationBoardPins.isEmpty,!map.overlays.contains(where:{($0 as? MKPolygon)?.title=="focus-shade"}) else { throw DataError.invalid("关闭后地图仍然暗化") }
+        store.basemapDarkness=0.42
+        map.setCenter(CLLocationCoordinate2D(latitude:35.5,longitude:115.9),animated:true)
+        try await Task.sleep(for:.milliseconds(500))
+        guard let shade=map.renderer(for:base) as? MKPolygonRenderer, abs(shade.alpha-0.42)<0.001,
+              !shade.shouldRasterize else { throw DataError.invalid("移动后底图暗化失效") }
+        store.basemapDarkness=0
         guard let geo = CardGeography.shared, !geo.cities.isEmpty,
               let contours = CardGeography.Contours.shared, contours.provinces.count == 34,
               !contours.provinceLines.isEmpty, !contours.coastLines.isEmpty, !contours.hainan.isEmpty,

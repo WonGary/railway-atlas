@@ -52,6 +52,19 @@ final class RailwayMapStore: ObservableObject {
     @Published var renderSettings = RailRenderSettings() { didSet { rebuildVisible() } }
     private var stationTrackCategories: [String: RailCategory] = [:]
     private var prepared = PreparedMapData(lines: [], stations: [])
+    private var focusedIndices: (UUID, [Int])?
+    func focusedLines(_ focus: MapLineFocus) -> [RailLine] {
+        guard focus.featureID != nil || focus.routeKey != nil || focus.trackName != nil else { return [] }
+        let lines = activeLines
+        if focusedIndices?.0 != focus.revision {
+            focusedIndices = (focus.revision, lines.indices.filter { focus.includes(lines[$0]) })
+        }
+        var policy = visibilityPolicy
+        policy.automaticDetail = false
+        return (focusedIndices?.1 ?? []).compactMap { i in
+            policy.visible(lines[i], facts: prepared.lines[i].display, suppressed: prepared.lines[i].suppressed)
+        }
+    }
     private var preparedStyles: [RailAppearance] = []
     private var styleSettings: RailRenderSettings?
     private var styleMetroColors = true
@@ -302,9 +315,10 @@ final class RailwayMapStore: ObservableObject {
                 clearLineFocus()
                 let routes = line.routes ?? []
                 let keys = Set(routes.map(\.visibilityKey))
+                let name = line.tags["name:zh"] ?? line.tags["name"]
                 lineFocus = MapLineFocus(title: item.name, featureID: line.id,
                     routeKey: keys.count == 1 ? keys.first : nil,
-                    trackName: line.tags["name:zh"] ?? line.tags["name"])
+                    trackName: name, paths: name.map { MapContextFiles.parts($0) } ?? [])
                 labelRevision += 1
             } else if let id = selection?.id, let station = station(withID: id) {
                 if lineFocus?.includes(station) != true {
@@ -625,6 +639,7 @@ final class RailwayMapStore: ObservableObject {
     }
 
     func rebuildIndex(precomputed: PreparedMapData? = nil) {
+        focusedIndices = nil
         prepared = precomputed ?? PreparedMapData(lines: activeLines, stations: activeStations)
         stationTrackCategories = prepared.stationCategories
         // A tile/colour response changes metadata much more often than

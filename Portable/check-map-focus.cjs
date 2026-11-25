@@ -27,13 +27,13 @@ async function main() {
     await board.getByRole("button",{name:/地图查看沿线站点/}).click();
     await page.waitForFunction(()=>LineFocus.active?.parts.length>0 && state.map.getZoom()<10);
     const directory=await page.evaluate(()=>({stops:LineFocus.active.stops.length,parts:LineFocus.active.parts.length,
-      note:LineFocus.active.note,backgroundOpacity:getComputedStyle(state.map.getPane("overlayPane")).opacity}));
-    assert.ok(+directory.backgroundOpacity<0.4);
+      note:LineFocus.active.note,shadeOpacity:getComputedStyle(state.map.getPane("focusShade")).opacity}));
+    assert.equal(+directory.shadeOpacity,.5);
     await page.screenshot({path:path.join(output,"directory-focus.png")});
     await board.locator("summary").filter({hasText:/^京西联络线 ·/}).click();
     await page.waitForFunction(()=>LineFocus.active?.title==="京西联络线" && !LineFocus.active.note.includes("读取"));
     await page.locator("#closeInfo").click();
-    await page.waitForFunction(()=>!LineFocus.active && getComputedStyle(state.map.getPane("overlayPane")).opacity==="1");
+    await page.waitForFunction(()=>!LineFocus.active && getComputedStyle(state.map.getPane("focusShade")).opacity==="0");
 
     // Find a genuine rendered hit point away from station symbols, using the
     // loaded city geometry. Dispatch a pointer click through the browser.

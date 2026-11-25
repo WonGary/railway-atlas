@@ -1,7 +1,7 @@
 // Compare only adjacent levels of detail. Coordinates are WGS84 [latitude, longitude].
 // Two tracks from the same source (including opposite directions) never mask each other.
 const MetroHandoff = (() => {
-  const metres = 111320, tolerance = 60, cell = 0.02;
+  const metres = 111320, cell = 0.02;
   const bounds = (a,b) => [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])];
   const intersects = (a,b) => a[0]<=b[2] && a[2]>=b[0] && a[1]<=b[3] && a[3]>=b[1];
   function cells(box, visit) {
@@ -37,7 +37,7 @@ const MetroHandoff = (() => {
     if (a.ids.length && b.ids.length) return a.ids.some(id=>b.ids.includes(id));
     return a.network===b.network;
   }
-  function remaining(parts, owner, indexes) {
+  function remaining(parts, owner, indexes, tolerance=60) {
     if (!indexes.some(index=>index.bounds)) return parts;
     const result=[];
     let changed=false;

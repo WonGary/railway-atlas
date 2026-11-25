@@ -2,9 +2,9 @@ const RailMapLayers = (() => {
   const prefix = "./data/rail/";
   let map, overview, world, region, live, activeRegion, tileTemplate, regionGeneration = 0;
   const regionalTiles = [];
-  let overviewReady = false;
-  const overviewGroups=[];
-  let cityTracks=new MetroHandoff.Tracks(), regionTracks=new MetroHandoff.Tracks();
+  const overviewTiles=new Map();
+  let cityTracks=new MetroHandoff.Tracks(), regionTracks=new MetroHandoff.Tracks(), regionRail=new MetroHandoff.Tracks();
+  const railwayIdentity=way=>({network:"railway",category:"track",ids:way ? [String(way)] : []});
   let cityEntries=[], metroRevision=0, metroFrame=0;
   function invalidateMetro() {
     metroRevision++;
@@ -24,7 +24,7 @@ const RailMapLayers = (() => {
   function metroCoverage() {
     const indexes=[cityTracks,regionTracks];
     if (live && map.hasLayer(live)) for (const tile of Object.values(live._tiles)) {
-      if (tile.current && tile.coords.z===map.getZoom() && tile.loaded && tile.el.metroTracks?.bounds)
+      if (tile.current && tile.coords.z===live._tileZoom && tile.loaded && tile.el.metroTracks?.bounds)
         indexes.push(tile.el.metroTracks);
     }
     return {revision:metroRevision,indexes};
@@ -34,7 +34,7 @@ const RailMapLayers = (() => {
 
   function inspect(name, tags, station = false, coordinate=null, focus=null) {
     if (station) LineFocus.station(name,null,coordinate,focus?.stopColors || (()=>[focusStyle(tags).color].filter(Boolean)));
-    else if (focus?.parts?.length) LineFocus.set(name,focus.parts,focus.stops || [],focus);
+    else if (focus?.parts?.length || focus?.match) LineFocus.set(name,focus.parts || [],focus.stops || [],focus);
     else LineFocus.clear();
     state.selectedMetroStation = state.selectedMetroRoute = null;
     state.selectedMapFeature={name,tags,station,coordinate:coordinate ? [coordinate.lat,coordinate.lng] : null};
@@ -84,18 +84,29 @@ const RailMapLayers = (() => {
     const colors=AtlasPrefs.value.showsMetroColors ? (feature.routes || []).map(r=>r.color || r.tags?.["atlas:bundledColour"] || r.tags?.colour).filter(tagColor) : [];
     return colors.length ? [...new Set(colors)].sort() : [focusStyle(feature.tags || {}).color].filter(Boolean);
   }
-  function namedTracks(name) {
-    const result=[], named=tags=>(tags?.["name:zh"] || tags?.name)===name;
-    for (const feature of activeRegion?.lines || []) if (named(feature.tags)) {
-      result.push({path:feature.coordinates.map(p=>[p.latitude,p.longitude]),style:focusStyle(withRouteColour(feature))});
+  const trackName=tags=>tags?.["name:zh-Hans"] || tags?.["name:zh"] || tags?.["name_zh-Hans"] || tags?.name_zh || tags?.name;
+  function collectTile(match,coords,tile) {
+    if (!match || !tile.hits) return;
+    const {x,y,z}=coords;
+    if (LineFocus.active.extra.has(`tile/${z}/${x}/${y}`)) return;
+    const samples=[];
+    for (const hit of tile.hits) {
+      if (!hit.points || !(match.name && trackName(hit.tags)===match.name ||
+          match.id!=null && match.id===hit.id && match.source===hit.source)) continue;
+      const path=hit.points.map(([a,b])=>map.unproject([x*256+a,y*256+b],z));
+      const tags=hit.tags;
+      samples.push({path,style:()=>focusStyle(tags)});
     }
-    const z=map.getZoom();
+    LineFocus.addTile({x,y,z},samples);
+  }
+  function collectFocus(match) {
+    if (match.name) for (const feature of activeRegion?.lines || []) {
+      if (trackName(feature.tags)===match.name && !match.regionAlreadyDrawn) LineFocus.addTracks(`region/${feature.id}`,[{
+        path:feature.coordinates.map(p=>[p.latitude,p.longitude]),style:()=>focusStyle(withRouteColour(feature))}]);
+    }
     if (live && map.hasLayer(live)) for (const {coords,el,current} of Object.values(live._tiles)) {
-      if (!current || coords.z!==z) continue;
-      for (const hit of el.hits || []) if (hit.points && named(hit.tags)) result.push({
-        path:hit.points.map(([x,y])=>map.unproject([coords.x*256+x,coords.y*256+y],z)),style:focusStyle(hit.tags)});
+      if (current && coords.z===live._tileZoom) collectTile(match,coords,el);
     }
-    return result.filter(s=>s.style.color);
   }
   const validPoint = point => point && Number.isFinite(point.latitude) && Math.abs(point.latitude) <= 85 &&
     Number.isFinite(point.longitude) && Math.abs(point.longitude) <= 180;
@@ -111,6 +122,7 @@ const RailMapLayers = (() => {
   function renderRegion(fit = false) {
     region.clearLayers();
     regionTracks=new MetroHandoff.Tracks();
+    regionRail=new MetroHandoff.Tracks();
     invalidateMetro();
     if (!activeRegion) return;
     const data = activeRegion;
@@ -129,6 +141,8 @@ const RailMapLayers = (() => {
         paths=MetroHandoff.remaining(paths,identity,[cityTracks]);
         if (!paths.length) continue;
         regionTracks.add(paths,identity);
+      } else if (feature.coordinates) {
+        regionRail.add(paths,railwayIdentity(/^way\/(\d+)/.exec(feature.id)?.[1]));
       }
       const item = feature.coordinates ? L.polyline(paths,{...visual,bubblingMouseEvents:false}) :
         L.circleMarker(coords[0],{radius:3.2*AtlasPrefs.value.stationRadiusMultiplier,color:visual.color,fillColor:"#fff",fillOpacity:1,weight:2,bubblingMouseEvents:false});
@@ -147,6 +161,7 @@ const RailMapLayers = (() => {
           const named=f=>tags.name && f.tags?.name===tags.name;
           const lines=data.lines.filter(f=>f.id===feature.id || member(f) || named(f));
           focus={parts:lines.map(f=>f.coordinates.map(p=>[p.latitude,p.longitude])),styleForPart:i=>focusStyle(withRouteColour(lines[i])),
+            match:trackName(tags) ? {name:trackName(tags),regionAlreadyDrawn:true} : null,
             stops:data.stations.filter(member).map(s=>[s.name,[s.coordinate.latitude,s.coordinate.longitude],s.id,()=>stationColors(s)])};
         } else focus={stopColors:()=>stationColors(feature)};
         inspect(title,{...tags,membership:(feature.routes || []).map(route => route.name).filter(Boolean).join("、")},!feature.coordinates,e.latlng,focus);
@@ -170,12 +185,13 @@ const RailMapLayers = (() => {
       if (file) $("regionSelect").value = "";
       $("regionStatus").textContent = "";
       renderRegion(true);
+      if (LineFocus.active?.match) collectFocus(LineFocus.active.match);
       live?.redraw();
     } catch (error) { if (generation === regionGeneration) $("regionStatus").textContent = error.message; }
   }
   async function loadOverview() {
     const index = await loadJSON(`${prefix}index.json`);
-    const results = await Promise.allSettled(index.tiles.map(async ({x,y,z,file}) => {
+    await Promise.allSettled(index.tiles.map(async ({x,y,z,file}) => {
       const response = await fetch(prefix + file);
       if (!response.ok) throw new Error("铁路概览瓦片读取失败。");
       const tile = AtlasVector.decode(new Uint8Array(await response.arrayBuffer()));
@@ -186,33 +202,69 @@ const RailMapLayers = (() => {
         if (feature.type !== 2) continue;
         const tags=feature.properties,f=AtlasPrefs.classify(tags),key=`${f.category}|${f.network}`;
         if (!groups.has(key)) groups.set(key,{tags,parts:[]});
-        const shape = feature.toGeoJSON(x,y,z).geometry;
-        const parts = shape.type === "LineString" ? [shape.coordinates] : shape.coordinates;
-        for (const part of parts) groups.get(key).parts.push(part.map(([lon,lat]) => [lat,lon]));
+        for (const part of feature.loadGeometry()) groups.get(key).parts.push(part.map(p=>[p.x/feature.extent,p.y/feature.extent]));
       }
-      if (groups.size) regionalTiles.push([x,y]);
-      return [...groups.values()];
+      if (groups.size) {
+        regionalTiles.push([x,y]);
+        overviewTiles.set(`${x}/${y}`,{x,y,z,groups:[...groups.values()]});
+      }
     }));
-    for (const {parts,tags} of results.flatMap(result => result.status==="fulfilled" ? result.value : [])) {
-      const line=L.polyline(parts,{...style(tags,true),interactive:true,bubblingMouseEvents:false,pane:"railOverview"});
-      const {category}=AtlasPrefs.classify(tags);
-      line.on("click",e=>{
-        const part=LineFocus.closestPart(parts,e.latlng);
-        inspect("铁路概览 · "+AtlasPrefs.categories[category][0],{feature:"铁路概览",分类:AtlasPrefs.categories[category][0]},false,e.latlng,
-          part && {parts:[part],styleForPart:()=>focusStyle(tags),note:"概览轨道区段"});
-      });
-      overviewGroups.push({line,tags});
-    }
-    overviewReady = true;
+    overview.redraw();
     toggle();
     world.repaint();
   }
-  async function timedResponse(url, parentSignal) {
+  // Regional Z4 geometry is a tiled overview, just like the global overview.
+  // A detailed tile takes over its own cell, including a verified empty rail tile.
+  function regionalOverview() {
+    const grid=L.gridLayer({pane:"railOverview",minZoom:2,maxZoom:9,keepBuffer:1});
+    grid.createTile=coords=>{
+      const canvas=document.createElement("canvas"), dpr=Math.min(2,devicePixelRatio||1);
+      canvas.width=canvas.height=256*dpr;
+      const ctx=canvas.getContext("2d");ctx.scale(dpr,dpr);
+      canvas.tracks=[];
+      for (const source of overviewTiles.values()) {
+        const span=256*2**(coords.z-source.z), dx=span*source.x-coords.x*256, dy=span*source.y-coords.y*256;
+        if (dx>=256 || dy>=256 || dx+span<=0 || dy+span<=0) continue;
+        ctx.save();ctx.beginPath();ctx.rect(dx,dy,span,span);ctx.clip();
+        for (const {tags,parts} of source.groups) {
+          const visual=style(tags,true,false,coords.z);
+          if (!visual.visible) continue;
+          const path=new Path2D();
+          for (const part of parts) {
+            for (let i=0;i<part.length;i++) path[i?"lineTo":"moveTo"](dx+part[i][0]*span,dy+part[i][1]*span);
+          }
+          ctx.strokeStyle=visual.color;ctx.lineWidth=visual.weight;ctx.globalAlpha=visual.opacity;
+          ctx.lineJoin=ctx.lineCap="round";ctx.setLineDash(visual.dashArray ? [7,6] : []);ctx.stroke(path);
+          canvas.tracks.push({path,parts,tags,source});
+        }
+        ctx.restore();
+      }
+      if (live?._tiles?.[`${coords.x}:${coords.y}:${coords.z}`]?.el.detailReady) canvas.style.visibility="hidden";
+      return canvas;
+    };
+    map.on("click",e=>{
+      if (e.sourceTarget!==map || e.originalEvent?.atlasFeatureHit || !map.hasLayer(grid)) return;
+      const z=grid._tileZoom;if(z==null)return;
+      const p=map.project(e.latlng,z),x=Math.floor(p.x/256),y=Math.floor(p.y/256);
+      const tile=grid._tiles[`${x}:${y}:${z}`]?.el;
+      if (!tile || tile.style.visibility==="hidden") return;
+      const ctx=tile.getContext("2d");ctx.save();ctx.resetTransform();ctx.lineWidth=8;
+      const hit=tile.tracks.find(t=>ctx.isPointInStroke(t.path,p.x-x*256,p.y-y*256));ctx.restore();
+      if (!hit) return;
+      if(e.originalEvent)e.originalEvent.atlasFeatureHit=true;
+      const s=hit.source,parts=hit.parts.map(part=>part.map(([a,b])=>map.unproject([(s.x+a)*256,(s.y+b)*256],s.z)));
+      const part=LineFocus.closestPart(parts,e.latlng);
+      inspect("铁路概览 · "+AtlasPrefs.categories[AtlasPrefs.classify(hit.tags).category][0],hit.tags,false,e.latlng,
+        part && {parts:[part],styleForPart:()=>focusStyle(hit.tags),note:"概览轨道区段"});
+    });
+    return grid;
+  }
+  async function timedResponse(url, parentSignal, timeout=6500) {
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (parentSignal?.aborted) controller.abort();
     parentSignal?.addEventListener("abort",abort,{once:true});
-    const timer = setTimeout(abort,6500);
+    const timer = setTimeout(abort,timeout);
     try {
       const response = await fetch(url,{signal:controller.signal,credentials:"omit"});
       if (!response.ok) throw new Error(`地图资料 HTTP ${response.status}`);
@@ -222,7 +274,32 @@ const RailMapLayers = (() => {
       parentSignal?.removeEventListener("abort",abort);
     }
   }
+  let primaryRetryAt=0, primaryReady=false, primaryProbe;
+  async function primaryTile(url,signal) {
+    if (!primaryReady) {
+      // One short request tests whether this browser can reach the railway
+      // source; a CORS refusal should not stall every tile in the viewport.
+      primaryProbe ??= {url,result:timedResponse(url,null,2000).then(AtlasVector.decode)};
+      const probe=primaryProbe;
+      try {
+        const tile=await probe.result;
+        primaryReady=true;
+        if (probe.url===url) return tile;
+      } finally { if (primaryProbe===probe) primaryProbe=null; }
+    }
+    signal.throwIfAborted();
+    return AtlasVector.decode(await timedResponse(url,signal));
+  }
   async function onlineTile({x,y,z}, signal) {
+    if (Date.now()>=primaryRetryAt) {
+      const layers="railway_line_high,railway_text_km,"+(z<8 ? "standard_railway_text_stations_med" : "standard_railway_text_stations");
+      try {
+        return await primaryTile(`https://openrailwaymap.app/${layers}/${z}/${x}/${y}`,signal);
+      } catch (error) {
+        if (signal.aborted) throw error;
+        primaryReady=false;primaryRetryAt=Date.now()+60000;
+      }
+    }
     tileTemplate ??= timedResponse("https://tiles.openfreemap.org/planet").then(bytes => {
       const template = JSON.parse(new TextDecoder().decode(bytes)).tiles?.[0];
       if (!template?.startsWith("https://tiles.openfreemap.org/")) throw new Error("铁路瓦片地址不可用");
@@ -286,22 +363,30 @@ const RailMapLayers = (() => {
           canvas.hits = [];
           canvas.stationNames = [];
           canvas.metroTracks=new MetroHandoff.Tracks();
+          // Imported caches can contain primary and backup representations of one cell.
+          const hasPrimary=tiles.some(t=>t.layers.railway_line_high);
+          const hasShortbread=tiles.some(t=>t.layers.streets);
+          const hasDetail=hasPrimary || hasShortbread || tiles.some(t=>t.layers.transportation);
+          canvas.detailReady=hasPrimary;
           for (const tile of tiles) {
           for (const layerName of Object.keys(tile.layers).filter(name =>
-            ["transportation","poi","streets","public_transport","railway_line_high","speed_railway_line_low"].includes(name) ||
+            ["poi","public_transport","railway_line_high"].includes(name) ||
+            !hasPrimary && (name==="streets" || !hasShortbread && name==="transportation") ||
+            !hasDetail && z<=9 && name==="speed_railway_line_low" ||
             name.startsWith("standard_railway_text_stations"))) {
             const layer = tile.layers[layerName];
             for (let i=0; i<(layer?.length || 0); i++) {
               const feature = layer.feature(i), tags = feature.properties;
               const line = feature.type === 2 && (["railway_line_high","speed_railway_line_low"].includes(layerName) ||
                 (["rail","transit"].includes(tags.class) && /^(rail|subway|light_rail|tram|monorail|narrow_gauge|funicular)$/.test(tags.subclass)) ||
-                (layerName === "streets" && (tags.rail===true || /^(rail|light_rail|subway|tram|monorail|narrow_gauge|funicular)$/.test(tags.kind))));
+                (layerName === "streets" && [true,1,"yes"].includes(tags.rail) &&
+                  /^(rail|light_rail|subway|tram|monorail|narrow_gauge|funicular|disused|abandoned)$/.test(tags.kind)));
               const station = feature.type === 1 && z >= 9 && (layerName.startsWith("standard_railway_text_stations") ||
                 ["railway","railway_station"].includes(tags.class) ||
                 /^(station|halt|tram_stop|subway)$/.test(tags.subclass) ||
                 (layerName === "public_transport" && /^(station|halt|tram_stop|subway_station|railway_station)$/.test(tags.kind)));
               if (!line && !station) continue;
-              const visual = style(tags,false,station,map.getZoom());
+              const visual = style(tags,false,station,z);
               if (!visual.visible) continue;
               const factor = size * magnification / feature.extent;
               if (magnification>1) {
@@ -329,10 +414,11 @@ const RailMapLayers = (() => {
                   const points=path.map(p=>[p.x*factor-dx,p.y*factor-dy]);
                   let strokes=[points];
                   const facts=AtlasPrefs.classify(tags);
-                  if (facts.urban && z>=8) {
+                  if (z>=8 && (facts.urban || regionRail.bounds)) {
                     // A tile can include a large buffer (especially overzoomed parent
                     // tiles). Only the part actually painted inside it owns coverage.
-                    const identity=MetroHandoff.identity(facts);
+                    const way=tags.osm_id || /^(\d+)-\d+$/.exec(tags.id)?.[1];
+                    const identity=facts.urban ? MetroHandoff.identity(facts) : railwayIdentity(way);
                     const extent=L.bounds([0,0],[size,size]), clipped=[];
                     for (let j=1;j<points.length;j++) {
                       const segment=L.LineUtil.clipSegment(L.point(points[j-1]),L.point(points[j]),extent);
@@ -345,8 +431,9 @@ const RailMapLayers = (() => {
                       const ll=map.unproject([x*size+p.x,y*size+p.y],z);
                       return [ll.lat,ll.lng];
                     }));
-                    const visible=MetroHandoff.remaining(geographic,identity,[cityTracks,regionTracks]);
-                    canvas.metroTracks.add(visible,identity);
+                    const visible=facts.urban ? MetroHandoff.remaining(geographic,identity,[cityTracks,regionTracks]) :
+                      MetroHandoff.remaining(geographic,identity,[regionRail],2);
+                    if (facts.urban) canvas.metroTracks.add(visible,identity);
                     strokes=visible.map(part=>part.map(ll=>{
                       const p=map.project(ll,z);
                       return [p.x-x*size,p.y-y*size];
@@ -354,9 +441,9 @@ const RailMapLayers = (() => {
                   }
                   for (const stroke of strokes) {
                     stroke.forEach(([x,y],i)=>i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
-                    canvas.hits.push({points:stroke,tags,id:feature.id});
+                    canvas.hits.push({points:stroke,tags,id:tags.id ?? feature.id,source:layerName});
                   }
-                  if (path.length > 1 && !facts.urban) canvas.hasTracks = true;
+                  if (path.length>1 && !facts.urban && hasDetail) canvas.detailReady=true;
                 }
                 ctx.stroke();
                 if(line && !visual.dashArray && AtlasPrefs.value.railwayPattern && !AtlasPrefs.classify(tags).urban && z>=11){
@@ -372,22 +459,28 @@ const RailMapLayers = (() => {
       }
     });
     const grid = new Grid({pane:"railDetail",minZoom:7,maxZoom:19,keepBuffer:2,updateWhenIdle:true,
-      attribution:AtlasVectorBasemap.openFreeMapAttribution+' · <a href="https://versatiles.org/">VersaTiles</a>'});
+      attribution:AtlasVectorBasemap.openFreeMapAttribution+' · <a href="https://versatiles.org/">VersaTiles</a> · <a href="https://openrailwaymap.app/">OpenRailwayMap</a>'});
     grid.clearSourceCache=()=>{
       for (const entry of parents.values()) if(!entry.ready)entry.controller.abort();
       parents.clear();
     };
-    grid.on("tileunload",event => {
-      event.tile.abortTile?.();
-      world.showDetail(event.coords,false);
+    function showDetail(coords,ready) {
+      world.showDetail(coords,ready);
+      const cell=overview._tiles?.[`${coords.x}:${coords.y}:${coords.z}`]?.el;
+      if (cell) cell.style.visibility=ready ? "hidden" : "";
+    }
+    grid.on("tileunload",event => {event.tile.abortTile?.();showDetail(event.coords,false);});
+    grid.on("tileload",event => {
+      showDetail(event.coords,!!event.tile.detailReady);
+      collectTile(LineFocus.active?.match,event.coords,event.tile);
     });
-    grid.on("tileload",event => world.showDetail(event.coords,!!event.tile.hasTracks));
     grid.on("tileload tileunload",event=>{if (event.tile.metroTracks?.bounds) invalidateMetro();});
     grid.on("tileload tileunload add remove", StationLabels.schedule);
     grid.on("load",()=>toggle());
     map.on("click",event => {
       if (!map.hasLayer(grid) || event.sourceTarget!==map) return;
-      const z = map.getZoom();
+      const z = grid._tileZoom;
+      if (z==null) return;
       const p = map.project(event.latlng,z), x = Math.floor(p.x/256), y = Math.floor(p.y/256);
       const tile = grid._tiles[`${x}:${y}:${z}`]?.el;
       const px=p.x-x*256,py=p.y-y*256,tol=7;
@@ -402,27 +495,20 @@ const RailMapLayers = (() => {
       }
       if (hit) {
         if (event.originalEvent) event.originalEvent.atlasFeatureHit=true;
-        const railName=hit.tags["name:zh"] || hit.tags.name;
-        const parts=[],tagsByPart=[];
-        if (!hit.station) for (const {coords,el,current} of Object.values(grid._tiles)) {
-          if(!current || coords.z!==z) continue;
-          for (const h of el.hits || []) if (h.points && (h===hit ||
-            (railName && (h.tags["name:zh"] || h.tags.name)===railName) ||
-            (hit.id!=null && h.id===hit.id && h.tags.railway===hit.tags.railway))) {
-            parts.push(h.points.map(([a,b])=>map.unproject([coords.x*256+a,coords.y*256+b],z)));
-            tagsByPart.push(h.tags);
-          }
-        }
+        const railName=trackName(hit.tags);
+        const match={name:railName,id:hit.id,source:hit.source};
+        const anonymous=!railName && hit.id==null;
         const at=hit.station ? map.unproject([x*256+hit.x,y*256+hit.y],z) : event.latlng;
         inspect(railName || hit.tags.ref || (hit.station?"车站":"轨道"),hit.tags,!!hit.station,at,
-          parts.length ? {parts,styleForPart:i=>focusStyle(tagsByPart[i]),note:"当前图幅已载入的轨道"} : null);
+          hit.station ? null : anonymous ? {parts:[hit.points.map(([a,b])=>map.unproject([x*256+a,y*256+b],z))],styleForPart:()=>focusStyle(hit.tags)}
+            : {match,note:"沿线轨迹随地图补充"});
       }
     });
     return grid;
   }
   function eachVisibleStation(visit) {
     if (!live || !map.hasLayer(live)) return;
-    const zoom = map.getZoom();
+    const zoom = live._tileZoom;
     for (const tile of Object.values(live._tiles)) {
       if (tile.current && tile.coords.z === zoom) tile.el.stationNames?.forEach(visit);
     }
@@ -433,26 +519,18 @@ const RailMapLayers = (() => {
     const rail = $("showRail").checked;
     const mode=AtlasPrefs.value.mode;
     setLayerVisible(world,WorldRail.enabled(map.getZoom()) && mode!=="offline");
-    if(overviewReady){
-      for(const {line,tags} of overviewGroups){
-        const visual=style(tags,true);
-        if(redraw || !line._map)line.setStyle(visual);
-        if(visual.visible!==overview.hasLayer(line))visual.visible?overview.addLayer(line):overview.removeLayer(line);
-      }
-      // Keep generalized geometry beneath loading or missing detail, including offline.
-      setLayerVisible(overview,mode!=="offline" && (rail || state.showMetro));
-    }
+    setLayerVisible(overview,mode!=="offline" && (rail || state.showMetro));
     setLayerVisible(live,mode!=="offline" && (rail || state.showMetro));
-    if (redraw) { world.repaint(); live.redraw(); renderRegion(); }
+    if (redraw) { world.repaint(); overview.redraw(); live.redraw(); renderRegion(); }
   }
   function setup(target) {
     map = target;
     for (const [pane,z] of [["worldRail",375],["railOverview",380],["railDetail",390]]) map.createPane(pane).style.zIndex = z;
-    region = L.layerGroup().addTo(map); overview = L.layerGroup();
+    region = L.layerGroup().addTo(map); overview = regionalOverview();
     world = WorldRail.create(map,regionalTiles,style,inspect);
     world.on("tileload", event => {
       const {x,y,z} = event.coords;
-      world.showDetail(event.coords,!!live?._tiles?.[`${x}:${y}:${z}`]?.el.hasTracks);
+      world.showDetail(event.coords,!!live?._tiles?.[`${x}:${y}:${z}`]?.el.detailReady);
     });
     live = detailGrid(); toggle();
     LocalRailCache.setup();
@@ -464,5 +542,5 @@ const RailMapLayers = (() => {
     };
     loadOverview().catch(error => { $("regionStatus").textContent = error.message; });
   }
-  return {setup,toggle,inspect,eachVisibleStation,setMetroCities,metroCoverage,namedTracks,clearSourceCache:()=>live?.clearSourceCache()};
+  return {setup,toggle,inspect,eachVisibleStation,setMetroCities,metroCoverage,collectFocus,clearSourceCache:()=>live?.clearSourceCache()};
 })();

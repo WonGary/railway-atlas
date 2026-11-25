@@ -39,12 +39,12 @@ enum MapContextFiles {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("lines/index.json")) else { return [:] }
         return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
     }()
-    static func parts(_ name: String, stops: Set<String>) -> [[Coordinate]] {
+    static func parts(_ name: String, stops: Set<String>? = nil) -> [[Coordinate]] {
         guard let file = index[name],
               let data = try? Data(contentsOf: directory.appendingPathComponent("lines").appendingPathComponent(file)),
               let rows = (try? JSONDecoder().decode([String: [[String]]].self, from: data))?[name] else { return [] }
         return rows.compactMap {
-            guard $0.count == 3, stops.contains($0[0]), stops.contains($0[1]) else { return nil }
+            guard $0.count == 3, stops?.contains($0[0]) != false, stops?.contains($0[1]) != false else { return nil }
             return try? NationalJourneyPaths.decode($0[2], densify: false)
         }
     }
