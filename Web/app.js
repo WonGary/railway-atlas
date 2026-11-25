@@ -424,7 +424,7 @@ function collectProfile() {
 }
 
 function setWorkspaceView(view) {
-  if (view !== "route" && state.playbackVisible) leaveJourney();
+  if (state.playbackVisible && view !== "route" && view !== "settings") leaveJourney();
   state.workspaceView = view;
   document.querySelectorAll(".workspace-tab").forEach(tab => tab.classList.toggle("selected", tab.dataset.view === view));
   document.querySelectorAll(".workspace-page").forEach(page => { page.hidden = page.dataset.page !== view; });
@@ -494,7 +494,10 @@ function leaveJourney() {
 }
 
 function closeWorkspace() {
-  if (journeyOpen()) closeJourney();
+  if (state.playbackVisible && state.workspaceView === "settings") {
+    setWorkspaceView("route");
+    setWorkspaceOpen(false);
+  } else if (journeyOpen()) closeJourney();
   else setWorkspaceOpen(false);
 }
 

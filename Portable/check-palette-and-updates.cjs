@@ -78,15 +78,30 @@ const fingerprint=buf=>crypto.createHash("sha256").update(buf).digest("hex");
     assert.equal(handoff.filter(l=>l.overview).length,0,JSON.stringify(handoff));
     assert.equal(handoff.filter(l=>l.title?.includes("2号线") || l.title?.includes("2 号线")).length,2,JSON.stringify(handoff));
     await page.screenshot({path:path.join(out,"nanchang-z17.png")});
-    const journey=await page.evaluate(()=>{
-      setPlaybackVisible(true);selectRoute(state.routes.find(r=>r.geometryAvailable).id,{fit:false});startPlayback();
-      $("journeyProgress").value=String(+($("journeyProgress").min)+240);updatePlayback();
-      const timer=state.playbackTimer,seconds=state.playbackSeconds;
-      document.querySelector('[data-focus-ink="#8057AB"]').click();
-      const result={active:!!timer && state.playbackTimer===timer,seconds:state.playbackSeconds===seconds,
-        lines:state.routePolylines.filter(Boolean).every(l=>l.options.color==="#8057AB"),marker:state.playbackMarker?.options.fillColor};
-      stopPlayback();return result;
+    await page.evaluate(()=>{setWorkspaceOpen(true);setWorkspaceView("experiences");});
+    await page.locator("#toggleJourney").click();
+    const routeID=await page.evaluate(()=>state.routes.find(r=>r.geometryAvailable).id);
+    await page.locator("#routeSelect").selectOption(routeID);
+    await page.locator("#playJourney").click();
+    const initial=await page.evaluate(()=>{
+      const progress=$("journeyProgress");progress.value=String(+progress.min+240);
+      progress.dispatchEvent(new Event("input",{bubbles:true}));
+      return {timer:state.playbackTimer,seconds:state.playbackSeconds,id:state.route.id};
     });
+    await page.getByRole("button",{name:"设置",exact:true}).click();
+    const picker=page.locator("#pref-focusColor");
+    assert.ok(await picker.isVisible());
+    await picker.evaluate(el=>{el.value="#119955";el.dispatchEvent(new Event("input",{bubbles:true}));});
+    assert.equal(await page.evaluate(()=>state.playbackMarker?.options.fillColor),"#119955");
+    await page.getByRole("button",{name:"鸢紫",exact:true}).click();
+    await page.locator(".focus-palette").screenshot({path:path.join(out,"palette.png")});
+    await page.locator("#closeWorkspace").click();
+    const journey=await page.evaluate(initial=>{
+      const lines=state.routePolylines.filter(Boolean);
+      return {active:!!initial.timer && state.playbackTimer===initial.timer && state.playbackVisible && state.route?.id===initial.id,
+        seconds:state.playbackSeconds>=initial.seconds,lines:lines.length>0 && lines.every(l=>l.options.color==="#8057AB"),
+        marker:state.playbackMarker?.options.fillColor};
+    },initial);
     assert.deepEqual(journey,{active:true,seconds:true,lines:true,marker:"#8057AB"});
     await page.reload({waitUntil:"domcontentloaded"});await ready();
     assert.equal(await page.evaluate(()=>AtlasPrefs.value.focusColor),"#8057AB");
