@@ -66,6 +66,7 @@ async function run() {
     assert.equal(await page.evaluate(()=>state.route),null);
     assert.deepEqual(await page.evaluate(()=>[AtlasPrefs.value.showsStations,AtlasPrefs.value.mode,state.favorites.has("北京西")]),[false,"cached",true]);
     assert.equal(await page.evaluate(async()=>(await (await fetch("./data/metro/macao.json")).json()).stations.length),32);
+    await page.evaluate(()=>AtlasPrefs.change("mapAppearance","system",false));
     await page.emulateMedia({colorScheme:"light"});
     await page.evaluate(async()=>{
       AtlasPrefs.change("showsStations",true);
