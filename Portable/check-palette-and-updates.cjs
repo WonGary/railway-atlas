@@ -76,7 +76,8 @@ const fingerprint=buf=>crypto.createHash("sha256").update(buf).digest("hex");
     await page.reload({waitUntil:"domcontentloaded"});await ready();
     assert.equal(await page.evaluate(()=>AtlasPrefs.value.focusColor),"#8057AB");
     // Exercise the real button, transport, checksum, IndexedDB commit, redraw, and reload.
-    let manifest=JSON.parse(file("manifest.json"));const requests=[], replacements=new Map();
+    let manifest=JSON.parse(fs.readFileSync(path.join(__dirname,"../Sources/RailwayCore/Resources/national-metro-baseline.json")));
+    const requests=[], replacements=new Map();
     await page.route(feed+"*",route=>{
       const key=route.request().url().split("/").at(-1);requests.push(key);
       const bytes=key==="manifest.json"?JSON.stringify(manifest):replacements.get(key);
