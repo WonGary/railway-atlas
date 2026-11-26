@@ -24,7 +24,25 @@ public actor NationalJourneyPaths {
     private struct Row: Decodable {
         let id: String, c: Int, s: [[Int?]], p: [Int], a: [Alias], r: String?
     }
-    private struct Group: Decodable { let paths: [String]; let trains: [String: [Row]] }
+    private struct Group: Decodable {
+        let paths: [String]
+        let byNumber: [String: [(String, Row)]]
+        private enum CodingKeys: String, CodingKey { case paths, trains }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            paths = try container.decode([String].self, forKey: .paths)
+            let trains = try container.decode([String: [Row]].self, forKey: .trains)
+            var byNumber = [String: [(String, Row)]]()
+            for (primary, rows) in trains {
+                for row in rows {
+                    for alias in Set([primary] + row.a.flatMap(\.names)) {
+                        byNumber[alias, default: []].append((primary, row))
+                    }
+                }
+            }
+            self.byNumber = byNumber
+        }
+    }
     private let directory: URL
     private var index: Index?
     private var groups: [String: Group] = [:]
@@ -67,8 +85,9 @@ public actor NationalJourneyPaths {
                 if groups.count >= 24, let oldest = groups.keys.first { groups.removeValue(forKey: oldest) }
                 groups[key] = group
             }
-            for (primary, rows) in group.trains {
-                for row in rows where numbers.contains(primary) || row.a.contains(where: { !numbers.isDisjoint(with: $0.names) }) {
+            var seen = Set<String>()
+            for number in numbers {
+                for (primary, row) in group.byNumber[number] ?? [] where seen.insert(row.id).inserted {
                     if let signature, row.r != signature { continue }
                     let stops: [RailTimetable.Stop] = row.s.compactMap { call in
                         guard call.count == 3, let i = call[0], index.names.indices.contains(i) else { return nil }

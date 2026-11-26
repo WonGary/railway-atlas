@@ -2,14 +2,31 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const {chromium} = require("playwright-core");
-const source = process.argv[2], output = process.argv[3], day = "2026-11-25";
-const fixed = ["Z336","N147","Z58","C273","D2236","V6461"];
+const source = process.argv[2], output = process.argv[3], day = process.env.RAILWAY_TEST_DAY || "2026-11-25";
+const fixed = ["Z336","N147","Z58","C273","D2236","V6461","D174","V571","V604"];
 require("../Web/station-directory/national.js");
 const data = global.atlasRailDirectory;
-const ordered = [...new Set(data.trains.filter(t=>data.calendars[t[1]].includes("20261125")).map(t=>t[0]))]
-  .filter(n=>!fixed.includes(n)).map(code=>[crypto.createHash("sha256").update(`atlas-20261125:${code}`).digest("hex"),code])
+const dateKey=day.replaceAll("-","");
+const ordered = [...new Set(data.trains.filter(t=>data.calendars[t[1]].includes(dateKey)).map(t=>t[0]))]
+  .filter(n=>!fixed.includes(n)).map(code=>[crypto.createHash("sha256").update(`atlas-${dateKey}:${code}`).digest("hex"),code])
   .sort(([a],[b])=>a.localeCompare(b));
-const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
+const trains=process.argv.length>4 ? process.argv.slice(4) : [...fixed,...ordered.slice(0,3).map(t=>t[1])];
+
+async function openApp(page) {
+  const failures=[];
+  page.on("pageerror",err=>failures.push(err.message));
+  page.on("requestfailed",req=>{
+    if (new URL(req.url()).origin===new URL(source).origin) failures.push(`${req.url()} ${req.failure()?.errorText}`);
+  });
+  await page.goto(source,{waitUntil:"domcontentloaded",timeout:60000});
+  await page.bringToFront();
+  try {
+    await page.waitForFunction(()=>typeof state!=="undefined" && state.corridor && state.map,null,{polling:100,timeout:30000});
+  } catch(error) {
+    const status=await page.locator("#mapDataError").allTextContents();
+    throw Error(`${error.message}: ${page.url()} ${[...failures,...status].join(" | ")}`);
+  }
+}
 
 (async()=>{
   const browser=await chromium.launch({executablePath:process.env.RAILWAY_BROWSER,
@@ -20,13 +37,12 @@ const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
       const context=await browser.newContext({serviceWorkers:"block",locale:"zh-CN",timezoneId:"Asia/Shanghai",viewport:{width:1280,height:850}});
       const page=await context.newPage(),errors=[];
       page.on("pageerror",err=>errors.push(err.message));
-      await page.goto(source,{waitUntil:"domcontentloaded",timeout:90000});
-      await page.waitForFunction(()=>typeof state!=="undefined" && state.corridor && state.map,null,{timeout:90000});
+      await openApp(page);
       if (process.env.RAILWAY_TEST_LIBRARY) {
         await page.locator("#libraryFile").setInputFiles(process.env.RAILWAY_TEST_LIBRARY);
         await page.waitForFunction(()=>!!RailLibrary.current,null,{timeout:60000});
       }
-      const row={train,supplemental:train===ordered[4][1]};
+      const row={train};
       for(const run of ["cold","warm"]) {
         await page.evaluate(({day,train})=>{
           setWorkspaceView("route");setWorkspaceOpen(true);
@@ -60,13 +76,31 @@ const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
         },{train,run});
       }
       if (row.cold.from) {
+        row.playback=await page.evaluate(train=>{
+          const r=state.route;
+          if (!r.geometryAvailable) return null;
+          const a=train==="D174"?r.stops.findIndex(s=>s.name==="陇南"):
+            train==="V571"?r.stops.findIndex(s=>s.name==="菏泽"):Math.floor(r.legs.length/2);
+          const b=train==="V571"?r.stops.findIndex(s=>s.name==="浠水"):a+1;
+          if (a<0 || b<=a) throw Error(`${train} 乘车区间不存在`);
+          $("playJourney").click();
+          if (!state.playbackTimer || !state.playbackMarker) throw Error("主地图未开始播放");
+          const start=r.stops[a].departure, end=r.stops[a+1].arrival;
+          const mid=(start+end)*30;
+          $("journeyProgress").value=String(mid);updatePlayback();stopPlayback();
+          const position=state.playbackMarker.getLatLng();
+          if (state.map.distance(position,r.legs[a][0])<5 || state.map.distance(position,r.legs[a].at(-1))<5)
+            throw Error("播放位置停留在站点");
+          return {from:r.stops[a].name,to:r.stops[b].name,legs:b-a,
+            date:StationCatalog.day(r.serviceDate,Math.floor(start/1440))};
+        },train);
+        await context.close();
         // A separate document has no decoded train in memory. Clear HTTP cache too,
         // then exercise the ordinary postcard inputs and the browser PNG download.
         const fresh=await browser.newContext({serviceWorkers:"block",locale:"zh-CN",timezoneId:"Asia/Shanghai"});
         const card=await fresh.newPage();
         try {
-          await card.goto(source,{waitUntil:"domcontentloaded",timeout:90000});
-          await card.waitForFunction(()=>typeof state!=="undefined" && state.corridor && state.map,null,{timeout:90000});
+          await openApp(card);
           if(process.env.RAILWAY_TEST_CONTOURS) {
             await card.locator("#cardContourFile").setInputFiles(process.env.RAILWAY_TEST_CONTOURS);
             await card.waitForFunction(()=>CardMap.hasContours);
@@ -76,11 +110,15 @@ const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
             for(const [field,value] of Object.entries({Train:train,Date:day,From:from,To:to,Style:"map"})) document.getElementById("postcard"+field).value=value;
             window.cardBenchStart=performance.now();
             document.getElementById("postcardTo").dispatchEvent(new Event("input",{bubbles:true}));
-          },{train,day,from:row.cold.from,to:row.cold.to});
+          },{train,day:row.playback?.date || day,from:row.playback?.from || row.cold.from,to:row.playback?.to || row.cold.to});
           await card.waitForFunction(()=>cardRoute || !document.getElementById("postcardStatus").textContent.includes("正在"),null,{timeout:20000,polling:"raf"});
           row.postcard=await card.evaluate(()=>({previewMs:Math.round(performance.now()-window.cardBenchStart),
             ready:!!cardRoute && !document.getElementById("downloadPostcard").disabled,
+            from:cardRoute?.stops[0].name,to:cardRoute?.stops.at(-1).name,legs:cardRoute?.legs.length,
             message:document.getElementById("postcardStatus").textContent}));
+          if (row.playback && row.postcard.ready) {
+            for (const field of ["from","to","legs"]) assert.equal(row.postcard[field],row.playback[field]);
+          }
           if (row.postcard.ready) {
             const received=card.waitForEvent("download");
             await card.locator("#downloadPostcard").evaluate(button=>button.click());
@@ -95,10 +133,10 @@ const trains=[...fixed,...ordered.slice(0,5).map(t=>t[1])];
       assert.deepEqual(errors,[]);
       results.push(row);
       console.log(JSON.stringify(row));
-      if(output) fs.writeFileSync(output,JSON.stringify({day,source,browser:browser.version(),sampleSeed:"atlas-20261125:",
+      if(output) fs.writeFileSync(output,JSON.stringify({day,source,browser:browser.version(),sampleSeed:`atlas-${dateKey}:`,
         mapImportedLibrary:!!process.env.RAILWAY_TEST_LIBRARY,cardImportedContours:!!process.env.RAILWAY_TEST_CONTOURS,
         cardStyle:"map",budgetMs:5000,results},null,2)+"\n");
-      await context.close();
+      if (!row.cold.from) await context.close();
     }
     for(const result of results) {
       if(result.train==="V6461") {assert.equal(result.cold.status,"absent");continue;}

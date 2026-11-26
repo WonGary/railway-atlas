@@ -28,6 +28,40 @@ enum OnlineUIValidation {
             window?.setContentSize(NSSize(width: 1240, height: 820))
             window?.center()
             window?.title = "铁道图鉴 · 本地验证"
+            if arguments.contains("--check-v604") {
+                let model=store.journeyWorkspace
+                await model.load()
+                let start=ProcessInfo.processInfo.systemUptime
+                guard let table=try await NationalJourneyPaths.shared.timetable(train:"V604",date:"2026-11-26") else {
+                    throw DataError.invalid("缺少 V604 排图")
+                }
+                let route=try await model.prepareRoute(table,allowNetwork:false)
+                try store.journeyPlayer.start(table,route:route)
+                store.journeyPlayer.pause()
+                guard table.stops.count==22, route.legs.count==21, store.experienceLines.count==21,
+                      store.experienceMarker != nil else {throw DataError.invalid("V604 主地图轨迹不完整")}
+                window?.contentView?.layoutSubtreeIfNeeded()
+                window?.displayIfNeeded()
+                let mapMs=Int((ProcessInfo.processInfo.systemUptime-start)*1000)
+                let cardStart=ProcessInfo.processInfo.systemUptime
+                var card=table.draftJourney
+                card.from="涞源"; card.to="北京西"; card.updateBoardingTime()
+                guard let section=try await NationalJourneyPaths.shared.journey(table,from:card.from,to:card.to),
+                      section.stations == [card.from,card.to], section.legs.count==1 else {
+                    throw DataError.invalid("V604 明信片乘车区间有误")
+                }
+                let image=ImageRenderer(content:TicketPostcardArt(style:.map,journey:card,caption:"",legs:section.legs,stations:section.stations))
+                image.scale=2
+                guard let cg=image.cgImage, let png=NSBitmapImageRep(cgImage:cg).representation(using:.png,properties:[:]) else {
+                    throw DataError.invalid("V604 明信片导出失败")
+                }
+                try png.write(to:directory.appendingPathComponent("V604-card.png"))
+                let receipt=["stops":table.stops.count,"legs":route.legs.count,"mapMs":mapMs,
+                             "postcardMs":Int((ProcessInfo.processInfo.systemUptime-cardStart)*1000),"pngBytes":png.count]
+                try JSONEncoder().encode(receipt).write(to:directory.appendingPathComponent("V604.json"))
+                NSApp.terminate(nil)
+                return
+            }
             if arguments.contains("--metro-direction-check") {
                 try await checkMetroDirection(store, window: window, directory: directory)
                 if arguments.contains("--live-city-check"),
@@ -346,10 +380,17 @@ enum OnlineUIValidation {
     private static func benchmarkJourneyFrames(_ store: RailwayMapStore, window: NSWindow?, directory: URL, libraryFile: String) async throws {
         guard let view=window?.contentView else { throw DataError.invalid("主地图窗口未打开") }
         let library=try LuluTimetableSnapshot.read(Data(contentsOf:URL(fileURLWithPath:libraryFile)))
-        let day="2026-11-25", model=store.journeyWorkspace
+        let args = CommandLine.arguments
+        func option(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), args.indices.contains(i+1) else { return nil }
+            return args[i+1]
+        }
+        let day = option("--journey-day") ?? "2026-11-25", model=store.journeyWorkspace
+        let sample = option("--journey-sample")?.components(separatedBy: ",") ??
+            ["Z336","N147","Z58","C273","D2236","V6461","S8140","G3703","C2730","C442","G3888"]
         await model.load()
         var results=[[String:Any]]()
-        for train in ["Z336","N147","Z58","C273","D2236","V6461","S8140","G3703","C2730","C442","G3888"] {
+        for train in sample {
             let rows=library.services.filter { $0.validFrom<=day && day<=$0.validThrough && LuluRouteDatabase.trainNames($0.train).contains(train) }
             store.journeyPlayer.stop()
             let start=DispatchTime.now().uptimeNanoseconds
@@ -373,6 +414,30 @@ enum OnlineUIValidation {
                     view.cacheDisplay(in:view.bounds,to:bitmap)
                     row["ms"]=Double(DispatchTime.now().uptimeNanoseconds-start)/1_000_000
                     row["legs"]=route.legs.count; row["status"]="full"
+                    let midLeg = route.legs.count / 2
+                    let departure = timetable.stops[midLeg].departure!, arrival = timetable.stops[midLeg+1].arrival!
+                    let moment = Double(departure + arrival) * 30
+                    store.journeyPlayer.seek(moment)
+                    guard let marker = store.experienceMarker, let expected = route.coordinate(at:timetable.position(at:moment)),
+                          RailTrackJourney.metres(marker, expected) < 1 else { throw DataError.invalid("播放位置偏离轨迹") }
+                    let cardStart = ProcessInfo.processInfo.systemUptime
+                    var card = timetable.draftJourney
+                    let a: Int, b: Int
+                    if train == "D174", let i=timetable.stops.firstIndex(where:{ $0.station == "陇南" }) { a=i; b=i+1 }
+                    else if train == "V571", let i=timetable.stops.firstIndex(where:{ $0.station == "菏泽" }),
+                            let j=timetable.stops.firstIndex(where:{ $0.station == "浠水" }) { a=i; b=j }
+                    else { a=midLeg; b=midLeg+1 }
+                    card.from=timetable.stops[a].station; card.to=timetable.stops[b].station; card.updateBoardingTime()
+                    let section = try await model.passengerRoute(card,allowNetwork:false)
+                    guard section.legs == Array(route.legs[a..<b]) else { throw DataError.invalid("明信片与主地图的区间不同") }
+                    let art=ImageRenderer(content:TicketPostcardArt(style:.map,journey:card,caption:"",legs:section.legs,stations:section.stations))
+                    art.scale = 2
+                    guard let image=art.cgImage, let png=NSBitmapImageRep(cgImage:image).representation(using:.png,properties:[:]) else {
+                        throw DataError.invalid("明信片 PNG 导出失败")
+                    }
+                    try png.write(to:directory.appendingPathComponent("\(train)-section.png"))
+                    row["cardMs"]=Int((ProcessInfo.processInfo.systemUptime-cardStart)*1000)
+                    row["section"]=[card.from,card.to]; row["pngBytes"]=png.count
                     if train=="Z58" { try bitmap.representation(using:.png,properties:[:])?.write(to:directory.appendingPathComponent("Z58-map.png")) }
                 } else { row["status"]="absent" }
             } catch { row["status"]="unavailable";row["detail"]=error.localizedDescription }

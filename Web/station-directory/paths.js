@@ -3,6 +3,14 @@ const RailPaths = (() => {
   const base = new URL("station-directory/paths/", document.baseURI);
   const files = new Map();
   const rowIndexes = new WeakMap();
+  const shapesByGroup = new WeakMap();
+  function legAt(group, index) {
+    if (index < 0) return [];
+    let cache = shapesByGroup.get(group);
+    if (!cache) { cache = new Map(); shapesByGroup.set(group, cache); }
+    if (!cache.has(index)) cache.set(index, decode(group.paths[index]));
+    return cache.get(index);
+  }
   function rowsFor(group, numbers) {
     let index = rowIndexes.get(group);
     if (!index) {
@@ -53,6 +61,15 @@ const RailPaths = (() => {
   function metres(a,b) {
     return Math.hypot(a[0]-b[0], (a[1]-b[1])*Math.cos((a[0]+b[0])*Math.PI/360))*111195;
   }
+  function gapsFor(stops, legs) {
+    const gaps = [];
+    for (let i=0; i<stops.length-1; i++) {
+      if (!legs[i] || legs[i].length<2) gaps.push(`${stops[i].name} → ${stops[i+1].name}`);
+      else if (i && legs[i-1]?.length>=2 && metres(legs[i-1].at(-1),legs[i][0])>120)
+        gaps.push(`${stops[i].name}站内衔接`);
+    }
+    return gaps;
+  }
   async function fingerprint(plan) {
     if (!plan?.nodes || !plan?.edges) return null;
     const string = plan.nodes.map((n,i) => `${n.station}\t${n.kilometre}\t${plan.edges[i]?.lineName || ""}`).join("\n");
@@ -98,18 +115,15 @@ const RailPaths = (() => {
     if (matches.length!==1) throw Error(matches.length ? "该日期有多份排图，请选定具体车次。" : "该日期、站序或时刻与路线资料不符。");
     const {row,primary,names,group,a,b,origin}=matches[0];
     const sectionNames=names.slice(a,b+1);
-    const legs=row.p.slice(a,b).map(idx => idx < 0 ? [] : decode(group.paths[idx]));
-    const gaps=[];
-    for (let i=0;i<legs.length;i++) {
-      if (legs[i].length<2) gaps.push(`${sectionNames[i]} → ${sectionNames[i+1]}`);
-      else if (i && legs[i-1].length && metres(legs[i-1].at(-1),legs[i][0])>120) gaps.push(`${sectionNames[i]}站内衔接`);
-    }
+    const legs=row.p.slice(a,b).map(idx => legAt(group, idx));
+    const selectedStops=row.s.slice(a,b+1).map(([,arrival,departure],i)=>({name:sectionNames[i],arrival,departure}));
+    const gaps=gapsFor(selectedStops,legs);
     return {id:`national:${row.id}:${origin}`,train:train || primary,serviceDate:origin,
-      stops:row.s.slice(a,b+1).map(([,arrival,departure],i)=>({name:sectionNames[i],arrival,departure})),
+      stops:selectedStops,
       legs,stopCoordinates:sectionNames.map((_,i)=>legs[i]?.[0] || legs[i-1]?.at(-1) || null),
       geometryAvailable:!gaps.length, gaps, routing:from||to ? null : routing,
       source:{title:"全国铁路车次径路 · "+meta.edition,note:"China Railway GTFS · Jeremy Gao / © OpenStreetMap contributors"},
       geometryKinds:row.k.slice(a,b), indexed:true};
   }
-  return {find,decode};
+  return {find,decode,gapsFor};
 })();

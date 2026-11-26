@@ -1,0 +1,139 @@
+[
+  {
+    "cardMs" : 112,
+    "legs" : 14,
+    "ms" : 149.841917,
+    "pngBytes" : 138895,
+    "section" : [
+      "陇南",
+      "广元"
+    ],
+    "status" : "full",
+    "train" : "D174"
+  },
+  {
+    "cardMs" : 34,
+    "legs" : 29,
+    "ms" : 131.967083,
+    "pngBytes" : 169647,
+    "section" : [
+      "菏泽",
+      "浠水"
+    ],
+    "status" : "full",
+    "train" : "V571"
+  },
+  {
+    "cardMs" : 26,
+    "legs" : 21,
+    "ms" : 127.473209,
+    "pngBytes" : 111815,
+    "section" : [
+      "平遥",
+      "太谷"
+    ],
+    "status" : "full",
+    "train" : "V604"
+  },
+  {
+    "cardMs" : 23,
+    "legs" : 20,
+    "ms" : 128.46562499999999,
+    "pngBytes" : 128172,
+    "section" : [
+      "邯郸",
+      "石家庄"
+    ],
+    "status" : "full",
+    "train" : "Z336"
+  },
+  {
+    "cardMs" : 25,
+    "legs" : 22,
+    "ms" : 124.762958,
+    "pngBytes" : 121871,
+    "section" : [
+      "武昌",
+      "广水"
+    ],
+    "status" : "full",
+    "train" : "N147"
+  },
+  {
+    "cardMs" : 24,
+    "legs" : 13,
+    "ms" : 131.32345799999999,
+    "pngBytes" : 126446,
+    "section" : [
+      "韶关东",
+      "广州白云"
+    ],
+    "status" : "full",
+    "train" : "Z58"
+  },
+  {
+    "cardMs" : 24,
+    "legs" : 7,
+    "ms" : 131.96562499999999,
+    "pngBytes" : 118705,
+    "section" : [
+      "化念",
+      "元江"
+    ],
+    "status" : "full",
+    "train" : "C273"
+  },
+  {
+    "cardMs" : 25,
+    "legs" : 23,
+    "ms" : 126.125833,
+    "pngBytes" : 113538,
+    "section" : [
+      "荆州",
+      "宜昌东"
+    ],
+    "status" : "full",
+    "train" : "D2236"
+  },
+  {
+    "ms" : 15.481875,
+    "status" : "absent",
+    "train" : "V6461"
+  },
+  {
+    "cardMs" : 23,
+    "legs" : 4,
+    "ms" : 123.078541,
+    "pngBytes" : 121365,
+    "section" : [
+      "龙岩",
+      "漳州"
+    ],
+    "status" : "full",
+    "train" : "D9187"
+  },
+  {
+    "cardMs" : 24,
+    "legs" : 8,
+    "ms" : 125.58150000000001,
+    "pngBytes" : 106191,
+    "section" : [
+      "中山",
+      "南朗"
+    ],
+    "status" : "full",
+    "train" : "C7701"
+  },
+  {
+    "cardMs" : 24,
+    "legs" : 4,
+    "ms" : 125.82941700000001,
+    "pngBytes" : 116613,
+    "section" : [
+      "永清东",
+      "安次"
+    ],
+    "status" : "full",
+    "train" : "G8841"
+  }
+]

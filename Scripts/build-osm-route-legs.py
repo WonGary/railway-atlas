@@ -44,7 +44,26 @@ EQUIVALENT = [
     ("深湛江湛段", "深湛线", "深湛铁路", "江湛铁路", "深茂铁路"),
     ("海南西环线", "西环货线", "海南西环铁路"),
     ("集包线", "集包铁路", "集包第二双线"), ("西长铁路", "西长联络线"),
+    ("柳广线", "柳村联络线"),  # OSM railway relation 13890345, old_name
+    ("兰渝兰渭段", "兰渝线", "兰渝铁路"),
 ]
+
+# These adjacent operating points have the same mileage in both line tables.
+# A shared approach is not an alias for either railway outside the two stations.
+SHARED_APPROACHES = {
+    ("京原线", frozenset(("原平", "薛孤"))): "韩原线",
+    ("京九线", frozenset(("北京西", "广安门"))): "京雄城际线",
+}
+
+
+def stage_lines(lines, start, finish):
+    wanted = set(lines)
+    pair = frozenset((start, finish))
+    for line in lines:
+        alternative = SHARED_APPROACHES.get((line, pair))
+        if alternative:
+            wanted.add(alternative)
+    return wanted
 
 
 def affinity(name, wanted):
@@ -59,23 +78,50 @@ def affinity(name, wanted):
     return 5.0
 
 
-def features(archive):
+def features(archive, seen=None):
+    if seen is None:
+        seen = set()
+    if "," in archive:
+        for source in archive.split(","):
+            yield from features(source, seen)
+        return
+    if archive.endswith(".json"):
+        snapshot = json.loads(Path(archive).read_text())
+        if snapshot.get("remark") or not snapshot.get("osm3s", {}).get("timestamp_osm_base"):
+            raise ValueError(f"Incomplete Overpass response: {archive}")
+        for element in snapshot["elements"]:
+            tags = element.get("tags", {})
+            name = tags.get("name:zh") or tags.get("name") or ""
+            if element["type"] == "node" and tags.get("railway") in ("station", "halt", "junction", "yard", "signal_box", "switch") and name:
+                yield {"type": "Point", "coordinates": (element["lon"], element["lat"])}, tags | {"name": name}
+            elif element["type"] == "way" and tags.get("railway") == "rail":
+                vertices = element.get("geometry", [])
+                if element["id"] not in seen and len(vertices) >= 2 and all(p and "lon" in p and "lat" in p for p in vertices):
+                    seen.add(element["id"])
+                    names = [name, tags.get("official_name"), tags.get("alt_name")]
+                    yield {"type": "LineString", "coordinates": [(p["lon"], p["lat"]) for p in vertices]}, {
+                        "name": ";".join(dict.fromkeys(n for n in names if n)), "railway": "rail"}
+        return
     if archive.endswith(".zip"):
         with ZipFile(archive) as z, z.open("railways.geojson") as file:
             for line in file:
                 if line.startswith(b'{ "type": "Feature"'):
                     feature = json.loads(line.rstrip(b",\r\n"))
+                    # HOT splits ways by administrative unit. Keep every fragment
+                    # unless a higher-priority source already provided the whole way.
+                    kind, _, ident = str(feature["properties"].get("id", "")).partition("/")
+                    if kind == "way" and ident.isdecimal() and int(ident) in seen:
+                        continue
                     yield feature["geometry"], feature["properties"]
         return
     import osmium
-    seen = set()
     for source in archive.split(","):
         reader = osmium.FileProcessor(osmium.io.File(source, "pbf")).with_locations("flex_mem")
         for obj in reader.with_filter(osmium.filter.KeyFilter("railway")):
             rail = obj.tags.get("railway")
             name = obj.tags.get("name:zh") or obj.tags.get("name") or ""
             if obj.is_node() and name and rail in ("station", "halt", "junction", "yard", "signal_box", "switch"):
-                yield {"type":"Point", "coordinates":(obj.lon,obj.lat)}, {"name":name, "railway":rail}
+                yield {"type":"Point", "coordinates":(obj.lon,obj.lat)}, dict(obj.tags) | {"name":name}
             if not obj.is_way() or rail not in ("rail","ferry") or obj.id in seen:
                 continue
             if not all(node.location.valid() for node in obj.nodes):
@@ -94,10 +140,22 @@ class Network:
         self.locations = defaultdict(list)
         self.points, self.adj = [], []
         ways, ends = [], set()
+        railway_stations = defaultdict(set)
+        urban_stations = defaultdict(set)
         for geo, tags in features(archive):
             name = tags.get("name_zh") or tags.get("name") or ""
             if geo["type"] == "Point" and name:
-                self.locations[name.removesuffix("站")].append(tuple(geo["coordinates"]))
+                if tags.get("station") in ("subway", "light_rail", "tram") or tags.get("subway") == "yes":
+                    urban_stations[name.removesuffix("站")].add(tuple(geo["coordinates"]))
+                    continue
+                names = {name.removesuffix("站")}
+                if tags.get("railway") == "junction" and name.endswith("线路所"):
+                    names.update((name[:-3], name[:-3] + "所"))
+                coordinate = tuple(geo["coordinates"])
+                for key in names:
+                    self.locations[key].append(coordinate)
+                    if tags.get("railway:ref") and tags.get("railway") in ("station", "halt", "junction"):
+                        railway_stations[key].add(coordinate)
             if geo["type"] not in ("LineString", "MultiLineString") or tags["railway"] != "rail":
                 continue
             for raw in [geo["coordinates"]] if geo["type"] == "LineString" else geo["coordinates"]:
@@ -107,7 +165,10 @@ class Network:
                 ends.update([path[0], path[-1]])
         for name, coord in zip(national["names"], national["coordinates"]):
             if coord and coord[0] > 0 and coord[1] > 0:
-                self.locations[name] = [(coord[1], coord[0])]
+                published = (coord[1], coord[0])
+                nearby = [p for p in railway_stations.get(name, ()) if 1700 < distance(p, published) < 12000]
+                at_metro = any(distance(p, published) < 250 for p in urban_stations.get(name, ()))
+                self.locations[name] = nearby if at_metro and len(nearby) == 1 else [published]
         ids = {}
         def node(p):
             key = (round(p[0], 6), round(p[1], 6))
@@ -150,6 +211,11 @@ class Network:
         if candidates and all(distance(candidates[0],p)<1700 for p in candidates):
             return candidates[0]
 
+    @functools.lru_cache(maxsize=16384)
+    def nearby(self, loc):
+        return {int(i): d for i in self.tree.query_ball_point((loc[0]*.83, loc[1]), .009)
+                if (d := distance(self.points[i], loc)) < 800}
+
     @functools.lru_cache(maxsize=None)
     def path(self, start, finish, lines, kilometres):
         p, q = self.position(start), self.position(finish)
@@ -158,17 +224,17 @@ class Network:
         geodesic = distance(p,q)
         if geodesic > kilometres*1250+1800:
             return None
-        wanted = set(lines)
+        wanted = stage_lines(lines, start, finish)
         ferry = any("轮渡" in line for line in lines)
         @functools.lru_cache(maxsize=None)
         def weight(name):
             if name.startswith("rail-ferry/"):
                 return 1.0 if ferry and affinity(name.removeprefix("rail-ferry/"), wanted)==1 else math.inf
             return affinity(name,wanted)
-        def at(loc):
-            ids = self.tree.query_ball_point((loc[0]*.83,loc[1]),.009)
-            return {int(i):distance(self.points[i],loc)*3 for i in ids if distance(self.points[i],loc)<800}
-        initial, target = at(p), at(q)
+        initial = {i: d*3 for i, d in self.nearby(p).items()}
+        target = {i: d*3 for i, d in self.nearby(q).items()}
+        if not initial or not target:
+            return None
         queue = [(d+distance(self.points[i],q),d,i) for i,d in initial.items()]
         heapq.heapify(queue)
         costs = dict(initial); parent={}; end=None; best=math.inf
@@ -287,7 +353,7 @@ class Network:
         centres = [self.position(nodes[i][0]) for i in anchors]
         stages = []
         for a,b in zip(anchors, anchors[1:]):
-            wanted = set(plan["lines"][a:b])
+            wanted = stage_lines(plan["lines"][a:b], nodes[a][0], nodes[b][0])
             # The Hohhot–Baotou passenger corridor was renamed. Keep aliases
             # scoped to its historical segment, away from the parallel freight line.
             if "集包线" in wanted:
@@ -295,8 +361,7 @@ class Network:
                 if nodes[a][0] in west and nodes[b][0] in west: wanted.add("京包客专线")
                 if {nodes[a][0],nodes[b][0]} == {"呼和浩特","台阁牧"}: wanted.update(["京包线","京包客专线"])
             stages.append(wanted)
-        candidates = [{int(j) for j in self.tree.query_ball_point((p[0]*.83,p[1]),.009)
-                       if distance(self.points[j],p) <= 800} for p in centres]
+        candidates = [self.nearby(p) for p in centres]
         if not all(candidates): return None
         @functools.lru_cache(maxsize=None)
         def weight(stage, name):
@@ -359,6 +424,10 @@ class Network:
         anchors=[j for j in range(a,b+1) if self.position(nodes[j][0])]
         if not anchors or anchors[0]!=a or anchors[-1]!=b:
             return None
+        if any(len(set(lanes[x:y])) > 1 for x,y in zip(anchors,anchors[1:])):
+            return None  # An unlocated line change cannot be checked against the graph.
+        if any(not self.nearby(self.position(nodes[j][0])) for j in anchors):
+            return None
         output=[]
         for x,y in zip(anchors,anchors[1:]):
             part=self.path(nodes[x][0],nodes[y][0],tuple(sorted(set(lanes[x:y]))),nodes[y][1]-nodes[x][1])
@@ -373,7 +442,8 @@ class Network:
             return compiler.pack(output) if len(output)>1 else None
         # Some passenger station positions lie on a platform centre or a different
         # track. Test the whole leg against each known intermediate station in order.
-        part=self.path(nodes[a][0],nodes[b][0],tuple(sorted(set(lanes[a:b]))),nodes[b][1]-nodes[a][1])
+        same_line = len(set(lanes[a:b])) == 1
+        part = self.path(nodes[a][0],nodes[b][0],(lanes[a],),nodes[b][1]-nodes[a][1]) if same_line else None
         if part:
             last=0
             for j in anchors[1:-1]:

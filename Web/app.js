@@ -271,6 +271,14 @@ function routeTitle(route) {
   return `${route.train} · ${from} → ${to}`;
 }
 
+function geometryStatus(route) {
+  if (route.geometryAvailable) return "有路线几何";
+  const total = route.stops.length - 1;
+  const covered = route.legs.filter(leg => leg?.length >= 2).length;
+  if (covered === 0) return "无路线几何";
+  return covered === total ? `${total} 段已有轨迹，站内衔接待补` : `已有 ${covered}/${total} 段轨迹`;
+}
+
 function setRouteStatus() {
   const route = state.route;
   if (!route || !state.playbackVisible) {
@@ -278,7 +286,7 @@ function setRouteStatus() {
     return;
   }
   const pointCount = route.legs.reduce((total, leg) => total + leg.length, 0);
-  const geometry = route.geometryAvailable ? ` · ${pointCount.toLocaleString()} 个轨道点` : " · 无随包轨道几何";
+  const geometry = route.geometryAvailable ? ` · ${pointCount.toLocaleString()} 个轨道点` : ` · ${geometryStatus(route)}`;
   $("dataStatus").textContent = `本地时刻快照 · ${route.train} · ${route.serviceDate || "日期未记录"}${geometry}`;
 }
 
@@ -596,6 +604,8 @@ function updatePlaybackBounds() {
   input.min = String(start * 60);
   input.max = String(Math.max(start * 60 + 1, end * 60));
   input.value = String(start * 60);
+  input.disabled = !route?.geometryAvailable;
+  $("playJourney").disabled = input.disabled;
   input.setAttribute("aria-label", `${route?.train || "列车"} 沿线旅行进度`);
   $("playbackTrain").textContent = route?.train || "沿线旅行";
   $("playbackTrain").title = route ? routeTitle(route) : "";
@@ -616,9 +626,10 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   if (partial) {
     const plan = full.routing, first = plan?.stopIndices?.[from], last = plan?.stopIndices?.[to];
     const legs = full.legs.slice(from, to);
-    route = {...full, stops:full.stops.slice(from,to+1), stopCoordinates:full.stopCoordinates.slice(from,to+1), legs,
-      geometryAvailable:legs.length===to-from && legs.every((leg,i)=>leg?.length>=2 && (!i ||
-        L.latLng(legs[i-1].at(-1)).distanceTo(leg[0])<=120)),
+    const stops = full.stops.slice(from,to+1);
+    const gaps = RailPaths.gapsFor(stops, legs);
+    route = {...full, stops, stopCoordinates:full.stopCoordinates.slice(from,to+1), legs, gaps,
+      geometryAvailable:gaps.length===0,
       cacheMatched:full.cacheMatched || full.matchedSections?.slice(from,to).filter(Boolean).length===to-from,
       routing:Number.isInteger(first) && Number.isInteger(last) && plan.nodes?.[first] && plan.nodes?.[last] && Array.isArray(plan.edges) ? {
         ...plan, nodes:plan.nodes.slice(first,last+1).map(node=>({...node,kilometre:node.kilometre-plan.nodes[first].kilometre})),
@@ -646,7 +657,7 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   $("routeSummary").innerHTML = `
     <span class="route-code">${escapeHTML(route.train)}</span>
     <span class="route-name">${escapeHTML(route.stops[0]?.name || "未知起点")} → ${escapeHTML(route.stops.at(-1)?.name || "未知终点")}</span>
-    <span class="route-meta">${escapeHTML(route.serviceDate || "日期未记录")} · ${route.stops.length} 站${route.geometryAvailable ? " · 有路线几何" : " · 无路线几何"}</span>`;
+    <span class="route-meta">${escapeHTML(route.serviceDate || "日期未记录")} · ${route.stops.length} 站 · ${geometryStatus(route)}</span>`;
   $("routeSummary").onclick = fitRoute;
   $("routeSummary").onkeydown = event => { if (event.key === "Enter" || event.key === " ") fitRoute(); };
   $("routeSummary").tabIndex = 0;
@@ -948,6 +959,29 @@ function routeTimeRange() {
   };
 }
 
+const journeyDistances = new WeakMap();
+function pointAlongTrack(line, fraction) {
+  const coords = line.getLatLngs();
+  let cumulative = journeyDistances.get(line);
+  if (!cumulative) {
+    cumulative = new Float64Array(coords.length);
+    for (let i = 1; i < coords.length; i++) {
+      cumulative[i] = cumulative[i-1] + state.map.distance(coords[i-1], coords[i]);
+    }
+    journeyDistances.set(line, cumulative);
+  }
+  const target = Math.max(0, Math.min(1, fraction)) * cumulative.at(-1);
+  let low = 1, high = coords.length - 1;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (cumulative[mid] < target) low = mid + 1;
+    else high = mid;
+  }
+  const a = coords[low-1], b = coords[low], length = cumulative[low] - cumulative[low-1];
+  const t = length ? (target - cumulative[low-1]) / length : 0;
+  return L.latLng(a.lat + (b.lat-a.lat)*t, a.lng + (b.lng-a.lng)*t);
+}
+
 function coordinateAtJourneyTime(seconds) {
   const route = state.route;
   if (!route?.geometryAvailable) return null;
@@ -961,21 +995,7 @@ function coordinateAtJourneyTime(seconds) {
     if (seconds <= segmentEnd) {
       const line = state.routePolylines[index];
       if (!line) return getStopCoordinate(index);
-      const coords = line.getLatLngs();
-      const lengths = coords.slice(1).map((point, pointIndex) => state.map.distance(coords[pointIndex], point));
-      const total = lengths.reduce((sum, length) => sum + length, 0);
-      let remaining = total * Math.max(0, Math.min(1, (seconds - segmentStart) / Math.max(1, segmentEnd - segmentStart)));
-      for (let pointIndex = 0; pointIndex < lengths.length; pointIndex += 1) {
-        if (remaining <= lengths[pointIndex]) {
-          const fraction = lengths[pointIndex] > 0 ? remaining / lengths[pointIndex] : 0;
-          return L.latLng(
-            coords[pointIndex].lat + (coords[pointIndex + 1].lat - coords[pointIndex].lat) * fraction,
-            coords[pointIndex].lng + (coords[pointIndex + 1].lng - coords[pointIndex].lng) * fraction
-          );
-        }
-        remaining -= lengths[pointIndex];
-      }
-      return getStopCoordinate(index + 1);
+      return pointAlongTrack(line, (seconds - segmentStart) / Math.max(1, segmentEnd - segmentStart));
     }
     const stopDeparture = to.departure == null ? segmentEnd : to.departure * 60;
     if (seconds <= stopDeparture) return getStopCoordinate(index + 1);
@@ -1030,6 +1050,7 @@ function updatePlayback() {
 }
 
 function startPlayback() {
+  if (!state.route?.geometryAvailable) return;
   const range = routeTimeRange();
   if (range.end <= range.start) {
     showToast("这趟车次没有完整的起终时刻。");
@@ -2409,7 +2430,8 @@ async function passengerSection({train,date,from,to,timetable,departure}) {
   if (!train || !date || !from || !to) throw Error("请补全车次、乘车日期和上下车站。");
   const names=RailLibrary.trainNames(train.trim().toUpperCase()), candidates=[];
   for (const route of state.routes) {
-    if (!route.geometryAvailable || !RailLibrary.trainNames(route.train).some(n=>names.includes(n))) continue;
+    if (!RailLibrary.trainNames(route.train).some(n=>names.includes(n))) continue;
+    if (timetable?.routing && timetable.routing !== route.routing) continue;
     if (timetable && (route.train!==timetable.train || route.serviceDate!==timetable.serviceDate ||
       route.stops.length!==timetable.stops.length || !route.stops.every((s,i)=>
         s.name===(timetable.stops[i].station??timetable.stops[i].name) &&
@@ -2418,7 +2440,11 @@ async function passengerSection({train,date,from,to,timetable,departure}) {
       if (s.name!==from || StationCatalog.day(route.serviceDate,Math.floor(s.departure/1440))!==date ||
           (departure && parseMinutes(departure)!==s.departure%1440)) return;
       route.stops.forEach((stop,b)=>{
-        if (b>a && stop.name===to) candidates.push({...route,legs:route.legs.slice(a,b),stops:route.stops.slice(a,b+1)});
+        if (b<=a || stop.name!==to) return;
+        const legs=route.legs.slice(a,b), stops=route.stops.slice(a,b+1);
+        if (RailPaths.gapsFor(stops,legs).length) return;
+        candidates.push({...route,legs,stops,stopCoordinates:route.stopCoordinates.slice(a,b+1),
+          geometryKinds:route.geometryKinds?.slice(a,b),gaps:[],geometryAvailable:true,routing:null});
       });
     });
   }

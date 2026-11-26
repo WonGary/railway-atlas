@@ -1,6 +1,6 @@
 """Compile WGS84 GTFS shapes and dated services into small train-number groups.
 
-Usage: python build-route-atlas.py FEED.zip national.js plans.json OUTPUT [osm-legs.json]
+Usage: python build-route-atlas.py FEED.zip national.js plans.json OUTPUT [osm-legs.json ...]
 Requires NumPy and Shapely. plans.json is the output of export-route-plans.cjs.
 """
 import csv
@@ -178,7 +178,10 @@ def main():
     feed, src, planfile, out, *extra = map(Path, sys.argv[1:])
     data = json.loads(src.read_text().split(" = ", 1)[1].rstrip(";\n"))
     plans = json.loads(planfile.read_text())
-    extras = json.loads(extra[0].read_text()) if extra else {}
+    extras = {}
+    for supplement in extra:
+        for trip, sections in json.loads(supplement.read_text()).items():
+            extras.setdefault(trip, {}).update(sections)
     trains = {t[3]: t for t in data["trains"]}
     rows_by_shape = defaultdict(list)
     geometries = {}

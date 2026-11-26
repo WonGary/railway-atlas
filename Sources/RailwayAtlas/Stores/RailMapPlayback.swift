@@ -24,6 +24,7 @@ final class RailMapPlayback: ObservableObject {
     @Published var showUnknown = false { didSet { if mode == .history { drawHistory() } } }
     private weak var map: RailwayMapStore?
     private var route: RailTrackJourney?
+    private var distances: [[Double]] = []
     private var work: Task<Void, Never>?
     private var previousRegion: MKCoordinateRegion?
     private var cameraTime = 0.0
@@ -52,6 +53,7 @@ final class RailMapPlayback: ObservableObject {
         pause()
         rememberCamera()
         self.timetable = timetable; self.route = route; region = nil; mode = .train
+        distances = route.cumulativeDistances()
         seconds = Double(timetable.start * 60); cameraTime = 0
         map?.historyMapActive = false
         map?.experienceLines = route.legs.enumerated().map {
@@ -67,6 +69,7 @@ final class RailMapPlayback: ObservableObject {
         pause()
         rememberCamera()
         self.region = region; timetable = nil; route = nil; mode = .history
+        distances = []
         historyIndex = 0
         map?.historyMapActive = true
         map?.experienceMarker = nil
@@ -119,7 +122,7 @@ final class RailMapPlayback: ObservableObject {
         }
     }
     func stop() {
-        pause(); mode = nil
+        pause(); mode = nil; distances = []
         map?.experienceLines = []; map?.experienceMarker = nil
         map?.historyMapActive = false; map?.experienceGeometryRevision += 1
         if let previousRegion { map?.region = previousRegion; map?.cameraRevision += 1 }
@@ -134,7 +137,7 @@ final class RailMapPlayback: ObservableObject {
     }
     private func updateTrain(forceCamera: Bool = false) {
         guard let timetable, let route else { return }
-        let point = route.coordinate(at: timetable.position(at: seconds))
+        let point = route.coordinate(at: timetable.position(at: seconds), distances: distances)
         map?.experienceMarker = point
         let now = ProcessInfo.processInfo.systemUptime
         if follow, let point, forceCamera || now - cameraTime >= 1 {

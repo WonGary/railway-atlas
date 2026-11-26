@@ -174,10 +174,34 @@ public struct RailTrackJourney: Codable, Identifiable, Sendable {
             }
         }
     }
-    public func coordinate(at position: RailTimetable.Position) -> Coordinate? {
+    public func cumulativeDistances() -> [[Double]] {
+        legs.map { points in
+            var result = [Double](repeating: 0, count: points.count)
+            for i in points.indices.dropFirst() {
+                result[i] = result[i-1] + Self.metres(points[i-1], points[i])
+            }
+            return result
+        }
+    }
+    public func coordinate(at position: RailTimetable.Position, distances: [[Double]]? = nil) -> Coordinate? {
         guard position.phase != .unknown, !legs.isEmpty else { return nil }
         if position.phase == .running, legs.indices.contains(position.from) {
-            return Self.interpolate(legs[position.from], fraction: position.fraction)
+            let points = legs[position.from]
+            if let distances, distances.indices.contains(position.from) {
+                let lengths = distances[position.from]
+                if lengths.count == points.count, points.count >= 2, let total = lengths.last, total > 0 {
+                    let target = max(0, min(1, position.fraction)) * total
+                    var low = 1, high = lengths.count-1
+                    while low < high {
+                        let mid = (low+high)/2
+                        if lengths[mid] < target { low = mid+1 } else { high = mid }
+                    }
+                    let a = points[low-1], b = points[low], length = lengths[low]-lengths[low-1]
+                    let t = length > 0 ? (target-lengths[low-1])/length : 0
+                    return Coordinate(a.latitude+(b.latitude-a.latitude)*t, a.longitude+(b.longitude-a.longitude)*t)
+                }
+            }
+            return Self.interpolate(points, fraction: position.fraction)
         }
         if position.from == legs.count { return legs.last?.last }
         return legs.indices.contains(position.from) ? legs[position.from].first : nil
