@@ -1,0 +1,620 @@
+{
+  "day": "2026-11-26",
+  "source": "https://wongary.github.io/railway-atlas/?verify=4d93098",
+  "browser": "158.0.4370.33",
+  "sampleSeed": "atlas-20261126:",
+  "mapImportedLibrary": false,
+  "cardImportedContours": false,
+  "cardStyle": "map",
+  "budgetMs": 5000,
+  "results": [
+    {
+      "train": "D174",
+      "cold": {
+        "ms": 1267,
+        "status": "full",
+        "drawn": 14,
+        "legs": 14,
+        "from": "西宁",
+        "to": "攀枝花南",
+        "gaps": [],
+        "vertices": 1204,
+        "sources": [
+          1,
+          3
+        ],
+        "requests": [
+          {
+            "file": "D1-128db772793a.json",
+            "ms": 1178,
+            "bytes": 140328
+          }
+        ]
+      },
+      "warm": {
+        "ms": 21,
+        "status": "full",
+        "drawn": 14,
+        "legs": 14,
+        "from": "西宁",
+        "to": "攀枝花南",
+        "gaps": [],
+        "vertices": 1204,
+        "sources": [
+          1,
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "陇南",
+        "to": "广元",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 309,
+        "ready": true,
+        "from": "陇南",
+        "to": "广元",
+        "legs": 1,
+        "message": "陇南 → 广元 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 372,
+        "bytes": 60889
+      }
+    },
+    {
+      "train": "V571",
+      "cold": {
+        "ms": 460,
+        "status": "full",
+        "drawn": 29,
+        "legs": 29,
+        "from": "北京丰台",
+        "to": "厦门北",
+        "gaps": [],
+        "vertices": 1852,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": [
+          {
+            "file": "V5-8499cbe97ec1.json",
+            "ms": 332,
+            "bytes": 162835
+          }
+        ]
+      },
+      "warm": {
+        "ms": 31,
+        "status": "full",
+        "drawn": 29,
+        "legs": 29,
+        "from": "北京丰台",
+        "to": "厦门北",
+        "gaps": [],
+        "vertices": 1852,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "菏泽",
+        "to": "浠水",
+        "legs": 5,
+        "date": "2026-11-27"
+      },
+      "postcard": {
+        "previewMs": 305,
+        "ready": true,
+        "from": "菏泽",
+        "to": "浠水",
+        "legs": 5,
+        "message": "菏泽 → 浠水 · 6 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 356,
+        "bytes": 81556
+      }
+    },
+    {
+      "train": "V604",
+      "cold": {
+        "ms": 570,
+        "status": "full",
+        "drawn": 21,
+        "legs": 21,
+        "from": "运城",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1297,
+        "sources": [
+          3
+        ],
+        "requests": [
+          {
+            "file": "V6-aaff2bc96a74.json",
+            "ms": 494,
+            "bytes": 155305
+          }
+        ]
+      },
+      "warm": {
+        "ms": 31,
+        "status": "full",
+        "drawn": 21,
+        "legs": 21,
+        "from": "运城",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1297,
+        "sources": [
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "平遥",
+        "to": "太谷",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 222,
+        "ready": true,
+        "from": "平遥",
+        "to": "太谷",
+        "legs": 1,
+        "message": "平遥 → 太谷 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 264,
+        "bytes": 64593
+      }
+    },
+    {
+      "train": "Z336",
+      "cold": {
+        "ms": 544,
+        "status": "full",
+        "drawn": 20,
+        "legs": 20,
+        "from": "南宁",
+        "to": "包头",
+        "gaps": [],
+        "vertices": 2985,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": [
+          {
+            "file": "Z3-b5a89a2f34d2.json",
+            "ms": 442,
+            "bytes": 183498
+          }
+        ]
+      },
+      "warm": {
+        "ms": 29,
+        "status": "full",
+        "drawn": 20,
+        "legs": 20,
+        "from": "南宁",
+        "to": "包头",
+        "gaps": [],
+        "vertices": 2985,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "邯郸",
+        "to": "石家庄",
+        "legs": 1,
+        "date": "2026-11-27"
+      },
+      "postcard": {
+        "previewMs": 232,
+        "ready": true,
+        "from": "邯郸",
+        "to": "石家庄",
+        "legs": 1,
+        "message": "邯郸 → 石家庄 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 278,
+        "bytes": 64381
+      }
+    },
+    {
+      "train": "N147",
+      "cold": {
+        "ms": 455,
+        "status": "full",
+        "drawn": 22,
+        "legs": 22,
+        "from": "南昌",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1639,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": [
+          {
+            "file": "N1-ffb9dbf668b2.json",
+            "ms": 344,
+            "bytes": 113203
+          }
+        ]
+      },
+      "warm": {
+        "ms": 27,
+        "status": "full",
+        "drawn": 22,
+        "legs": 22,
+        "from": "南昌",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1639,
+        "sources": [
+          3,
+          2
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "武昌",
+        "to": "广水",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 413,
+        "ready": true,
+        "from": "武昌",
+        "to": "广水",
+        "legs": 1,
+        "message": "武昌 → 广水 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 471,
+        "bytes": 63807
+      }
+    },
+    {
+      "train": "Z58",
+      "cold": {
+        "ms": 475,
+        "status": "full",
+        "drawn": 13,
+        "legs": 13,
+        "from": "北京西",
+        "to": "三亚",
+        "gaps": [],
+        "vertices": 3100,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": [
+          {
+            "file": "Z0-766d18f426ae.json",
+            "ms": 366,
+            "bytes": 69564
+          }
+        ]
+      },
+      "warm": {
+        "ms": 28,
+        "status": "full",
+        "drawn": 13,
+        "legs": 13,
+        "from": "北京西",
+        "to": "三亚",
+        "gaps": [],
+        "vertices": 3100,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "韶关东",
+        "to": "广州白云",
+        "legs": 1,
+        "date": "2026-11-27"
+      },
+      "postcard": {
+        "previewMs": 202,
+        "ready": true,
+        "from": "韶关东",
+        "to": "广州白云",
+        "legs": 1,
+        "message": "韶关东 → 广州白云 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 232,
+        "bytes": 69582
+      }
+    },
+    {
+      "train": "C273",
+      "cold": {
+        "ms": 444,
+        "status": "full",
+        "drawn": 7,
+        "legs": 7,
+        "from": "昆明",
+        "to": "西双版纳",
+        "gaps": [],
+        "vertices": 420,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "C2-b9d74ddbdddd.json",
+            "ms": 366,
+            "bytes": 37041
+          }
+        ]
+      },
+      "warm": {
+        "ms": 27,
+        "status": "full",
+        "drawn": 7,
+        "legs": 7,
+        "from": "昆明",
+        "to": "西双版纳",
+        "gaps": [],
+        "vertices": 420,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "化念",
+        "to": "元江",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 275,
+        "ready": true,
+        "from": "化念",
+        "to": "元江",
+        "legs": 1,
+        "message": "化念 → 元江 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 333,
+        "bytes": 61750
+      }
+    },
+    {
+      "train": "D2236",
+      "cold": {
+        "ms": 391,
+        "status": "full",
+        "drawn": 23,
+        "legs": 23,
+        "from": "南昌西",
+        "to": "宜宾",
+        "gaps": [],
+        "vertices": 1287,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": [
+          {
+            "file": "D22-d0757c442a6b.json",
+            "ms": 278,
+            "bytes": 73978
+          }
+        ]
+      },
+      "warm": {
+        "ms": 27,
+        "status": "full",
+        "drawn": 23,
+        "legs": 23,
+        "from": "南昌西",
+        "to": "宜宾",
+        "gaps": [],
+        "vertices": 1287,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "荆州",
+        "to": "宜昌东",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 488,
+        "ready": true,
+        "from": "荆州",
+        "to": "宜昌东",
+        "legs": 1,
+        "message": "荆州 → 宜昌东 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 552,
+        "bytes": 66182
+      }
+    },
+    {
+      "train": "V6461",
+      "cold": {
+        "ms": 13,
+        "status": "absent",
+        "message": "这版时刻库未收录 V6461。"
+      },
+      "warm": {
+        "ms": 14,
+        "status": "absent",
+        "message": "这版时刻库未收录 V6461。"
+      }
+    },
+    {
+      "train": "D9187",
+      "cold": {
+        "ms": 391,
+        "status": "full",
+        "drawn": 4,
+        "legs": 4,
+        "from": "瑞金",
+        "to": "厦门",
+        "gaps": [],
+        "vertices": 251,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "D91-c7a66a417f3f.json",
+            "ms": 300,
+            "bytes": 12315
+          }
+        ]
+      },
+      "warm": {
+        "ms": 21,
+        "status": "full",
+        "drawn": 4,
+        "legs": 4,
+        "from": "瑞金",
+        "to": "厦门",
+        "gaps": [],
+        "vertices": 251,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "龙岩",
+        "to": "漳州",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 320,
+        "ready": true,
+        "from": "龙岩",
+        "to": "漳州",
+        "legs": 1,
+        "message": "龙岩 → 漳州 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 383,
+        "bytes": 68618
+      }
+    },
+    {
+      "train": "C7701",
+      "cold": {
+        "ms": 372,
+        "status": "full",
+        "drawn": 8,
+        "legs": 8,
+        "from": "广州南",
+        "to": "珠海",
+        "gaps": [],
+        "vertices": 159,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "C77-4662972bf98f.json",
+            "ms": 294,
+            "bytes": 11987
+          }
+        ]
+      },
+      "warm": {
+        "ms": 17,
+        "status": "full",
+        "drawn": 8,
+        "legs": 8,
+        "from": "广州南",
+        "to": "珠海",
+        "gaps": [],
+        "vertices": 159,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "中山",
+        "to": "南朗",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 289,
+        "ready": true,
+        "from": "中山",
+        "to": "南朗",
+        "legs": 1,
+        "message": "中山 → 南朗 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 343,
+        "bytes": 60999
+      }
+    },
+    {
+      "train": "G8841",
+      "cold": {
+        "ms": 370,
+        "status": "full",
+        "drawn": 4,
+        "legs": 4,
+        "from": "大兴机场",
+        "to": "天津西",
+        "gaps": [],
+        "vertices": 105,
+        "sources": [
+          1
+        ],
+        "requests": [
+          {
+            "file": "G88-98bf2d7c7b4c.json",
+            "ms": 308,
+            "bytes": 11278
+          }
+        ]
+      },
+      "warm": {
+        "ms": 24,
+        "status": "full",
+        "drawn": 4,
+        "legs": 4,
+        "from": "大兴机场",
+        "to": "天津西",
+        "gaps": [],
+        "vertices": 105,
+        "sources": [
+          1
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "永清东",
+        "to": "安次",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 295,
+        "ready": true,
+        "from": "永清东",
+        "to": "安次",
+        "legs": 1,
+        "message": "永清东 → 安次 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 359,
+        "bytes": 69059
+      }
+    }
+  ]
+}

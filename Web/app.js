@@ -2079,7 +2079,7 @@ async function openTimetableJourney(timetable, trip) {
 function openStationTrain(data,origin,mode,station) {
   const stops=data.stops.map(([station,arrival,departure])=>({station,arrival,departure}));
   const trip=typeof data.id==="string" && /^[0-9a-zA-Z]{12}$/.test(data.id) ? data.id : undefined;
-  const tt={id:`board:${data.id}:${origin}`,train:data.number,serviceDate:origin,stops,routing:data.plan};
+  const tt={id:`board:${data.id}:${origin}`,train:data.number,serviceDate:origin,stops,routing:data.plan,trip};
   if (mode==="journey") { void openTimetableJourney(tt,trip); return; }
   const index=Math.max(0,stops.findIndex(s=>s.station===station));
   const start=index===stops.length-1 ? 0 : index;
@@ -2431,11 +2431,12 @@ async function passengerSection({train,date,from,to,timetable,departure}) {
   const names=RailLibrary.trainNames(train.trim().toUpperCase()), candidates=[];
   for (const route of state.routes) {
     if (!RailLibrary.trainNames(route.train).some(n=>names.includes(n))) continue;
-    if (timetable?.routing && timetable.routing !== route.routing) continue;
+    if (timetable?.trip && route.trip!==timetable.trip) continue;
     if (timetable && (route.train!==timetable.train || route.serviceDate!==timetable.serviceDate ||
       route.stops.length!==timetable.stops.length || !route.stops.every((s,i)=>
         s.name===(timetable.stops[i].station??timetable.stops[i].name) &&
         s.departure===(timetable.stops[i].departure??null) && s.arrival===(timetable.stops[i].arrival??null)))) continue;
+    if (timetable?.routing && !RailPaths.sameRouting(route.routing,timetable.routing)) continue;
     route.stops.forEach((s,a)=>{
       if (s.name!==from || StationCatalog.day(route.serviceDate,Math.floor(s.departure/1440))!==date ||
           (departure && parseMinutes(departure)!==s.departure%1440)) return;
@@ -2449,7 +2450,7 @@ async function passengerSection({train,date,from,to,timetable,departure}) {
     });
   }
   const route=candidates.length===1 ? candidates[0] : await RailPaths.find({train,date,from,to,boarding:true,
-    stops:timetable?.stops,routing:timetable?.routing,departure});
+    stops:timetable?.stops,routing:timetable?.routing,trip:timetable?.trip,departure});
   if (!route.geometryAvailable) throw Error(`缺少连续轨迹：${route.gaps.join("、")}`);
   return route;
 }

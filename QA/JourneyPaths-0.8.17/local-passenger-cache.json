@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:62096/",
+  "browser": "158.0.4370.33",
+  "results": [
+    {
+      "train": "D174",
+      "originDate": "2026-11-26",
+      "boardingDate": "2026-11-26",
+      "from": "陇南",
+      "to": "广元",
+      "sections": 1,
+      "vertices": 68,
+      "variants": {
+        "equalCopy": "cache",
+        "differentLine": "atlas",
+        "missingPlan": "atlas",
+        "differentTrip": "atlas"
+      },
+      "pngBytes": 132057
+    },
+    {
+      "train": "V571",
+      "originDate": "2026-11-26",
+      "boardingDate": "2026-11-27",
+      "from": "菏泽",
+      "to": "浠水",
+      "sections": 5,
+      "vertices": 445,
+      "variants": {
+        "equalCopy": "cache",
+        "differentLine": "atlas",
+        "missingPlan": "atlas",
+        "differentTrip": "atlas"
+      },
+      "pngBytes": 153829
+    }
+  ]
+}

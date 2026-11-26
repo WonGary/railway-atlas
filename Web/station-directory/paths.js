@@ -70,9 +70,20 @@ const RailPaths = (() => {
     }
     return gaps;
   }
+  function routingKey(plan) {
+    if (!Array.isArray(plan?.nodes) || plan.nodes.length<2 || !Array.isArray(plan.edges) ||
+        plan.edges.length!==plan.nodes.length-1 || !plan.nodes.every(n=>n?.station && Number.isFinite(n.kilometre))) return null;
+    return plan.nodes.map((n,i) => `${n.station}\t${n.kilometre}\t${plan.edges[i]?.lineName || ""}`).join("\n");
+  }
+  function sameRouting(left, right) {
+    const key = routingKey(left);
+    if (key === null || key !== routingKey(right)) return false;
+    const a=left.stopIndices, b=right.stopIndices;
+    return (!a && !b) || (Array.isArray(a) && Array.isArray(b) && a.length===b.length && a.every((n,i)=>n===b[i]));
+  }
   async function fingerprint(plan) {
-    if (!plan?.nodes || !plan?.edges) return null;
-    const string = plan.nodes.map((n,i) => `${n.station}\t${n.kilometre}\t${plan.edges[i]?.lineName || ""}`).join("\n");
+    const string = routingKey(plan);
+    if (string === null) return null;
     const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(string));
     return Array.from(new Uint8Array(bytes), b=>b.toString(16).padStart(2,"0")).join("");
   }
@@ -86,6 +97,7 @@ const RailPaths = (() => {
       (meta.aliases[n] || [n.replace(/\d+$/, digits=>String(Math.floor(Number(digits)/100)))]).filter(k=>meta.groups[k]) : meta.lookup[n]||[]))];
     if (!groups.length) throw Error(`这版时刻库未收录 ${train || "该车次"}。`);
     const [signature, loaded] = await Promise.all([fingerprint(routing), Promise.all(groups.map(g => read(meta.groups[g])))]);
+    if (routing && (routing.nodes || routing.edges) && !signature) throw Error("所选时刻表的经由线路不完整。");
     const matches = [];
     let known = false;
     for (const group of loaded) for (const {primary,row} of rowsFor(group,numbers)) {
@@ -118,12 +130,12 @@ const RailPaths = (() => {
     const legs=row.p.slice(a,b).map(idx => legAt(group, idx));
     const selectedStops=row.s.slice(a,b+1).map(([,arrival,departure],i)=>({name:sectionNames[i],arrival,departure}));
     const gaps=gapsFor(selectedStops,legs);
-    return {id:`national:${row.id}:${origin}`,train:train || primary,serviceDate:origin,
+    return {id:`national:${row.id}:${origin}`,trip:row.id,train:train || primary,serviceDate:origin,
       stops:selectedStops,
       legs,stopCoordinates:sectionNames.map((_,i)=>legs[i]?.[0] || legs[i-1]?.at(-1) || null),
       geometryAvailable:!gaps.length, gaps, routing:from||to ? null : routing,
       source:{title:"全国铁路车次径路 · "+meta.edition,note:"China Railway GTFS · Jeremy Gao / © OpenStreetMap contributors"},
       geometryKinds:row.k.slice(a,b), indexed:true};
   }
-  return {find,decode,gapsFor};
+  return {find,decode,gapsFor,sameRouting};
 })();
