@@ -53,6 +53,15 @@ const RailPaths = (() => {
   function metres(a,b) {
     return Math.hypot(a[0]-b[0], (a[1]-b[1])*Math.cos((a[0]+b[0])*Math.PI/360))*111195;
   }
+  function gapsFor(stops, legs) {
+    const gaps = [];
+    for (let i=0; i<stops.length-1; i++) {
+      if (!legs[i] || legs[i].length<2) gaps.push(`${stops[i].name} → ${stops[i+1].name}`);
+      else if (i && legs[i-1]?.length>=2 && metres(legs[i-1].at(-1),legs[i][0])>120)
+        gaps.push(`${stops[i].name}站内衔接`);
+    }
+    return gaps;
+  }
   async function fingerprint(plan) {
     if (!plan?.nodes || !plan?.edges) return null;
     const string = plan.nodes.map((n,i) => `${n.station}\t${n.kilometre}\t${plan.edges[i]?.lineName || ""}`).join("\n");
@@ -99,17 +108,14 @@ const RailPaths = (() => {
     const {row,primary,names,group,a,b,origin}=matches[0];
     const sectionNames=names.slice(a,b+1);
     const legs=row.p.slice(a,b).map(idx => idx < 0 ? [] : decode(group.paths[idx]));
-    const gaps=[];
-    for (let i=0;i<legs.length;i++) {
-      if (legs[i].length<2) gaps.push(`${sectionNames[i]} → ${sectionNames[i+1]}`);
-      else if (i && legs[i-1].length && metres(legs[i-1].at(-1),legs[i][0])>120) gaps.push(`${sectionNames[i]}站内衔接`);
-    }
+    const selectedStops=row.s.slice(a,b+1).map(([,arrival,departure],i)=>({name:sectionNames[i],arrival,departure}));
+    const gaps=gapsFor(selectedStops,legs);
     return {id:`national:${row.id}:${origin}`,train:train || primary,serviceDate:origin,
-      stops:row.s.slice(a,b+1).map(([,arrival,departure],i)=>({name:sectionNames[i],arrival,departure})),
+      stops:selectedStops,
       legs,stopCoordinates:sectionNames.map((_,i)=>legs[i]?.[0] || legs[i-1]?.at(-1) || null),
       geometryAvailable:!gaps.length, gaps, routing:from||to ? null : routing,
       source:{title:"全国铁路车次径路 · "+meta.edition,note:"China Railway GTFS · Jeremy Gao / © OpenStreetMap contributors"},
       geometryKinds:row.k.slice(a,b), indexed:true};
   }
-  return {find,decode};
+  return {find,decode,gapsFor};
 })();

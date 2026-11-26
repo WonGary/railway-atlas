@@ -271,6 +271,14 @@ function routeTitle(route) {
   return `${route.train} · ${from} → ${to}`;
 }
 
+function geometryStatus(route) {
+  if (route.geometryAvailable) return "有路线几何";
+  const total = route.stops.length - 1;
+  const covered = route.legs.filter(leg => leg?.length >= 2).length;
+  if (covered === 0) return "无路线几何";
+  return covered === total ? `${total} 段已有轨迹，站内衔接待补` : `已有 ${covered}/${total} 段轨迹`;
+}
+
 function setRouteStatus() {
   const route = state.route;
   if (!route || !state.playbackVisible) {
@@ -278,7 +286,7 @@ function setRouteStatus() {
     return;
   }
   const pointCount = route.legs.reduce((total, leg) => total + leg.length, 0);
-  const geometry = route.geometryAvailable ? ` · ${pointCount.toLocaleString()} 个轨道点` : " · 无随包轨道几何";
+  const geometry = route.geometryAvailable ? ` · ${pointCount.toLocaleString()} 个轨道点` : ` · ${geometryStatus(route)}`;
   $("dataStatus").textContent = `本地时刻快照 · ${route.train} · ${route.serviceDate || "日期未记录"}${geometry}`;
 }
 
@@ -616,9 +624,10 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   if (partial) {
     const plan = full.routing, first = plan?.stopIndices?.[from], last = plan?.stopIndices?.[to];
     const legs = full.legs.slice(from, to);
-    route = {...full, stops:full.stops.slice(from,to+1), stopCoordinates:full.stopCoordinates.slice(from,to+1), legs,
-      geometryAvailable:legs.length===to-from && legs.every((leg,i)=>leg?.length>=2 && (!i ||
-        L.latLng(legs[i-1].at(-1)).distanceTo(leg[0])<=120)),
+    const stops = full.stops.slice(from,to+1);
+    const gaps = RailPaths.gapsFor(stops, legs);
+    route = {...full, stops, stopCoordinates:full.stopCoordinates.slice(from,to+1), legs, gaps,
+      geometryAvailable:gaps.length===0,
       cacheMatched:full.cacheMatched || full.matchedSections?.slice(from,to).filter(Boolean).length===to-from,
       routing:Number.isInteger(first) && Number.isInteger(last) && plan.nodes?.[first] && plan.nodes?.[last] && Array.isArray(plan.edges) ? {
         ...plan, nodes:plan.nodes.slice(first,last+1).map(node=>({...node,kilometre:node.kilometre-plan.nodes[first].kilometre})),
@@ -646,7 +655,7 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   $("routeSummary").innerHTML = `
     <span class="route-code">${escapeHTML(route.train)}</span>
     <span class="route-name">${escapeHTML(route.stops[0]?.name || "未知起点")} → ${escapeHTML(route.stops.at(-1)?.name || "未知终点")}</span>
-    <span class="route-meta">${escapeHTML(route.serviceDate || "日期未记录")} · ${route.stops.length} 站${route.geometryAvailable ? " · 有路线几何" : " · 无路线几何"}</span>`;
+    <span class="route-meta">${escapeHTML(route.serviceDate || "日期未记录")} · ${route.stops.length} 站 · ${geometryStatus(route)}</span>`;
   $("routeSummary").onclick = fitRoute;
   $("routeSummary").onkeydown = event => { if (event.key === "Enter" || event.key === " ") fitRoute(); };
   $("routeSummary").tabIndex = 0;
