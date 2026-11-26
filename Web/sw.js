@@ -1,5 +1,5 @@
 const VERSION = "0.8.17";
-const SHELL = `railway-atlas-web-${VERSION}-r3`;
+const SHELL = `railway-atlas-web-${VERSION}-r4`;
 // Retain immutable track, station and timetable chunks. City projections are versioned below.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
@@ -59,7 +59,14 @@ self.addEventListener("fetch", event => {
       const cacheKey=path.startsWith("data/metro/") ? address(path+"?edition="+VERSION) : request;
       const hit = await cache.match(cacheKey);
       if (hit) return hit;
-      const response = await fetch(request);
+      // Offline areas can lack station or track chunks. Let the caller retain the
+      // currently drawn features and retry later without rejecting the fetch event.
+      let response;
+      try {
+        response = await fetch(request);
+      } catch {
+        return new Response(null, {status: 503, headers: {"Cache-Control":"no-store"}});
+      }
       if (response.ok && !response.redirected) {
         try { await cache.put(cacheKey,response.clone()); } catch { /* A full cache still permits online use. */ }
       }

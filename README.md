@@ -4,7 +4,7 @@
 
 ## 给朋友的最短用法
 
-[打开网页版地图](https://wongary.github.io/railway-atlas/) ｜ [下载 0.8.17 各平台安装包](https://github.com/WonGary/railway-atlas/releases/tag/web-v0.8.17) ｜ [本版更新内容](CHANGELOG.md)
+[打开网页版地图](https://wongary.github.io/railway-atlas/) ｜ [下载各平台安装包](https://github.com/WonGary/railway-atlas/releases/latest) ｜ [本版更新内容](CHANGELOG.md)
 
 放大到北京西站可以看到站房和各个站台，再到西直门看地铁站台和乘客通道。Android 手机下载 APK。iPhone 和 iPad 可打开网页版，也可用 SideStore 或 iLoader 重新签名安装 IPA。Mac 可选原生应用或浏览器便携包，Windows 便携包分 x64 和 arm64 两种。[地图和离线资料](Web/README.md) · [手机安装与签名](Mobile/README.md)
 

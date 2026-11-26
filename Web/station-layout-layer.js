@@ -32,6 +32,15 @@ const StationLayoutLayer = (() => {
     return {color:colors[kind][dark?1:0], weight:kind==="outline"?1.4:2.2,
       fill:feature.area || point, fillOpacity:kind==="outline"?0.17:kind==="concourse"?0.22:0.34, dashArray:kind==="passage"?"4 3":null};
   }
+  async function readWorldTile(path) {
+    const url = new URL(path, document.baseURI);
+    const bundled = url.hostname === "appassets.androidplatform.net" ||
+      (url.hostname === "127.0.0.1" && url.port === "18763");
+    if (navigator.onLine !== false || bundled) return loadJSON(path);
+    const cached = await globalThis.caches?.match(url);
+    if (cached) return cached.json();
+    throw new Error("这个站区还没有离线缓存");
+  }
   function showWorldTiles(bounds, enabled) {
     const keys = [];
     if (enabled && bounds.getEast()-bounds.getWest()<2 && bounds.getNorth()-bounds.getSouth()<2) {
@@ -56,7 +65,7 @@ const StationLayoutLayer = (() => {
       const parts=await Promise.allSettled(files.map(file=>{
         let tile=worldTiles.get(file);
         if (tile) worldTiles.delete(file);
-        else tile=loadJSON(folder+file).then(rows=>rows.map(entryFor).filter(Boolean))
+        else tile=readWorldTile(folder+file).then(rows=>rows.map(entryFor).filter(Boolean))
           .catch(error=>{ worldTiles.delete(file); throw error; });
         worldTiles.set(file,tile);
         return tile;

@@ -131,7 +131,7 @@ jobs:
               for attempt in range(40):
                   try:
                       with urllib.request.urlopen("http://127.0.0.1:18763/") as page:
-                          version = os.environ["TAG"].removeprefix("web-v")
+                          version = os.environ["TAG"].removeprefix("web-v").split("-r", 1)[0]
                           assert f'id="versionBadge">{version}<'.encode() in page.read()
                       break
                   except OSError:
