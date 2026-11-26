@@ -23,13 +23,23 @@ jobs:
           set -euo pipefail
           apk=Mobile/Android/app/build/outputs/apk/release/app-release-unsigned.apk
           tools="$ANDROID_HOME/build-tools/35.0.0"
-          "$tools/aapt" dump badging "$apk" | head -n 12
+          cmp VERSION Mobile/VERSION
+          version=$(<VERSION)
+          IFS=. read -r major minor patch <<<"$version"
+          code=$((major * 1000000 + minor * 1000 + patch))
+          "$tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/atlas-badging.txt"
+          grep -F "package: name='app.railwayatlas.android' versionCode='$code' versionName='$version'" "$RUNNER_TEMP/atlas-badging.txt"
+          grep -Fx "sdkVersion:'26'" "$RUNNER_TEMP/atlas-badging.txt"
+          grep -Fx "targetSdkVersion:'35'" "$RUNNER_TEMP/atlas-badging.txt"
           "$tools/zipalign" -c 4 "$apk"
           unzip -p "$apk" assets/index.html | cmp Web/index.html -
           unzip -p "$apk" assets/data/station-layouts.json | cmp Sources/RailwayAtlas/Resources/station-layouts.json -
           unzip -p "$apk" assets/data/station-layouts.js | cmp Sources/RailwayAtlas/Resources/station-layouts.js -
+          unzip -p "$apk" assets/data/world-stations/index.json | cmp Web/data/world-stations/index.json -
           unzip -p "$apk" assets/data/metro/macao.json | cmp Web/data/metro/macao.json -
           unzip -p "$apk" assets/vendor/sqlite/sqlite3.wasm | cmp Web/vendor/sqlite/sqlite3.wasm -
+          unzip -p "$apk" assets/data/city-packs/manifest.json | cmp Web/data/city-packs/manifest.json -
+          unzip -p "$apk" assets/station-directory/paths/index.json | cmp Web/station-directory/paths/index.json -
       - uses: actions/upload-artifact@v4
         with:
           name: android-unsigned

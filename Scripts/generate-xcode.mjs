@@ -45,7 +45,9 @@ const products = [];
 for (const platform of ["macOS", "iOS"]) {
   const prefix = `RailwayAtlas-${platform}`;
   const sourceBuilds = files.map((file, n) => object(`${prefix}-source-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
-  const resourceBuilds = (platform === "iOS" ? [...iosResources, catalog, metroDirectory,...metroFiles] : [resources, catalog, stationDirectory, stationLibrary, metroDirectory,...metroFiles]).map((file, n) => object(`${prefix}-resource-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
+  const platformResources = platform === "iOS" ? iosResources : [resources];
+  const resourceBuilds = [...platformResources, catalog, stationDirectory, stationLibrary, metroDirectory, ...metroFiles]
+    .map((file, n) => object(`${prefix}-resource-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
   const dependency = object(`${prefix}-core`, `isa = XCSwiftPackageProductDependency; package = ${id("package")}; productName = RailwayCore;`);
   const link = object(`${prefix}-link`, `isa = PBXBuildFile; productRef = ${dependency};`);
   const sourcesPhase = object(`${prefix}-sources`, `isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ${list(sourceBuilds)}; runOnlyForDeploymentPostprocessing = 0;`);

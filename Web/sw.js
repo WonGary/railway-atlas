@@ -1,5 +1,5 @@
 const VERSION = "0.8.17";
-const SHELL = `railway-atlas-web-${VERSION}-r2`;
+const SHELL = `railway-atlas-web-${VERSION}-r3`;
 // Retain immutable track, station and timetable chunks. City projections are versioned below.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
@@ -17,7 +17,7 @@ const files = [
   "licenses/NOTICE.txt","licenses/components.txt","licenses/NATIONAL-METRO-LICENCE.txt","licenses/METRO-PALETTE-LICENCE.txt",
   "data/railway-experience-corridors.json","data/railway-experience-routes.json",
   "data/railway-experience-timetables.json","data/china-metro-overview.json",
-  "data/metro-index.json","data/railway-experience-history.json","data/rail/index.json","data/discovery.json"
+  "data/metro-index.json","data/metro/macao.json","data/railway-experience-history.json","data/rail/index.json","data/discovery.json"
 ];
 
 self.addEventListener("install", event => {

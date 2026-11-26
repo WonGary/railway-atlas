@@ -1,4 +1,4 @@
-铁道漫游 0.8.5
+铁道漫游 0.8.17
 
 在线入口　https://wongary.github.io/railway-atlas/
 
@@ -7,7 +7,7 @@ Mac　解压后双击「打开铁道漫游.command」。同一个包支持 Apple
 桌面启动器会用默认浏览器打开 http://127.0.0.1:18763/ 。保持终端窗口打开，退出时按 Ctrl+C。本地时刻库和收藏跟随浏览器与站点地址保存。
 iPhone、iPad　在 Safari 打开在线入口，点「分享」→「添加到主屏幕」。
 Android 8 及以上　下载 Android.apk 后打开安装。也可以在 Chrome 中打开网页。
-iPhone 和 iPad 原生版　由发布者用个人开发者团队签名后，通过 TestFlight 邀请测试。iOS-xcarchive.zip 供发布者使用。
+iPhone 和 iPad 原生版　下载 IPA，通过 SideStore 或 iLoader 重新签名安装。iOS-xcarchive.zip 是供开发者导出的归档。
 Web-PWA.zip 供自行部署。将 Web 目录中的文件放到同一个 HTTPS 路径下即可。也可以解压后运行 python3 -m http.server 8080 --directory Web，再打开 http://127.0.0.1:8080/ 。
 
 打开后可以直接看地图。工作区的「图层」可按速度、用途、网络或单条地铁线路筛选。「设置」可以改线宽、站点大小、面板布局，或切到仅使用本机资料。点轨道或车站打开要素信息。

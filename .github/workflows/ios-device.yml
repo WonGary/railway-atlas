@@ -4,6 +4,11 @@ on:
     branches: [codex/mobile-map-release]
     paths: ['Sources/**', 'Config/**', 'Design/**', 'RailwayAtlas.xcodeproj/**', 'VERSION', '.github/workflows/ios-device.yml']
   workflow_dispatch:
+    inputs:
+      include_macos:
+        description: Also archive the native universal Mac app
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -37,6 +42,10 @@ jobs:
           test -s "$app/PrivacyInfo.xcprivacy"
           cmp "$app/station-layouts.json" Sources/RailwayAtlas/Resources/station-layouts.json
           cmp "$app/station-layouts.js" Sources/RailwayAtlas/Resources/station-layouts.js
+          cmp "$app/station-directory/paths/index.json" Web/station-directory/paths/index.json
+          diff -qr "$app/station-directory/paths" Web/station-directory/paths
+          cmp "$app/library.js" Web/library.js
+          test ! -e "$app/station-directory/card-contours.json"
           codesign --verify --deep --strict "$app"
           find "$app" -name 'metro-snapshot-beijing.json' | grep -q .
           mkdir -p out
@@ -44,6 +53,38 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ios-device-archive
+          path: out/*.zip
+          compression-level: 0
+          if-no-files-found: error
+  mac:
+    if: inputs.include_macos
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify universal native app
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          xcodebuild -project RailwayAtlas.xcodeproj -scheme RailwayAtlas-macOS -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath "$RUNNER_TEMP/atlas-mac" \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM= build
+          app="$RUNNER_TEMP/atlas-mac/Build/Products/Release/RailwayAtlas-macOS.app"
+          plist="$app/Contents/Info.plist"
+          test "$(plutil -extract CFBundleShortVersionString raw "$plist")" = "$version"
+          test "$(plutil -extract CFBundleIdentifier raw "$plist")" = app.railwayatlas.mac
+          binary=$(plutil -extract CFBundleExecutable raw "$plist")
+          lipo "$app/Contents/MacOS/$binary" -verify_arch arm64 x86_64
+          diff -qr "$app/Contents/Resources/station-directory/paths" Web/station-directory/paths
+          test ! -e "$app/Contents/Resources/station-directory/card-contours.json"
+          codesign --verify --deep --strict --all-architectures "$app"
+          mkdir -p out
+          ditto -c -k --keepParent "$app" "out/Railway-Atlas-$version-macOS-Native.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-native-universal
           path: out/*.zip
           compression-level: 0
           if-no-files-found: error
