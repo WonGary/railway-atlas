@@ -2,6 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const {randomUUID} = require("node:crypto");
 const assert = require("node:assert/strict");
 const {execFileSync} = require("node:child_process");
 const {setTimeout: delay} = require("node:timers/promises");
@@ -13,7 +14,15 @@ async function main() {
   if (platform === "mac" && target) {
     app = fs.realpathSync(target);
     assert.ok(fs.statSync(path.join(app, "Contents/MacOS/RailwayAtlas")).isFile(), "choose the installed Railway Atlas.app");
-    folder = fs.mkdtempSync(path.join(os.tmpdir(), "rail-games-installed-"));
+    const entitlements = execFileSync("/usr/bin/codesign", ["--display", "--entitlements", "-", "--xml", app],
+      {encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]});
+    if (/<key>com\.apple\.security\.app-sandbox<\/key>\s*<true\s*\/>/.test(entitlements)) {
+      const id = run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleIdentifier", path.join(app, "Contents/Info.plist")]);
+      // The OS creates the container on first launch. Let the app create its own receipt directory.
+      folder = path.join(os.homedir(), "Library/Containers", id, "Data/tmp", "rail-games-installed-" + randomUUID());
+    } else {
+      folder = fs.mkdtempSync(path.join(os.tmpdir(), "rail-games-installed-"));
+    }
     run("/usr/bin/open", ["-n", app, "--args", "--ui-smoke", folder, "--rail-games-check"]);
   } else if (platform === "ios") {
     const device = target || "booted", bundleID = "app.railwayatlas.ios";

@@ -85,18 +85,24 @@ async function runUI({browser, devices, url, testHooks},phone) {
     await fullJourney.click();
     await page.waitForFunction(()=>state.route.stops.length===15);
     await inspector.getByText("比较两趟车的径路",{exact:true}).click();
-    await inspector.getByLabel("比较车次",{exact:true}).fill("D176");
+    const comparisonTrain=inspector.getByRole("combobox",{name:"比较车次",exact:true});
+    assert.equal(await comparisonTrain.getAttribute("list"),"riLoadedTrains");
+    await comparisonTrain.fill("D176");
     await inspector.getByRole("button",{name:"在主地图比较"}).click();
     await inspector.getByText(/45 m/).waitFor();
     const metrics=await inspector.locator("table tr").allTextContents();
-    for (const identity of ["a","b","shared"])
-      assert.equal(await page.locator(`[data-inspector-ink="${identity}"]`).count(),1);
+    const ink=()=>page.locator("[data-inspector-ink]").evaluateAll(paths=>paths.map(p=>p.dataset.inspectorInk).sort());
+    assert.deepEqual(await ink(),["shared"]);
     assert.ok(metrics.some(text=>text.includes("14/14")));
     assert.ok(await page.evaluate(()=>RailLibrary.trainNames(state.route.train).includes("D174")));
     await inspector.getByText("两车逐站到发与停留",{exact:true}).click();
     assert.ok(await inspector.getByText(/^陇南　/).first().isVisible());
     await inspector.getByRole("button",{name:"收起比较图层"}).click();
     assert.equal(await page.locator("[data-inspector-ink]").count(),0);
+    await comparisonTrain.fill("D2236");
+    await inspector.getByRole("button",{name:"在主地图比较"}).click();
+    await inspector.getByText(/45 m/).waitFor();
+    assert.deepEqual(await ink(),["a","b","shared"]);
     await loadTrain("V604");
     await inspector.locator("[data-leg]").filter({hasText:"太原 → 忻州"}).click();
     await inspector.getByRole("button",{name:/北同蒲线全线/}).click();
