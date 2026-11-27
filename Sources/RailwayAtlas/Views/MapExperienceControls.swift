@@ -27,6 +27,9 @@ struct MapExperienceControls: View {
                 }
                 if mode == .train, let train = player.timetable {
                     Text(player.trainStatus).font(.subheadline)
+                    Text(player.runDetails).font(.caption.monospacedDigit())
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("train-run-details")
                     Slider(value: Binding(get: { player.seconds }, set: { player.seek($0) }),
                            in: Double(train.start * 60)...Double(train.end * 60))
                     HStack {

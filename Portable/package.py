@@ -1,15 +1,19 @@
-"""Build the four public archives on macOS using Go and the Command Line Tools."""
+"""Build the web checkpoint alone or package the four portable distributions."""
+import argparse
 import hashlib
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 from zipfile import ZipFile, ZIP_DEFLATED, ZipInfo
 
 root = Path(__file__).resolve().parents[1]
 web = root / "Web"
-out = Path(sys.argv[1]).absolute()
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("output", type=Path)
+parser.add_argument("--web-only", action="store_true", help="Package Web/PWA without building desktop binaries.")
+args = parser.parse_args()
+out = args.output.absolute()
 out.mkdir(parents=True, exist_ok=True)
 version = (root / "Mobile/VERSION").read_text().strip()
 
@@ -41,13 +45,15 @@ def archive(label, extra):
 
 with tempfile.TemporaryDirectory(prefix="railway-build-") as stage_name:
     stage = Path(stage_name)
-    mac = stage / "Railway-Atlas"
-    subprocess.run(["lipo", "-create", build(stage, "darwin", "arm64"), build(stage, "darwin", "amd64"), "-output", mac], check=True)
-    subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", "app.railwayatlas.portable", mac], check=True)
-    subprocess.run(["codesign", "--verify", "--strict", "--all-architectures", mac], check=True)
-    files = [archive("macOS-universal", {"Railway-Atlas": mac}), archive("Web-PWA", {})]
-    for label, arch in [("x64", "amd64"), ("arm64", "arm64")]:
-        files.append(archive("Windows-" + label, {"Railway-Atlas.exe": build(stage, "windows", arch)}))
+    files = [archive("Web-PWA", {})]
+    if not args.web_only:
+        mac = stage / "Railway-Atlas"
+        subprocess.run(["lipo", "-create", build(stage, "darwin", "arm64"), build(stage, "darwin", "amd64"), "-output", mac], check=True)
+        subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", "app.railwayatlas.portable", mac], check=True)
+        subprocess.run(["codesign", "--verify", "--strict", "--all-architectures", mac], check=True)
+        files.append(archive("macOS-universal", {"Railway-Atlas": mac}))
+        for label, arch in [("x64", "amd64"), ("arm64", "arm64")]:
+            files.append(archive("Windows-" + label, {"Railway-Atlas.exe": build(stage, "windows", arch)}))
 with (out/"SHA256SUMS.txt").open("x", encoding="ascii", newline="\n") as sums:
     for path in sorted(files):
         digest = hashlib.sha256(path.read_bytes()).hexdigest()

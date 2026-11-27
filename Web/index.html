@@ -216,11 +216,7 @@
             <button id="downloadPostcard" class="primary-button wide-button">导出 PNG 明信片</button>
           </section>
           <section class="experience-page" data-experience-page="history" hidden>
-            <label>时间范围 <span id="historyDateLabel"></span>
-              <input id="historyDate" type="range" min="0" max="0" value="0">
-            </label>
-            <div id="historyEvent" class="history-event"></div>
-            <p class="panel-note">历史节点显示城市关系，不代表当时的轨道精确走向。</p>
+            <p class="panel-note">正在读取有建设日期的轨道区段。</p>
           </section>
           <section class="experience-page" data-experience-page="quiz" hidden>
             <p class="panel-note">根据城市轨道线形猜城市。题目来自随包的地铁概览数据。</p>
@@ -311,6 +307,7 @@
             <button id="minimizePlayback" class="collapse-button" data-fold type="button" aria-label="收起播放栏">−</button>
           </div>
           <input id="journeyProgress" type="range" min="0" max="1" step="1" value="0" aria-label="沿线旅行进度">
+          <small id="runInfo" class="run-info" aria-label="模拟运行信息"></small>
         </div>
         <label class="follow-control"><input id="followJourney" type="checkbox" checked>跟随列车</label>
         <select id="playbackSpeed" class="speed-select" aria-label="播放速度">
@@ -516,7 +513,11 @@
   <script src="./card-map.js"></script>
   <script src="./station-directory/panel.js"></script>
   <script src="./station-board.js"></script>
+  <script src="./history-network.js"></script>
+  <script src="./run-info.js"></script>
   <script src="./app.js"></script>
+  <script src="./rail-games.js"></script>
+  <script src="./route-inspector.js"></script>
   <script>
     if ("serviceWorker" in navigator && location.protocol !== "file:" && location.hostname !== "appassets.androidplatform.net") {
       const offlineNote = document.getElementById("offlineReady");

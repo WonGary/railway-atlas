@@ -30,6 +30,8 @@ const stationDirectory = object("station-directory", 'isa = PBXFileReference; la
 const metroDirectory = object("metro-directory", 'isa = PBXFileReference; lastKnownFileType = folder; path = Web/data/metro; sourceTree = SOURCE_ROOT;');
 const metroFiles = ["Web/data/metro-index.json","Web/metro-source.js"].map(p=>object(p,`isa = PBXFileReference; lastKnownFileType = file; path = ${quote(p)}; sourceTree = SOURCE_ROOT;`));
 const stationLibrary = object("station-library", 'isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Web/library.js; sourceTree = SOURCE_ROOT;');
+const gamesScript = object("games-script", 'isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Web/rail-games.js; sourceTree = SOURCE_ROOT;');
+const gamesPack = object("games-pack", 'isa = PBXFileReference; lastKnownFileType = folder; path = Web/games; sourceTree = SOURCE_ROOT;');
 // On iOS an app is a flat bundle. A top-level "Resources" directory makes
 // Apple's bundle reader look there for Info.plist and misidentify the binary.
 const iosResources = fs.readdirSync(path.join(sourceRoot, "Resources"), {withFileTypes: true})
@@ -38,6 +40,7 @@ const iosResources = fs.readdirSync(path.join(sourceRoot, "Resources"), {withFil
   .concat("Config/PrivacyInfo.xcprivacy")
   .map(relative => object(relative, `isa = PBXFileReference; lastKnownFileType = file; path = ${quote(relative)}; sourceTree = SOURCE_ROOT;`));
 iosResources.push(object("world-stations", 'isa = PBXFileReference; lastKnownFileType = folder; path = Sources/RailwayAtlas/Resources/world-stations; sourceTree = SOURCE_ROOT;'));
+iosResources.push(object("games-page", 'isa = PBXFileReference; lastKnownFileType = folder; path = Sources/RailwayAtlas/Resources/RailGames; sourceTree = SOURCE_ROOT;'));
 const catalog = object("catalog", 'isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Design/Assets.xcassets; sourceTree = SOURCE_ROOT;');
 object("package", 'isa = XCLocalSwiftPackageReference; relativePath = ".";');
 const targets = [];
@@ -45,7 +48,8 @@ const products = [];
 for (const platform of ["macOS", "iOS"]) {
   const prefix = `RailwayAtlas-${platform}`;
   const sourceBuilds = files.map((file, n) => object(`${prefix}-source-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
-  const resourceBuilds = (platform === "iOS" ? [...iosResources, catalog, metroDirectory,...metroFiles] : [resources, catalog, stationDirectory, stationLibrary, metroDirectory,...metroFiles]).map((file, n) => object(`${prefix}-resource-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
+  const sharedAssets = [catalog, stationDirectory, stationLibrary, metroDirectory, ...metroFiles, gamesScript, gamesPack];
+  const resourceBuilds = [...(platform === "iOS" ? iosResources : [resources]), ...sharedAssets].map((file, n) => object(`${prefix}-resource-${n}`, `isa = PBXBuildFile; fileRef = ${file};`));
   const dependency = object(`${prefix}-core`, `isa = XCSwiftPackageProductDependency; package = ${id("package")}; productName = RailwayCore;`);
   const link = object(`${prefix}-link`, `isa = PBXBuildFile; productRef = ${dependency};`);
   const sourcesPhase = object(`${prefix}-sources`, `isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ${list(sourceBuilds)}; runOnlyForDeploymentPostprocessing = 0;`);
@@ -95,7 +99,7 @@ for (const platform of ["macOS", "iOS"]) {
   targets.push(target);
 }
 const productGroup = object("products", `isa = PBXGroup; name = Products; children = ${list(products)}; sourceTree = "<group>";`);
-const mainGroup = object("main-group", `isa = PBXGroup; children = ${list([...files, resources, ...iosResources, catalog, stationDirectory, stationLibrary, metroDirectory,...metroFiles, productGroup])}; sourceTree = "<group>";`);
+const mainGroup = object("main-group", `isa = PBXGroup; children = ${list([...files, resources, ...iosResources, catalog, stationDirectory, stationLibrary, metroDirectory,...metroFiles, gamesScript, gamesPack, productGroup])}; sourceTree = "<group>";`);
 const projectConfigs = ["Debug", "Release"].map((name) => object(`project-${name}`, `isa = XCBuildConfiguration; name = ${name}; buildSettings = { CLANG_ENABLE_MODULES = YES; };`));
 const projectConfigList = object("project-configs", `isa = XCConfigurationList; buildConfigurations = ${list(projectConfigs)}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;`);
 object("project", `isa = PBXProject; attributes = { LastUpgradeCheck = 1600; }; buildConfigurationList = ${projectConfigList}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; knownRegions = (en, zh_CN, Base); mainGroup = ${mainGroup}; productRefGroup = ${productGroup}; projectDirPath = ""; projectRoot = ""; targets = ${list(targets)}; packageReferences = (${id("package")});`);

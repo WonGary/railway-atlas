@@ -62,6 +62,8 @@ ditto --norsrc --noextattr Web/station-directory "$ATLAS_APP/Contents/Resources/
 ditto --norsrc --noextattr Web/data/metro "$ATLAS_APP/Contents/Resources/metro"
 cp Web/data/metro-index.json Web/metro-source.js "$ATLAS_APP/Contents/Resources/"
 cp Web/library.js "$ATLAS_APP/Contents/Resources/library.js"
+cp Web/rail-games.js "$ATLAS_APP/Contents/Resources/"
+ditto --norsrc --noextattr Web/games "$ATLAS_APP/Contents/Resources/games"
 cp Design/RailwayAtlas.icns "$ATLAS_APP/Contents/Resources/RailwayAtlas.icns"
 # App bundles read their resources directly, independent of the source checkout.
 ditto --norsrc --noextattr Sources/RailwayAtlas/Resources "$ATLAS_APP/Contents/Resources/Resources"

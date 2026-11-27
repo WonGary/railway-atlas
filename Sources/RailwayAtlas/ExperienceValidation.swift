@@ -180,6 +180,13 @@ enum ExperienceValidation {
         let stopPoint = map.experienceMarker
         map.journeyPlayer.seek(979 * 60)
         try require(map.experienceMarker == stopPoint, "map train moved during dwell")
+        try require(map.journeyPlayer.runDetails.contains("模拟 0 km/h") &&
+                    map.journeyPlayer.runDetails.contains("本站还停"), "dwell speed or departure countdown")
+        map.journeyPlayer.seek(Double(timetable.end * 60))
+        try require(map.journeyPlayer.trainStatus.contains("已抵达") &&
+                    map.journeyPlayer.runDetails.contains(String(format: "已行 %.1f km", route.distance / 1000)),
+                    "terminal distance must equal the track geometry")
+        map.journeyPlayer.seek(979 * 60)
         let futian = Coordinate(22.54157405277572, 114.05130386352539)
         try require(stopPoint.map { RailTrackJourney.metres($0, futian) < 80 } ?? false,
                     "Futian dwell marker is not at the station")

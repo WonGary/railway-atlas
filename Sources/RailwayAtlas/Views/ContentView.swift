@@ -53,6 +53,7 @@ struct ContentView: View {
                 .onChange(of: store.selection?.id) { _, value in
                     if value != nil { showPanel = true }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .railGameDidOpenMap)) { _ in showPanel = false }
             #endif
         }
         .tint(.railwayAccent)
@@ -69,6 +70,13 @@ struct ContentView: View {
         #endif
         .task {
             await store.start()
+            if RailGamesAcceptance.requested {
+                await RailGamesAcceptance.run(store: store, showDiscovery: {
+                    store.selectedTab = 0
+                    showPanel = true
+                })
+                return
+            }
             #if os(macOS)
             await OnlineUIValidation.runIfRequested(store: store, assistant: assistant)
             #endif

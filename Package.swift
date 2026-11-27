@@ -29,7 +29,8 @@ let package = Package(
         .executableTarget(
             name: "RailwayAtlasCheck",
             dependencies: ["RailwayCore", "CSQLite"],
-            path: "Checks"
+            path: "Checks",
+            exclude: ["check-rail-games-installed.cjs"]
         )
     ]
 )

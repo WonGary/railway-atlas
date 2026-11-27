@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+  <style>
+    :root { color-scheme: light dark; font: -apple-system-body; font-family: system-ui,sans-serif; }
+    * { box-sizing: border-box; }
+    body { color: CanvasText; background: Canvas; margin: 0 auto; padding: 0 20px 24px; max-width: 690px; }
+    [hidden] { display: none !important; }
+    .experience-page,.local-form,label,article { display: grid; gap: .65rem; min-width: 0; }
+    label { gap: .3rem; }
+    input,button { font: inherit; min-width: 0; padding: .55rem .7rem; border-radius: .5rem; border: 1px solid GrayText; }
+    button { cursor: pointer; color: inherit; background: ButtonFace; }
+    button:disabled { opacity: .62; cursor: default; }
+    .primary-button { background: #215f54; color: white; }
+    .quiz-choices { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem; }
+    .quiz-canvas { width: 100%; max-height: 260px; object-fit: contain; }
+    button.correct { outline: 2px solid #358366; }
+    button.incorrect { border-style: dashed; }
+    article { border-inline-start: 4px solid #bf9550; padding: 1rem; background: color-mix(in srgb, CanvasText 6%, Canvas); }
+    p,h3,ul,ol { margin: .25rem 0; } li { margin: .35rem 0; }
+    .panel-note { font-size: .88em; line-height: 1.5; }
+    .panel-note:empty { margin: 0; }
+  </style>
+</head>
+<body>
+  <main data-page="experiences"><div class="experience-tabs" hidden></div></main>
+  <script>
+    function setExperiencePage(id) {
+      for (const page of document.querySelectorAll("[data-experience-page]")) page.hidden = page.dataset.experiencePage !== id;
+    }
+    function selectRailGame(id) {
+      const tab = Array.from(document.querySelectorAll("[data-experience]")).find(node => node.dataset.experience === id);
+      if (!tab) throw Error("未找到这项玩法。");
+      tab.click();
+    }
+    const RailGameHost = globalThis.RailGameHost = {
+      get outlines() { return globalThis.railGameOutlinePack; },
+      travel: payload => window.webkit.messageHandlers.railGameTravel.postMessage(payload),
+      saveCard: payload => window.webkit.messageHandlers.railGameCard.postMessage(payload)
+    };
+  </script>
+</body>
+</html>

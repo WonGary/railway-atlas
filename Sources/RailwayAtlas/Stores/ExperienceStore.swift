@@ -86,6 +86,8 @@ final class JourneyStore: ObservableObject {
 
 enum ExperienceTab: String, CaseIterable, Identifiable {
     case guess, passport, postcard, history, simulation
+    case blind = "rail-blind", detective = "rail-detective", puzzle = "rail-puzzle", daily = "rail-daily"
+    static let games: [Self] = [.blind, .detective, .puzzle, .daily]
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -94,6 +96,10 @@ enum ExperienceTab: String, CaseIterable, Identifiable {
         case .postcard: "地图明信片"
         case .history: "铁路时光机"
         case .simulation: "沿线旅行"
+        case .blind: "车次盲盒"
+        case .detective: "铁路侦探"
+        case .puzzle: "站序拼图"
+        case .daily: "每日时刻"
         }
     }
     var icon: String {
@@ -103,6 +109,10 @@ enum ExperienceTab: String, CaseIterable, Identifiable {
         case .postcard: "ticket"
         case .history: "clock.arrow.circlepath"
         case .simulation: "tram.fill"
+        case .blind: "shippingbox"
+        case .detective: "magnifyingglass"
+        case .puzzle: "puzzlepiece.extension"
+        case .daily: "calendar.badge.clock"
         }
     }
     var subtitle: String {
@@ -112,6 +122,10 @@ enum ExperienceTab: String, CaseIterable, Identifiable {
         case .postcard: "让每次出发，都有一张纪念"
         case .history: "在地图上，看线路随时间逐段生长"
         case .simulation: "按真实时刻表，慢慢走过一程"
+        case .blind: "选好上车站，把目的地留到最后一站"
+        case .detective: "沿着路形和线索，找出列车的起终点"
+        case .puzzle: "把打乱的停站拼回列车经过的顺序"
+        case .daily: "读一段真实时刻表，算出今天的答案"
         }
     }
 }

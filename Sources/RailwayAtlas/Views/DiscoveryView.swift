@@ -44,6 +44,12 @@ struct DiscoveryView: View {
                 .background(Color.railwayAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12 * uiScale))
             }.buttonStyle(.plain).foregroundStyle(Color.railwayAccent)
                 .accessibilityIdentifier("open-railway-experiences")
+            #if os(iOS)
+            RailGameShortcuts { tab in
+                store.journeyWorkspace.tab = tab
+                showsExperiences = true
+            }.frame(height: 44)
+            #endif
             favoriteSection
             citySection
             stationSection
@@ -61,7 +67,7 @@ struct DiscoveryView: View {
                 .environmentObject(store)
                 .environment(\.atlasUIScale, uiScale)
         }
-        .sheet(isPresented: $showsExperiences) { ExperienceRootView(map: store) }
+        .sheet(isPresented: $showsExperiences) { ExperienceRootView(model: store.journeyWorkspace, map: store) }
         .accessibilityIdentifier("discovery-view")
     }
 

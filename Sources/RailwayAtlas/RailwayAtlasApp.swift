@@ -50,7 +50,7 @@ struct RailwayAtlasApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1240, height: 820)
         .commands {
-            ExperienceCommands()
+            ExperienceCommands { store.journeyWorkspace.tab = $0 }
             CommandGroup(replacing: .newItem) {
                 Button("导入地图包…") { store.showImporter = true }.keyboardShortcut("o")
                 Button("导出当前地图包…") { store.prepareExport() }.keyboardShortcut("s", modifiers: [.command, .shift])

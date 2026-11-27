@@ -38,6 +38,11 @@ jobs:
           cmp "$app/station-layouts.json" Sources/RailwayAtlas/Resources/station-layouts.json
           cmp "$app/station-layouts.js" Sources/RailwayAtlas/Resources/station-layouts.js
           diff -qr "$app/world-stations" Sources/RailwayAtlas/Resources/world-stations
+          cmp "$app/RailGames/native.html" Sources/RailwayAtlas/Resources/RailGames/native.html
+          cmp "$app/rail-games.js" Web/rail-games.js
+          cmp "$app/games/outlines.json" Web/games/outlines.json
+          cmp "$app/station-directory/national.js" Web/station-directory/national.js
+          diff -qr "$app/station-directory/paths" Web/station-directory/paths
           codesign --verify --deep --strict "$app"
           find "$app" -name 'metro-snapshot-beijing.json' | grep -q .
           mkdir -p out

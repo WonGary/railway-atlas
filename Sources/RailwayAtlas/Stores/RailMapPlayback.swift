@@ -25,6 +25,7 @@ final class RailMapPlayback: ObservableObject {
     private weak var map: RailwayMapStore?
     private var route: RailTrackJourney?
     private var distances: [[Double]] = []
+    private var stationMetres: [Double] = []
     private var work: Task<Void, Never>?
     private var previousRegion: MKCoordinateRegion?
     private var cameraTime = 0.0
@@ -47,6 +48,40 @@ final class RailMapPlayback: ObservableObject {
         case .unknown: return "时刻不完整 · 位置未知"
         }
     }
+    var runDetails: String {
+        guard let timetable, mode == .train else { return "" }
+        let position = timetable.position(at: seconds)
+        guard position.phase != .unknown, stationMetres.indices.contains(position.from) else { return "" }
+        let i = position.from
+        var details: [String] = []
+        var travelled = stationMetres[i], speed = 0.0
+        if i + 1 < timetable.stops.count {
+            let next = timetable.stops[i + 1]
+            if let arrival = next.arrival {
+                let remaining = max(0, Int(ceil(Double(arrival) - seconds / 60)))
+                let time = RailTimetable.clock(Double(arrival * 60), includeSeconds: false)
+                details.append("下一站 \(next.station) \(time)（\(remaining) 分后）")
+                if position.phase == .running, let departure = timetable.stops[i].departure, arrival > departure {
+                    let length = stationMetres[i + 1] - stationMetres[i]
+                    travelled += length * position.fraction
+                    speed = length * 0.06 / Double(arrival - departure)
+                }
+            }
+            if position.phase == .dwelling, let departure = timetable.stops[i].departure {
+                details.append("本站还停 \(max(0, Int(ceil(Double(departure) - seconds / 60)))) 分")
+            }
+            if let plan = timetable.routing, plan.stopIndices.count == timetable.stops.count {
+                let names = plan.edges[plan.stopIndices[i]..<plan.stopIndices[i + 1]].map(\.lineName)
+                var seen = Set<String>()
+                details.append(names.filter { seen.insert($0).inserted }.joined(separator: " / "))
+            }
+        }
+        details.append(String(format: "已行 %.1f km", travelled / 1000))
+        details.append("模拟 \(Int(speed.rounded())) km/h")
+        details.append("已用 \(max(0, Int(seconds / 60) - timetable.start)) 分")
+        details.append("终到 \(RailTimetable.clock(Double(timetable.end * 60), includeSeconds: false))")
+        return details.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
     func start(_ timetable: RailTimetable, route: RailTrackJourney) throws {
         try route.validate(for: timetable)
         map?.clearLineFocus()
@@ -54,6 +89,8 @@ final class RailMapPlayback: ObservableObject {
         rememberCamera()
         self.timetable = timetable; self.route = route; region = nil; mode = .train
         distances = route.cumulativeDistances()
+        stationMetres = [0]
+        for leg in distances { stationMetres.append((stationMetres.last ?? 0) + (leg.last ?? 0)) }
         seconds = Double(timetable.start * 60); cameraTime = 0
         map?.historyMapActive = false
         map?.experienceLines = route.legs.enumerated().map {
@@ -69,7 +106,7 @@ final class RailMapPlayback: ObservableObject {
         pause()
         rememberCamera()
         self.region = region; timetable = nil; route = nil; mode = .history
-        distances = []
+        distances = []; stationMetres = []
         historyIndex = 0
         map?.historyMapActive = true
         map?.experienceMarker = nil
@@ -122,7 +159,7 @@ final class RailMapPlayback: ObservableObject {
         }
     }
     func stop() {
-        pause(); mode = nil; distances = []
+        pause(); mode = nil; distances = []; stationMetres = []
         map?.experienceLines = []; map?.experienceMarker = nil
         map?.historyMapActive = false; map?.experienceGeometryRevision += 1
         if let previousRegion { map?.region = previousRegion; map?.cameraRevision += 1 }

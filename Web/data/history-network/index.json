@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "copyright": "© OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "licenseURL": "https://opendatacommons.org/licenses/odbl/1-0/",
+  "regions": [
+    {
+      "id": "hongkong",
+      "title": "香港",
+      "file": "hongkong.json",
+      "segments": 1377,
+      "opened": 960,
+      "started": 0,
+      "closed": 1,
+      "unknown": 417,
+      "firstDate": "1910-10-01",
+      "lastDate": "2026-09-13",
+      "bytes": 198900,
+      "sha256": "21bb2a65149b818124ed9ee393a8ccfdb649c35de684fcee48870f6c2cbf3df6"
+    },
+    {
+      "id": "beijing",
+      "title": "北京",
+      "file": "beijing.json",
+      "segments": 1023,
+      "opened": 90,
+      "started": 0,
+      "closed": 0,
+      "unknown": 933,
+      "firstDate": "2019-09-26",
+      "lastDate": "2025-12-31",
+      "bytes": 153638,
+      "sha256": "0cef4af00bd7b2d51e3b8d11badd9b6ec5b9f035dc49fe96a748983edd1f4be4"
+    },
+    {
+      "id": "qingdao",
+      "title": "青岛",
+      "file": "qingdao.json",
+      "segments": 206,
+      "opened": 34,
+      "started": 0,
+      "closed": 0,
+      "unknown": 172,
+      "firstDate": "2015-12-16",
+      "lastDate": "2026-09-22",
+      "bytes": 47183,
+      "sha256": "757ce1367627e2e780120d17787c2e96df8ad0965aa53d5dd41ff9d1d17f3904"
+    },
+    {
+      "id": "jinan",
+      "title": "济南",
+      "file": "jinan.json",
+      "segments": 193,
+      "opened": 18,
+      "started": 0,
+      "closed": 0,
+      "unknown": 175,
+      "firstDate": "2019-12-29",
+      "lastDate": "2025-12-25",
+      "bytes": 31027,
+      "sha256": "e0bface902474d5bbc2143cde96f1fa72f8766747682ab9251a8ca31ce79bca4"
+    },
+    {
+      "id": "macao",
+      "title": "澳门",
+      "file": "macao.json",
+      "segments": 41,
+      "opened": 7,
+      "started": 2,
+      "closed": 0,
+      "unknown": 34,
+      "firstDate": "2021-04-30",
+      "lastDate": "2024-12-02",
+      "bytes": 8701,
+      "sha256": "141f0fbadf03d444398dac3b645abcbc6ac36bc682c2d4550c4d35dc9f056781"
+    },
+    {
+      "id": "tokyo",
+      "title": "东京",
+      "file": "tokyo.json",
+      "segments": 1518,
+      "opened": 14,
+      "started": 0,
+      "closed": 0,
+      "unknown": 1504,
+      "firstDate": "1911-08-20",
+      "lastDate": "2026-09-13",
+      "bytes": 213517,
+      "sha256": "0041a25f1be998c994968fb4790bec7113b2268825ce2edbbfc9b0989789d4b0"
+    }
+  ]
+}

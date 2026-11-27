@@ -4,8 +4,7 @@ const DATA = {
   timetables: "./data/railway-experience-timetables.json",
   metro: "./data/china-metro-overview.json",
   metroIndex: "./data/metro-index.json",
-  metroDetailBase: "./data/metro/",
-  history: "./data/railway-experience-history.json"
+  metroDetailBase: "./data/metro/"
 };
 const STORAGE = {
   profiles: "railway-atlas-profiles",
@@ -46,12 +45,10 @@ const state = {
   metroDetails: new Map(),
   metroDetailPromises: new Map(),
   metroDetailErrors: new Map(),
-  historyEvents: [],
   routes: [],
   route: null,
   routeLayer: L.layerGroup(),
   metroLayer: L.layerGroup(),
-  historyLayer: L.layerGroup(),
   stationMarkers: new Map(),
   routePolylines: [],
   metroPolylines: [],
@@ -445,7 +442,7 @@ function setWorkspaceView(view) {
   if (view === "stations") renderDirectory();
   if (view === "favorites") renderFavorites();
   if (view === "experiences" && $("quizCanvas")) drawQuiz();
-  setLayerVisible(state.historyLayer, view === "experiences" && !document.querySelector('[data-experience-page="history"]').hidden);
+  syncConstructionHistory();
   updateJourneyControl();
 }
 
@@ -647,6 +644,7 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
     const stops = full.stops.slice(from,to+1);
     const gaps = RailPaths.gapsFor(stops, legs);
     route = {...full, stops, stopCoordinates:full.stopCoordinates.slice(from,to+1), legs, gaps,
+      geometryKinds:full.geometryKinds?.slice(from,to), matchedSections:full.matchedSections?.slice(from,to),
       geometryAvailable:gaps.length===0,
       cacheMatched:full.cacheMatched || full.matchedSections?.slice(from,to).filter(Boolean).length===to-from,
       routing:Number.isInteger(first) && Number.isInteger(last) && plan.nodes?.[first] && plan.nodes?.[last] && Array.isArray(plan.edges) ? {
@@ -1024,29 +1022,6 @@ function coordinateAtJourneyTime(seconds) {
   return getStopCoordinate(route.stops.length - 1);
 }
 
-function playbackPhase(seconds) {
-  const stops = state.route?.stops || [];
-  const minute = Math.floor(seconds / 60);
-  for (let index = 0; index < stops.length; index += 1) {
-    const stop = stops[index];
-    const arrival = stop.arrival ?? stop.departure;
-    const departure = stop.departure ?? stop.arrival;
-    if (arrival != null && minute >= arrival && minute <= (departure ?? arrival)) {
-      if (index === 0 && minute < departure) return `待发 · ${stop.name}`;
-      if (index === stops.length - 1) return `已抵达 · ${stop.name}`;
-      return `停靠 · ${stop.name}`;
-    }
-  }
-  for (let index = 0; index < stops.length - 1; index += 1) {
-    const departure = stops[index].departure ?? stops[index].arrival;
-    const arrival = stops[index + 1].arrival ?? stops[index + 1].departure;
-    if (departure != null && arrival != null && minute >= departure && minute < arrival) {
-      return `${stops[index].name} → ${stops[index + 1].name}`;
-    }
-  }
-  return "行程时间未覆盖此位置";
-}
-
 function stopPlayback() {
   if (state.playbackTimer) clearInterval(state.playbackTimer);
   state.playbackTimer = null;
@@ -1079,7 +1054,9 @@ function updatePlayback(value = Number($("journeyProgress").value), camera = "pr
   state.playbackSeconds = seconds;
   $("journeyProgress").value = String(seconds);
   $("playbackClock").textContent = formatClock(seconds / 60);
-  $("playbackPhase").textContent = playbackPhase(seconds);
+  const info = RailRunInfo.describe(state.route, seconds);
+  $("playbackPhase").textContent = info.phase;
+  if ($("runInfo").textContent !== info.detail) $("runInfo").textContent = info.detail;
   const position = coordinateAtJourneyTime(seconds);
   if (position && state.playbackMarker) {
     state.playbackMarker.setLatLng(position);
@@ -1866,6 +1843,14 @@ function setupAssistant() {
 }
 
 function setupPanels() {
+  const playbackBar = $("playbackBar");
+  new ResizeObserver(() => {
+    const height = playbackBar.offsetHeight;
+    if (height) {
+      const bottom = parseFloat(getComputedStyle(playbackBar).bottom) || 0;
+      document.documentElement.style.setProperty("--playback-clearance", `${height + bottom + 8}px`);
+    }
+  }).observe(playbackBar);
   if (state.assistantWindow) {
     document.body.classList.add("assistant-window");
     $("assistantPanel").hidden = false;
@@ -2020,7 +2005,6 @@ function setupPanels() {
     postcardRouteSource = "manual";
     drawPostcard();
   });
-  $("historyDate").addEventListener("input", renderHistoryEvent);
   $("nextQuiz").addEventListener("click", nextQuiz);
   $("quizChoices").addEventListener("click", chooseQuizAnswer);
 }
@@ -2031,9 +2015,14 @@ function setExperiencePage(page) {
   document.querySelectorAll(".experience-page").forEach(panel => { panel.hidden = panel.dataset.experiencePage !== page; });
   if (page === "passport") renderPassport();
   if (page === "postcard") void refreshPostcard();
-  if (page === "history") renderHistoryEvent();
   if (page === "quiz" && !state.quiz) nextQuiz();
-  setLayerVisible(state.historyLayer,page==="history" && state.workspaceView==="experiences");
+  syncConstructionHistory();
+}
+
+function syncConstructionHistory() {
+  const visible = state.workspaceView === "experiences" &&
+    !document.querySelector('[data-experience-page="history"]').hidden;
+  void RailwayHistoryNetwork.setActive(visible, state.map);
 }
 
 function saveLayerPreferences() {
@@ -2230,9 +2219,9 @@ function setupLibrary() {
 async function loadData() {
   $("mapDataError").hidden = true;
   const currentID = state.route?.id;
-  const [corridors, journeys, timetableBundle, metro, metroIndex, history] = await Promise.all([
+  const [corridors, journeys, timetableBundle, metro, metroIndex] = await Promise.all([
     loadJSON(DATA.corridors), loadJSON(DATA.journeys), loadJSON(DATA.timetables),
-    loadJSON(DATA.metro), loadJSON(DATA.metroIndex), loadJSON(DATA.history)
+    loadJSON(DATA.metro), loadJSON(DATA.metroIndex)
   ]);
   state.corridor = corridors[0] || null;
   state.bundledJourneys = journeys;
@@ -2252,7 +2241,6 @@ async function loadData() {
   state.metroCityLayers.clear();
   state.metroLayer.clearLayers();
   state.metroPolylines = [];
-  state.historyEvents = [...(history.events || [])].sort((a, b) => a.date.localeCompare(b.date));
   const builtIn = (timetableBundle.timetables || []).map(item => buildRouteFromTimetable(item, journeys));
   const imported = state.importedRoutes.map(makeCustomRoute).filter(Boolean);
   state.routes = [...builtIn, ...imported];
@@ -2269,14 +2257,9 @@ async function loadData() {
     || state.routes.find(route => route.id === layerPrefs.routeID)
     || state.routes.find(route => route.train === "G337") || state.routes[0];
   if (selected && state.playbackVisible) selectRoute(selected.id, { fit: !currentID });
-  if (state.historyEvents.length) {
-    $("historyDate").max = String(state.historyEvents.length - 1);
-    $("historyDate").value = String(state.historyEvents.length - 1);
-  }
   renderPassport();
   renderDirectory();
   renderFavorites();
-  renderHistoryEvent();
   AtlasPrefs.routeList(); setRouteStatus();
   refreshMetroDetailVisibility();
 }
@@ -2585,35 +2568,6 @@ function downloadPostcard() {
     if (blob) downloadFile("铁道漫游-明信片.png", blob);
     else showToast("明信片图片生成失败。");
   }, "image/png");
-}
-
-function renderHistoryEvent() {
-  const events = state.historyEvents;
-  if (!events.length) {
-    $("historyEvent").innerHTML = `<p class="panel-note">当前没有随包历史节点。</p>`;
-    return;
-  }
-  const event = events[Number($("historyDate").value)] || events[0];
-  $("historyDateLabel").textContent = event.date;
-  $("historyEvent").innerHTML = `
-    <span class="history-date">${escapeHTML(event.date)}</span>
-    <h3>${escapeHTML(event.title)}</h3>
-    <p>${escapeHTML(event.detail)}</p>
-    <div class="history-places">${(event.places || []).map(place => `<span>${escapeHTML(place.name)}</span>`).join(" → ")}</div>
-    ${event.source?.url ? `<a href="${escapeHTML(event.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(event.source.title || "来源")}</a>` : ""}`;
-  state.historyLayer.clearLayers();
-  const places = event.places || [];
-  if (places.length > 1) {
-    const points = places.map(place => [place.latitude, place.longitude]);
-    L.polyline(points, { color: "#f2c94c", weight: 3, opacity: 0.82, dashArray: "5 7" }).addTo(state.historyLayer);
-  }
-  places.forEach(place => {
-    const marker = L.circleMarker([place.latitude, place.longitude], {
-      radius: 5, color: "#152024", weight: 2, fillColor: "#f2c94c", fillOpacity: 1
-    }).addTo(state.historyLayer);
-    StationLabels.bind(marker, place.name);
-  });
-  setLayerVisible(state.historyLayer,state.workspaceView==="experiences" && !document.querySelector('[data-experience-page="history"]').hidden);
 }
 
 function nextQuiz() {

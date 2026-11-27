@@ -1,5 +1,5 @@
 const VERSION = "0.8.17";
-const SHELL = `railway-atlas-web-${VERSION}-r7`;
+const SHELL = `railway-atlas-web-${VERSION}-r8`;
 // Retain immutable track, station and timetable chunks. City projections are versioned below.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
@@ -10,8 +10,11 @@ const coreFiles = [
   "station-directory/national.js","data/journey-aliases.js","station-directory/cnrail.js","station-directory/catalog.js","station-directory/panel.js","station-directory/panel.css","station-directory/paths.js","station-directory/paths/manifest.js",
   "map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js",
   "world-rail.js","packed-rail.js","station-layout-layer.js","data/station-layouts.js",
+  "rail-games.js","games/outlines.json","history-network.js","run-info.js","route-inspector.js","data/history-network/index.json",
+  "data/history-network/beijing.json","data/history-network/hongkong.json","data/history-network/jinan.json",
+  "data/history-network/macao.json","data/history-network/qingdao.json","data/history-network/tokyo.json",
   "data/railway-experience-corridors.json","data/railway-experience-routes.json","data/railway-experience-timetables.json",
-  "data/china-metro-overview.json","data/metro-index.json","data/metro/macao.json","data/railway-experience-history.json","data/rail/index.json"
+  "data/china-metro-overview.json","data/metro-index.json","data/metro/macao.json","data/rail/index.json"
 ];
 const mapExtras = [
   "station-directory/card-geography.json","station-directory/lines/index.json","timetable-package.mjs","cache-worker.mjs",

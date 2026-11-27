@@ -81,16 +81,21 @@ struct ExperienceRootView: View {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption)
                     .foregroundStyle(.orange).padding(.horizontal, 28).padding(.bottom, 12)
             }
-            ScrollView {
-                Group {
-                    switch model.tab {
-                    case .guess: CityGuessView()
-                    case .passport: RailwayPassportView()
-                    case .postcard: RailwayPostcardView()
-                    case .history: RailwayTimeMachineView()
-                    case .simulation: RailwaySimulationView()
-                    }
-                }.padding(.horizontal, 28).padding(.bottom, 28).frame(maxWidth: .infinity, alignment: .topLeading)
+            if ExperienceTab.games.contains(model.tab) {
+                RailGamesPane(game: model.tab.rawValue, map: map)
+            } else {
+                ScrollView {
+                    Group {
+                        switch model.tab {
+                        case .guess: CityGuessView()
+                        case .passport: RailwayPassportView()
+                        case .postcard: RailwayPostcardView()
+                        case .history: RailwayTimeMachineView()
+                        case .simulation: RailwaySimulationView()
+                        case .blind, .detective, .puzzle, .daily: EmptyView()
+                        }
+                    }.padding(.horizontal, 28).padding(.bottom, 28).frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -236,10 +241,15 @@ private extension ToggleStyle where Self == AdaptiveCheckboxStyle {
 #if os(macOS)
 struct ExperienceCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    let select: (ExperienceTab) -> Void
     var body: some Commands {
         CommandMenu("漫游") {
             Button("打开铁道漫游") { openWindow(id: "railway-experiences") }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+            Divider()
+            ForEach(ExperienceTab.games) { tab in
+                Button(tab.title) { select(tab); openWindow(id: "railway-experiences") }
+            }
         }
     }
 }
