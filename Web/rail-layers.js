@@ -156,6 +156,7 @@ const RailMapLayers = (() => {
       item.on("click", e => {
         let focus;
         if (feature.coordinates) {
+          if (!LineFocus.trackHitRadius(map.getZoom())) return;
           const ids=new Set((feature.routes || []).map(r=>r.id));
           const member=f=>ids.size===1 && f.routes?.some(r=>ids.has(r.id));
           const named=f=>tags.name && f.tags?.name===tags.name;
@@ -244,11 +245,14 @@ const RailMapLayers = (() => {
     };
     map.on("click",e=>{
       if (e.sourceTarget!==map || e.originalEvent?.atlasFeatureHit || !map.hasLayer(grid)) return;
+      const radius=LineFocus.trackHitRadius(map.getZoom());
+      if (!radius) return;
       const z=grid._tileZoom;if(z==null)return;
       const p=map.project(e.latlng,z),x=Math.floor(p.x/256),y=Math.floor(p.y/256);
       const tile=grid._tiles[`${x}:${y}:${z}`]?.el;
       if (!tile || tile.style.visibility==="hidden") return;
-      const ctx=tile.getContext("2d");ctx.save();ctx.resetTransform();ctx.lineWidth=8;
+      const ctx=tile.getContext("2d");ctx.save();ctx.resetTransform();
+      ctx.lineWidth=2*radius*map.getZoomScale(z,map.getZoom());
       const hit=tile.tracks.find(t=>ctx.isPointInStroke(t.path,p.x-x*256,p.y-y*256));ctx.restore();
       if (!hit) return;
       if(e.originalEvent)e.originalEvent.atlasFeatureHit=true;
@@ -510,21 +514,30 @@ const RailMapLayers = (() => {
     grid.on("tileload tileunload add remove", StationLabels.schedule);
     grid.on("load",()=>toggle());
     map.on("click",event => {
-      if (!map.hasLayer(grid) || event.sourceTarget!==map) return;
+      if (event.originalEvent?.atlasFeatureHit || !map.hasLayer(grid) || event.sourceTarget!==map) return;
       const z = grid._tileZoom;
       if (z==null) return;
       const p = map.project(event.latlng,z), x = Math.floor(p.x/256), y = Math.floor(p.y/256);
       const tile = grid._tiles[`${x}:${y}:${z}`]?.el;
-      const px=p.x-x*256,py=p.y-y*256,tol=7;
-      let nearest=tol, hit;
+      const px=p.x-x*256,py=p.y-y*256, zoom=map.getZoom();
+      const tileScale=map.getZoomScale(z,zoom);
+      const trackRadius=LineFocus.trackHitRadius(zoom)*tileScale;
+      const stationRadius=(zoom<8 ? 4 : zoom<11 ? 5 : 8)*tileScale;
+      let nearest=trackRadius, nearestStation=Infinity, stationHit, hit;
       for(const h of tile?.hits || []){
-        if(h.station){if(Math.hypot(h.x-px,h.y-py)<=tol){hit=h;break;}continue;}
+        if(h.station){
+          const d=Math.hypot(h.x-px,h.y-py);
+          if(d<=stationRadius && d<nearestStation){nearestStation=d;stationHit=h;}
+          continue;
+        }
+        if(!trackRadius) continue;
         for(let i=1;i<h.points.length;i++){
           const [ax,ay]=h.points[i-1],[bx,by]=h.points[i],dx=bx-ax,dy=by-ay;
           const u=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy || 1)));
           const d=Math.hypot(px-ax-u*dx,py-ay-u*dy);if(d<nearest){nearest=d;hit=h;}
         }
       }
+      hit=stationHit || hit;
       if (hit) {
         if (event.originalEvent) event.originalEvent.atlasFeatureHit=true;
         const railName=trackName(hit.tags);

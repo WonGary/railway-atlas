@@ -115,6 +115,9 @@ enum InterfaceValidation {
         map.onlineStatus = "正在读取当前视野的本地缓存。部分在线来源暂时无法连接，已保留此前下载的铁路数据。"
         map.metroStatus = "线路关系读取较慢，当前使用随附线路快照。重新联网后会按区段更新，并保留已识别的线路颜色。"
         let connectivity = Connectivity()
+        let configuration = ConfigurationStore(
+            url: directory.appendingPathComponent("interface-config.json")
+        )
         for (name, size, scale, offset) in [
             ("status-standard", CGSize(width: 920, height: 700), 1.0, CGSize.zero),
             ("status-narrow-160", CGSize(width: 440, height: 650), 1.6, CGSize.zero),
@@ -124,7 +127,8 @@ enum InterfaceValidation {
             map.viewportWidth = size.width; map.viewportHeight = size.height
             map.rebuildVisible()
             let view = NSHostingView(rootView: MapScreen().environmentObject(map).environmentObject(assistant)
-                .environmentObject(connectivity).environment(\.atlasUIScale, scale))
+                .environmentObject(connectivity).environmentObject(configuration)
+                .environment(\.atlasUIScale, scale))
             let window = NSWindow(contentRect: CGRect(origin: CGPoint(x: 80, y: 80), size: size),
                                   styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false

@@ -11,7 +11,7 @@ final class RailwayMapStore: ObservableObject {
         model.map = self
         return model
     }()
-    @Published var stationBoardPins: [RailStation] = [] { didSet { previousVisibility=nil } }
+    @Published var stationBoardPins: [RailStation] = [] { didSet { visibleNeedsRebuild = true } }
     @Published private(set) var lineFocus: MapLineFocus?
     private(set) var directions = MetroDirectionCatalog()
     private let cityReader = MetroCityReader()
@@ -82,7 +82,10 @@ final class RailwayMapStore: ObservableObject {
         let paths = nationalMetroSnapshot?.lines.filter { $0.routes?.contains(where: { $0.id == route.id }) == true }.map(\.coordinates) ?? []
         lineFocus = MapLineFocus(title: urbanRouteTitles[route.visibilityKey] ?? route.name, routeKey: route.visibilityKey,
                                  paths: paths, pathColor: (route.tags["colour"] ?? route.tags["color"]).flatMap(RailColor.init))
-        if !paths.isEmpty { region = MapBounds(points: paths.flatMap { $0 }).region; cameraRevision += 1 }
+        if let fitted = paddedRegion(for: paths.flatMap({ $0 })) {
+            region = fitted
+            cameraRevision += 1
+        }
         loadDirections(MetroCitySpec.at(Coordinate(region.center.latitude,region.center.longitude)))
         labelRevision += 1
     }
@@ -105,7 +108,10 @@ final class RailwayMapStore: ObservableObject {
         #endif
         if fit {
             let points = paths.flatMap { $0 } + pins.map(\.coordinate)
-            if points.count >= 2 { region = MapBounds(points: points).region; cameraRevision += 1 }
+            if let fitted = paddedRegion(for: points) {
+                region = fitted
+                cameraRevision += 1
+            }
         }
         labelRevision += 1
         rebuildVisible()
@@ -115,15 +121,18 @@ final class RailwayMapStore: ObservableObject {
     func focusDirectoryLine(_ title: String, names: [String], fit: Bool) {
         let stops = Set(names)
         let pins = NationalDirectoryPins.all.filter { stops.contains($0.name) }
+        let paths = MapContextFiles.parts(title, stops: stops)
         if lineFocus?.directory != true || lineFocus?.title != title || lineFocus?.stopNames != stops {
             stationBoardPins = pins
             lineFocus = MapLineFocus(title: title, trackName: title, stopNames: stops,
-                                     paths: MapContextFiles.parts(title, stops: stops), directory: true)
+                                     paths: paths, directory: true)
             labelRevision += 1
         }
-        if fit, !pins.isEmpty {
-            region = MapBounds(points: pins.map(\.coordinate)).region
-            cameraRevision += 1
+        if fit {
+            if let fitted = paddedRegion(for: paths.flatMap({ $0 }) + pins.map(\.coordinate)) {
+                region = fitted
+                cameraRevision += 1
+            }
         }
         rebuildVisible()
     }
@@ -161,6 +170,7 @@ final class RailwayMapStore: ObservableObject {
     private(set) var clippedGeometry: [String: [[Coordinate]]] = [:]
     private var groupedPaths: [RailAppearance: (ids: [String], path: CGPath, token: UUID)] = [:]
     private var previousVisibility: VisibilityState?
+    private var visibleNeedsRebuild = true
     private struct VisibilityState: Equatable {
         let level: Int
         let categories: Set<RailCategory>
@@ -277,6 +287,7 @@ final class RailwayMapStore: ObservableObject {
     @Published var panelSize = MapPanelSize.medium
     @Published var panelLayout = MapPanelLayout.floating
     @Published var panelBackgroundOpacity = 1.0
+    var mapActionHandler: ((RailwayMapAction) -> Void)?
     @Published var inspectorVisible = false { didSet { if !inspectorVisible { clearLineFocus() } } }
     @Published var inspectorWidth = 380.0
     @Published var inspectorPane = InspectorPane.feature { didSet { if inspectorPane != .feature { clearLineFocus() } } }
@@ -747,7 +758,7 @@ final class RailwayMapStore: ObservableObject {
             candidateLines = prepared.lineIndex.query(renderBounds)
             candidateStations = prepared.stationIndex.query(renderBounds)
         }
-        previousVisibility = nil
+        visibleNeedsRebuild = true
         styleSettings = nil
         searchIndexDirty = true
         categoryCounts = prepared.counts
@@ -792,7 +803,7 @@ final class RailwayMapStore: ObservableObject {
             || renderBounds!.east - renderBounds!.west > (view.east - view.west) * reuseSpan
             || renderBounds!.north - renderBounds!.south > (view.north - view.south) * reuseSpan
             || renderBuffer != renderSettings.viewportBuffer
-        guard refresh || previousVisibility != state else { return }
+        guard refresh || visibleNeedsRebuild || previousVisibility != state else { return }
         if refresh {
             let buffered = view.expanded(by: renderSettings.viewportBuffer)
             renderBounds = buffered
@@ -807,6 +818,7 @@ final class RailwayMapStore: ObservableObject {
             linePaths = [:]; pathCoordinates = [:]; clippedGeometry = [:]; groupedPaths = [:]
         }
         previousVisibility = state
+        visibleNeedsRebuild = false
         if styleSettings?.depotBrightness != renderSettings.depotBrightness || styleMetroColors != showsMetroColors || styleSettings == nil {
             preparedStyles = prepared.lines.map { entry in
                 entry.baseStyle.replacingColors(!showsMetroColors ? [] :
@@ -910,14 +922,9 @@ final class RailwayMapStore: ObservableObject {
     func select(_ item: RailwaySelection) {
         selection = item
         if let line = activeLines.first(where: { $0.id == item.id }) {
-            let latitudes = line.coordinates.map(\.latitude)
-            let longitudes = line.coordinates.map(\.longitude)
-            let lat = max(0.008, (latitudes.max()! - latitudes.min()!) * 1.5)
-            let lon = max(0.008, (longitudes.max()! - longitudes.min()!) * 1.5)
-            region = MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: (latitudes.min()! + latitudes.max()!) / 2,
-                                               longitude: (longitudes.min()! + longitudes.max()!) / 2),
-                span: MKCoordinateSpan(latitudeDelta: lat, longitudeDelta: lon))
+            if let fitted = paddedRegion(for: line.coordinates, multiplier: 1.8) {
+                region = fitted
+            }
             categories.insert(line.category)
             networks.insert(RailNetwork.classify(line.tags))
         } else {
@@ -928,6 +935,17 @@ final class RailwayMapStore: ObservableObject {
         cameraRevision += 1
         rebuildVisible()
         if mapMode != .offline { refreshViewport() }
+    }
+
+    private func paddedRegion(for points: [Coordinate], multiplier: Double = 1.2) -> MKCoordinateRegion? {
+        guard points.count >= 2 else { return nil }
+        let bounds = MapBounds(points: points)
+        let base = bounds.region
+        return MKCoordinateRegion(
+            center: base.center,
+            span: MKCoordinateSpan(
+                latitudeDelta: min(170, max(0.008, base.span.latitudeDelta * multiplier)),
+                longitudeDelta: min(350, max(0.008, base.span.longitudeDelta * multiplier))))
     }
 
     func fitDataset() {

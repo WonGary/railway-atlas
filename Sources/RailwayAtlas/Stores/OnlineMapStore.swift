@@ -353,12 +353,15 @@ extension RailwayMapStore {
         let routes = needed.sorted { $0.key < $1.key }.map(\.value)
         guard !routes.isEmpty else { return }
         paletteAttempted.formUnion(needed.keys)
+        let requestedKeys = Set(needed.keys)
         let generation = viewportGeneration, repository = tileRepository, online = mapMode == .apple
         paletteWork = Task { [weak self] in
             let records = try? await repository.paletteColours(for: routes, online: online)
             guard let self, !Task.isCancelled, self.viewportGeneration == generation else { return }
             let changed = records?.contains { key, record in
-                self.paletteRecords[key]?.hex != record.hex || self.paletteRecords[key]?.url != record.url
+                guard requestedKeys.contains(key) else { return false }
+                return self.paletteRecords[key]?.hex != record.hex
+                    || self.paletteRecords[key]?.url != record.url
             } ?? false
             if let records { self.paletteRecords.merge(records) { _, new in new } }
             self.paletteWork = nil

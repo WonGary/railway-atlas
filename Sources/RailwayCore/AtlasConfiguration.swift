@@ -14,6 +14,30 @@ public enum MapPanelLayout: String, Codable, CaseIterable, Identifiable, Sendabl
     public var title: String { self == .floating ? "浮窗" : "贴边分屏" }
 }
 
+public enum AtlasSurfaceMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case glass
+    case translucent
+    case textOnly
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .glass: "玻璃"
+        case .translucent: "半透明"
+        case .textOnly: "仅文字"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .glass: "macOS 和 iOS 26 使用系统玻璃效果，旧版使用材质背景。"
+        case .translucent: "使用轻量材质背景，减少对地图的遮挡。"
+        case .textOnly: "隐藏表面背景，只保留文字和控件。"
+        }
+    }
+}
+
 public struct RailRenderSettings: Codable, Hashable, Sendable {
     public var metroWidthScale = 1.0
     public var railwayWidthScale = 1.0
@@ -28,6 +52,8 @@ public struct RailRenderSettings: Codable, Hashable, Sendable {
 
 /// User-editable settings only. Credentials remain in the platform Keychain.
 public struct AtlasConfiguration: Codable, Sendable {
+    public static let surfaceModeDefaultsKey = "railway.interface.surfaceMode"
+
     public var version = 1
     public var rendering = RailRenderSettings()
     public var map = MapSettings()
@@ -82,6 +108,17 @@ public struct AtlasConfiguration: Codable, Sendable {
         public var inspectorTab = "feature"
         public var inspectorLayout = MapPanelLayout.docked
         public var inspectorBackgroundOpacity = 1.0
+        public var surfaceMode = AtlasSurfaceMode.glass
+        public var mapControlsOpacity = 1.0
+        public var topControlsOpacity = 1.0
+        public var cornerControlsOpacity = 1.0
+        public var bottomCounterOpacity = 1.0
+        public var playbackOpacity = 1.0
+        public var statusBackgroundOpacity = 1.0
+        public var mapControlsVisible = true
+        public var topControlsVisible = true
+        public var bottomControlsVisible = true
+        public var experienceControlsVisible = true
         public var statusVisible = true
         public var statusX = 0.0
         public var statusY = 0.0
@@ -101,17 +138,23 @@ public struct AtlasConfiguration: Codable, Sendable {
               let defaults = try JSONSerialization.jsonObject(with: Self().encoded()) as? [String: Any] else {
             throw DataError.invalid("配置必须是小于 1 MB 的 JSON 对象。")
         }
+        let compatibleDefaults: [String: Any] = Dictionary(
+            uniqueKeysWithValues: AssistantProvider.allCases.compactMap { provider in
+                guard let profile = provider.compatibleDefault else { return nil }
+                guard let value = try? JSONSerialization.jsonObject(
+                    with: JSONEncoder().encode(profile)) else { return nil }
+                return (provider.rawValue, value)
+            }
+        )
         func merge(_ input: [String: Any], _ defaults: [String: Any], path: String) throws -> [String: Any] {
             var result = defaults
             for (key, value) in input {
-                // Profiles are stored sparsely. An empty dictionary in a fresh
-                // configuration is not the schema of a saved provider profile.
-                let template: Any?
-                if path == "assistant.compatible.", let profile = AssistantProvider(rawValue: key)?.compatibleDefault {
-                    template = try JSONSerialization.jsonObject(with: JSONEncoder().encode(profile))
-                } else {
-                    template = defaults[key]
-                }
+                // Compatible profiles are sparse in saved files. Use the
+                // provider defaults as their schema without expanding omitted
+                // profiles into the decoded value.
+                let template = path == "assistant.compatible."
+                    ? compatibleDefaults[key]
+                    : defaults[key]
                 guard let fallback = template, !(value is NSNull) else {
                     throw DataError.invalid("配置字段无效：\(path)\(key)")
                 }
@@ -124,6 +167,31 @@ public struct AtlasConfiguration: Codable, Sendable {
         }
         let merged = try JSONSerialization.data(withJSONObject: merge(incoming, defaults, path: ""))
         var value = try JSONDecoder().decode(Self.self, from: merged)
+        if let originalInterface = incoming["interface"] as? [String: Any] {
+            let legacyOpacity = (originalInterface["mapControlsOpacity"] as? NSNumber)?.doubleValue ?? 1
+            if originalInterface["topControlsOpacity"] == nil {
+                value.interface.topControlsOpacity = legacyOpacity
+            }
+            if originalInterface["cornerControlsOpacity"] == nil {
+                value.interface.cornerControlsOpacity = legacyOpacity
+            }
+            if originalInterface["bottomCounterOpacity"] == nil {
+                value.interface.bottomCounterOpacity = legacyOpacity
+            }
+            if originalInterface["playbackOpacity"] == nil {
+                value.interface.playbackOpacity = legacyOpacity
+            }
+            if (originalInterface["topControlsVisible"] == nil
+                || originalInterface["bottomControlsVisible"] == nil),
+               let legacyVisible = originalInterface["mapControlsVisible"] as? Bool {
+                if originalInterface["topControlsVisible"] == nil {
+                    value.interface.topControlsVisible = legacyVisible
+                }
+                if originalInterface["bottomControlsVisible"] == nil {
+                    value.interface.bottomControlsVisible = legacyVisible
+                }
+            }
+        }
         if let original = incoming["map"] as? [String: Any], original["automaticAlignment"] == nil,
            let alignment = original["alignment"] as? String, alignment != "mainlandGCJ" {
             value.map.automaticAlignment = false
@@ -162,6 +230,12 @@ public struct AtlasConfiguration: Codable, Sendable {
         try number(interface.inspectorWidth, 200...560, "右侧栏宽度")
         try number(interface.panelBackgroundOpacity, 0...1, "左侧浮窗背景不透明度")
         try number(interface.inspectorBackgroundOpacity, 0...1, "右侧浮窗背景不透明度")
+        try number(interface.mapControlsOpacity, 0...1, "地图控件背景不透明度")
+        try number(interface.topControlsOpacity, 0...1, "顶部地图控件背景不透明度")
+        try number(interface.cornerControlsOpacity, 0...1, "角落地图控件背景不透明度")
+        try number(interface.bottomCounterOpacity, 0...1, "底部计数背景不透明度")
+        try number(interface.playbackOpacity, 0...1, "播放栏背景不透明度")
+        try number(interface.statusBackgroundOpacity, 0...1, "状态条背景不透明度")
         try number(interface.statusX, -2000...2000, "状态卡横向位置")
         try number(interface.statusY, -2000...2000, "状态卡纵向位置")
         func tileTemplate(_ value: String, _ name: String, required: Bool) throws {

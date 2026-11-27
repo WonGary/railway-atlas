@@ -1,11 +1,11 @@
 const VERSION = "0.8.17";
-const SHELL = `railway-atlas-web-${VERSION}-r6`;
+const SHELL = `railway-atlas-web-${VERSION}-r7`;
 // Retain immutable track, station and timetable chunks. City projections are versioned below.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
 const address = path => new URL(path, base).href;
 const coreFiles = [
-  "index.html","styles.css","app.js","library.js","vendor/leaflet.js","vendor/leaflet.css","vendor/vector.js",
+  "index.html","styles.css","ticket-typography.css","app.js","library.js","vendor/leaflet.js","vendor/leaflet.css","vendor/vector.js",
   "ticket-face.js","line-focus.js","metro-handoff.js","metro-updates.js","metro-source.js","metro-loader.js","card-map.js",
   "station-directory/national.js","data/journey-aliases.js","station-directory/cnrail.js","station-directory/catalog.js","station-directory/panel.js","station-directory/panel.css","station-directory/paths.js","station-directory/paths/manifest.js",
   "map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js",

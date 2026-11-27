@@ -5,15 +5,18 @@ import SwiftUI
 
 struct DesktopMapWorkspace: View {
     @EnvironmentObject private var map: RailwayMapStore
+    @EnvironmentObject private var configuration: ConfigurationStore
     @State private var compactPriority = DesktopPanelSide.right
+    @State private var leftTemporarilyCollapsed = false
+    @State private var rightTemporarilyCollapsed = false
 
     var body: some View {
         GeometryReader { geometry in
             let layout = DesktopPanelLayout.resolve(
                 viewport: geometry.size, scale: map.uiScale,
-                leftVisible: map.panelVisible, leftLayout: map.panelLayout,
+                leftVisible: map.panelVisible && !leftTemporarilyCollapsed, leftLayout: map.panelLayout,
                 leftWidth: map.panelWidth, leftSize: map.panelSize,
-                rightVisible: map.inspectorVisible, rightLayout: map.inspectorLayout,
+                rightVisible: map.inspectorVisible && !rightTemporarilyCollapsed, rightLayout: map.inspectorLayout,
                 rightWidth: map.inspectorWidth, priority: compactPriority)
             HStack(spacing: 0) {
                 // The three slots are unconditional. Only their contents / widths
@@ -21,7 +24,12 @@ struct DesktopMapWorkspace: View {
                 ZStack {
                     if layout.leftDockWidth > 0 {
                         DesktopSidebarPanel()
-                            .background(Color(nsColor: .windowBackgroundColor))
+                            .background {
+                                DesktopPanelGlassBackground(
+                                    cornerRadius: 0,
+                                    opacity: 1,
+                                    mode: configuration.interfaceSettings.surfaceMode)
+                            }
                             .overlay(alignment: .trailing) {
                                 Rectangle().fill(.separator).frame(width: 1)
                             }
@@ -40,8 +48,13 @@ struct DesktopMapWorkspace: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 ZStack {
                     if layout.rightDockWidth > 0 {
-                        AtlasInspectorView()
-                            .background(Color(nsColor: .windowBackgroundColor))
+                        AtlasInspectorView(onRequestClose: { collapse(.right) })
+                            .background {
+                                DesktopPanelGlassBackground(
+                                    cornerRadius: 0,
+                                    opacity: 1,
+                                    mode: configuration.interfaceSettings.surfaceMode)
+                            }
                             .overlay(alignment: .leading) {
                                 Rectangle().fill(.separator).frame(width: 1)
                             }
@@ -57,25 +70,62 @@ struct DesktopMapWorkspace: View {
             }
             .coordinateSpace(name: "atlas-panel-workspace")
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            DesktopPanelGlassBackground(
+                cornerRadius: 0,
+                opacity: 1,
+                mode: configuration.interfaceSettings.surfaceMode)
+        }
         // Published events also cover reselecting the same feature / reopening
         // GPT when the requested inspector is already true but space-suppressed.
-        .onReceive(map.$panelVisible.dropFirst()) { if $0 { compactPriority = .left } }
-        .onReceive(map.$inspectorVisible.dropFirst()) { if $0 { compactPriority = .right } }
+        .onReceive(map.$panelVisible.dropFirst()) {
+            leftTemporarilyCollapsed = false
+            if $0 { compactPriority = .left }
+        }
+        .onReceive(map.$inspectorVisible.dropFirst()) {
+            rightTemporarilyCollapsed = false
+            if $0 { compactPriority = .right }
+        }
         .onChange(of: map.panelLayout) { _, _ in if map.panelVisible { compactPriority = .left } }
-        .onChange(of: map.inspectorLayout) { _, _ in if map.inspectorVisible { compactPriority = .right } }
-        .onChange(of: map.inspectorPane) { _, _ in if map.inspectorVisible { compactPriority = .right } }
+        .onChange(of: map.inspectorLayout) { _, _ in
+            rightTemporarilyCollapsed = false
+            if map.inspectorVisible { compactPriority = .right }
+        }
+        .onChange(of: map.inspectorPane) { _, _ in
+            rightTemporarilyCollapsed = false
+            if map.inspectorVisible { compactPriority = .right }
+        }
     }
 
     private func toggle(_ side: DesktopPanelSide, layout: DesktopPanelLayout.Resolved) {
         compactPriority = side
         if side == .left {
-            // A space-constrained panel is revealed instead of being hidden again.
-            if map.panelVisible && layout.leftVisible { map.panelVisible = false }
-            else { map.panelVisible = true }
+            if map.panelVisible {
+                leftTemporarilyCollapsed = layout.leftVisible
+            } else {
+                leftTemporarilyCollapsed = false
+                map.panelVisible = true
+            }
         } else {
-            if map.inspectorVisible && layout.rightVisible { map.inspectorVisible = false }
-            else { map.inspectorVisible = true }
+            if map.inspectorVisible {
+                // Keep the selected line and inspector pane alive while the
+                // right panel is temporarily out of the way.
+                rightTemporarilyCollapsed = layout.rightVisible
+            } else {
+                rightTemporarilyCollapsed = false
+                map.inspectorVisible = true
+            }
+        }
+    }
+
+    private func collapse(_ side: DesktopPanelSide) {
+        compactPriority = side
+        if side == .left {
+            leftTemporarilyCollapsed = true
+        } else if map.inspectorVisible {
+            rightTemporarilyCollapsed = true
+        } else {
+            map.inspectorVisible = false
         }
     }
 }
@@ -100,6 +150,7 @@ struct DesktopSidebarPanel: View {
 
 struct DesktopPanelMenu: View {
     let side: DesktopPanelSide
+    var onRequestHide: (() -> Void)?
     @EnvironmentObject private var map: RailwayMapStore
     @EnvironmentObject private var assistant: AssistantStore
 
@@ -127,8 +178,13 @@ struct DesktopPanelMenu: View {
             }
             Divider()
             Button("隐藏" + side.title) {
-                if side == .left { map.panelVisible = false }
-                else { map.inspectorVisible = false }
+                if let onRequestHide {
+                    onRequestHide()
+                } else if side == .left {
+                    map.panelVisible = false
+                } else {
+                    map.inspectorVisible = false
+                }
             }
         } label: {
             Image(systemName: "slider.horizontal.3").atlasFrame(width: 24, height: 24)
@@ -190,6 +246,7 @@ struct DesktopPanelResizeHandle: View {
 
 struct DesktopFloatingPanelSurface: ViewModifier {
     let opacity: Double
+    var surfaceMode: AtlasSurfaceMode = .glass
     @Environment(\.atlasUIScale) private var scale
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -207,24 +264,28 @@ struct DesktopFloatingPanelSurface: ViewModifier {
                     .accessibilityHidden(true)
             }
             .overlay {
-                shape.strokeBorder(
-                    .primary.opacity(contrast == .increased ? 0.35 : 0.14),
-                    lineWidth: (contrast == .increased ? 2 : 1) / max(1, displayScale))
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                if surfaceMode != .textOnly {
+                    shape.strokeBorder(
+                        .primary.opacity(contrast == .increased ? 0.35 : 0.14),
+                        lineWidth: (contrast == .increased ? 2 : 1) / max(1, displayScale))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
     }
 
     @ViewBuilder
     private func surface(in shape: RoundedRectangle) -> some View {
-        if reduceTransparency {
+        if surfaceMode == .textOnly {
+            Color.clear
+        } else if reduceTransparency {
             // Accessibility takes precedence over glass alpha without changing
             // the saved opacity, so turning it off restores the user's setting.
             shape.fill(Color(nsColor: .windowBackgroundColor))
                 .shadow(color: .black.opacity(0.13), radius: 16, y: 5)
         } else if #available(macOS 26.0, *) {
             DesktopPanelGlassBackground(
-                cornerRadius: 18 * scale, opacity: opacity)
+                cornerRadius: 18 * scale, opacity: opacity, mode: surfaceMode)
         } else {
             shape.fill(.regularMaterial)
                 .opacity(min(1, max(0, opacity)))
@@ -234,6 +295,7 @@ struct DesktopFloatingPanelSurface: ViewModifier {
 }
 
 struct AtlasInspectorView: View {
+    var onRequestClose: (() -> Void)?
     @Environment(\.atlasUIScale) private var scale
     @EnvironmentObject private var map: RailwayMapStore
     @EnvironmentObject private var assistant: AssistantStore
@@ -253,8 +315,14 @@ struct AtlasInspectorView: View {
                     Text("信息与对话").atlasFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                DesktopPanelMenu(side: .right)
-                Button { map.inspectorVisible = false } label: {
+                DesktopPanelMenu(side: .right, onRequestHide: onRequestClose)
+                Button {
+                    if let onRequestClose {
+                        onRequestClose()
+                    } else {
+                        map.inspectorVisible = false
+                    }
+                } label: {
                     Image(systemName: "sidebar.right")
                 }
                 .buttonStyle(.plain).help("隐藏右侧栏")

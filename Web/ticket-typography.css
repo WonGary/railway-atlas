@@ -1,0 +1,11 @@
+:root {
+  --railway-ticket-serif: "Noto Serif CJK SC", "Songti SC", "STSong", "SimSun", "Noto Serif", serif;
+  --railway-ticket-sans: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "Heiti SC", "Noto Sans", sans-serif;
+  --railway-ticket-mono: "SF Mono", "Menlo", "Cascadia Mono", "Consolas", "Liberation Mono", monospace;
+}
+
+.postcard-preview {
+  font-family: var(--railway-ticket-sans);
+  font-kerning: normal;
+  text-rendering: geometricPrecision;
+}

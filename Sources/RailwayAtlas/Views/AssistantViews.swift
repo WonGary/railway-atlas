@@ -69,6 +69,7 @@ struct AtlasSettingsView: View {
                     #if os(macOS)
                     PanelSettingsView()
                     #else
+                    InterfaceSurfaceSettingsView()
                     HStack {
                         Text("侧栏宽度 \(Int(map.panelWidth))")
                         Slider(value: $map.panelWidth, in: 250...560)

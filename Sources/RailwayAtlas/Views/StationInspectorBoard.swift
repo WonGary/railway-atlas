@@ -7,9 +7,29 @@ import WebKit
 
 enum NationalDirectoryPins {
     static let all: [RailStation] = {
-        guard let file = Bundle.main.url(forResource: "map-points", withExtension: "json", subdirectory: "station-directory"),
-              let data = try? Data(contentsOf: file) else { return [] }
-        return (try? JSONDecoder().decode([RailStation].self, from: data)) ?? []
+        let bundled = Bundle.main.url(
+            forResource: "map-points",
+            withExtension: "json",
+            subdirectory: "station-directory"
+        )
+        let checkout = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let candidates = [
+            bundled,
+            checkout.appendingPathComponent("Web/station-directory/map-points.json")
+        ].compactMap { $0 }
+
+        for file in candidates {
+            guard let data = try? Data(contentsOf: file),
+                  let pins = try? JSONDecoder().decode([RailStation].self, from: data) else {
+                continue
+            }
+            return pins
+        }
+        return []
     }()
 }
 

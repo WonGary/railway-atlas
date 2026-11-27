@@ -1,0 +1,31 @@
+{
+  "url": "https://wongary.github.io/railway-atlas/",
+  "source": "public national snapshot",
+  "shell": "railway-atlas-web-0.8.17-r2",
+  "results": [
+    {
+      "train": "D174",
+      "from": "陇南",
+      "to": "广元",
+      "origin": "2026-11-27",
+      "boarding": "2026-11-27",
+      "trip": "880000D17403",
+      "sameTrip": true,
+      "samePoints": true,
+      "sections": 1,
+      "pngBytes": 128529
+    },
+    {
+      "train": "V571",
+      "from": "菏泽",
+      "to": "浠水",
+      "origin": "2026-11-26",
+      "boarding": "2026-11-27",
+      "trip": "240000V57100",
+      "sameTrip": true,
+      "samePoints": true,
+      "sections": 5,
+      "pngBytes": 153829
+    }
+  ]
+}

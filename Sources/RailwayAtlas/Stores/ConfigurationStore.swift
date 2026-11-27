@@ -8,6 +8,7 @@ import SwiftUI
 final class ConfigurationStore: ObservableObject {
     @Published var notice = ""
     @Published var hasError = false
+    @Published var interfaceSettings = AtlasConfiguration().interface
     let url: URL
     private weak var map: RailwayMapStore?
     private weak var assistant: AssistantStore?
@@ -36,6 +37,7 @@ final class ConfigurationStore: ObservableObject {
         } catch { fail(error) }
         map.objectWillChange.sink { [weak self] _ in self?.scheduleSave() }.store(in: &subscriptions)
         assistant.$settings.dropFirst().sink { [weak self] _ in self?.scheduleSave() }.store(in: &subscriptions)
+        $interfaceSettings.dropFirst().sink { [weak self] _ in self?.scheduleSave() }.store(in: &subscriptions)
         #if os(macOS)
         NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
             .sink { [weak self] _ in self?.saveNow() }.store(in: &subscriptions)
@@ -110,6 +112,17 @@ final class ConfigurationStore: ObservableObject {
         value.interface.inspectorTab = assistant.settings.presentation == .window ? "feature" : map.inspectorPane.rawValue
         value.interface.inspectorLayout = map.inspectorLayout
         value.interface.inspectorBackgroundOpacity = map.inspectorBackgroundOpacity
+        value.interface.surfaceMode = interfaceSettings.surfaceMode
+        value.interface.mapControlsOpacity = interfaceSettings.mapControlsOpacity
+        value.interface.topControlsOpacity = interfaceSettings.topControlsOpacity
+        value.interface.cornerControlsOpacity = interfaceSettings.cornerControlsOpacity
+        value.interface.bottomCounterOpacity = interfaceSettings.bottomCounterOpacity
+        value.interface.playbackOpacity = interfaceSettings.playbackOpacity
+        value.interface.statusBackgroundOpacity = interfaceSettings.statusBackgroundOpacity
+        value.interface.mapControlsVisible = interfaceSettings.mapControlsVisible
+        value.interface.topControlsVisible = interfaceSettings.topControlsVisible
+        value.interface.bottomControlsVisible = interfaceSettings.bottomControlsVisible
+        value.interface.experienceControlsVisible = interfaceSettings.experienceControlsVisible
         value.interface.statusVisible = map.statusVisible
         value.interface.statusX = map.statusOffset.width
         value.interface.statusY = map.statusOffset.height
@@ -196,6 +209,7 @@ final class ConfigurationStore: ObservableObject {
             (InspectorPane(rawValue: value.interface.inspectorTab) ?? .feature)
         map.inspectorLayout = value.interface.inspectorLayout
         map.inspectorBackgroundOpacity = value.interface.inspectorBackgroundOpacity
+        interfaceSettings = value.interface
         map.statusVisible = value.interface.statusVisible
         map.statusOffset = CGSize(width: value.interface.statusX, height: value.interface.statusY)
         let source = (try? RailwayTileRepository.normalizeSource(value.map.tileSource)) ?? value.map.tileSource

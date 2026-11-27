@@ -17,11 +17,19 @@ typealias PlatformMapRepresentable = UIViewRepresentable
 typealias PlatformColor = UIColor
 #endif
 
+enum RailwayMapAction {
+    case cameraChanged(final: Bool, zooming: Bool)
+    case featureSelected
+}
+
 struct AppleRailwayMap: PlatformMapRepresentable {
     @ObservedObject var store: RailwayMapStore
     @Environment(\.colorScheme) private var colorScheme
+    var onMapAction: ((RailwayMapAction) -> Void)?
 
-    func makeCoordinator() -> Coordinator { Coordinator(store: store) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(store: store, onMapAction: onMapAction)
+    }
 
     #if os(macOS)
     func makeNSView(context: Context) -> MKMapView { makeMap(context: context) }
@@ -60,6 +68,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
 
     private func updateMap(_ map: MKMapView, context: Context) {
         let coordinator = context.coordinator
+        coordinator.onMapAction = onMapAction ?? store.mapActionHandler
         if coordinator.historyActive != store.historyMapActive {
             coordinator.historyActive = store.historyMapActive
             coordinator.renderRevision = -1
@@ -167,31 +176,6 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             coordinator.updateFocus(focus, on: map)
             coordinator.scheduleStationLabels(map)
         }
-        if renderingChanged || layoutChanged || focusChanged {
-            // New groups arrive after retained overlays in MapKit. Restore
-            // the prepared paint order so a late neutral track cannot cover
-            // an already-coloured route. Reordering keeps vector geometry.
-            let ordered: [any MKOverlay] = coordinator.overlays(for: .outline)
-                + coordinator.overlays(for: .concourse)
-                + displayGroups.flatMap {
-                    coordinator.groups[.init(token: $0.geometryToken, alignment: store.alignment), default: []]
-                        .map { $0 as any MKOverlay }
-                } + coordinator.overlays(for: .platform) + coordinator.overlays(for: .passage) + coordinator.overlays(for: .entrance)
-                + coordinator.experienceOverlays.map { $0 as any MKOverlay }
-            let wanted = Set(ordered.map(ObjectIdentifier.init))
-            // Retiring geometry, the fixed tints and the foreground never trade places.
-            var actual = map.overlays(in: .aboveLabels).filter { wanted.contains(ObjectIdentifier($0)) }
-            var positions = Dictionary(uniqueKeysWithValues: actual.enumerated().map { (ObjectIdentifier($0.element), $0.offset) })
-            for (target, overlay) in ordered.enumerated() {
-                guard let current = positions[ObjectIdentifier(overlay)], current != target else { continue }
-                // The legacy index-based API operates only above roads;
-                // our rail layers are above labels. Exchange actual objects.
-                map.exchangeOverlay(overlay, with: actual[target])
-                positions[ObjectIdentifier(actual[target])] = current
-                positions[ObjectIdentifier(overlay)] = target
-                actual.swapAt(current, target)
-            }
-        }
         let numbersEnabled = [store.showsPlatformNumbers, store.showsStationEntrances, store.showsPassageSigns,
                               store.showsStationLayouts, !store.historyMapActive]
         if coordinator.labelRevision != store.labelRevision || coordinator.uiScale != store.uiScale || labelContrastChanged
@@ -260,11 +244,40 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         } else if let train = coordinator.train {
             map.removeAnnotation(train); coordinator.train = nil
         }
+        let ordered: [any MKOverlay] = coordinator.overlays(for: .outline)
+            + coordinator.overlays(for: .concourse)
+            + displayGroups.flatMap {
+                coordinator.groups[.init(token: $0.geometryToken, alignment: store.alignment), default: []]
+                    .map { $0 as any MKOverlay }
+            } + coordinator.overlays(for: .platform) + coordinator.overlays(for: .passage) + coordinator.overlays(for: .entrance)
+            + coordinator.experienceOverlays.map { $0 as any MKOverlay }
+        let orderIDs = ordered.map(ObjectIdentifier.init)
+        if coordinator.overlayOrder != orderIDs {
+            // New groups arrive after retained overlays in MapKit. Restore
+            // the prepared paint order so a late neutral track cannot cover
+            // an already-coloured route. Reordering keeps vector geometry.
+            coordinator.overlayOrder = orderIDs
+            let wanted = Set(ordered.map(ObjectIdentifier.init))
+            // Retiring geometry, the fixed tints and the foreground never trade places.
+            var actual = map.overlays(in: .aboveLabels).filter { wanted.contains(ObjectIdentifier($0)) }
+            var positions = Dictionary(uniqueKeysWithValues: actual.enumerated().map { (ObjectIdentifier($0.element), $0.offset) })
+            for (target, overlay) in ordered.enumerated() {
+                guard target < actual.count,
+                      let current = positions[ObjectIdentifier(overlay)], current != target else { continue }
+                // The legacy index-based API operates only above roads;
+                // our rail layers are above labels. Exchange actual objects.
+                map.exchangeOverlay(overlay, with: actual[target])
+                positions[ObjectIdentifier(actual[target])] = current
+                positions[ObjectIdentifier(overlay)] = target
+                actual.swapAt(current, target)
+            }
+        }
     }
 
     @MainActor
     final class Coordinator: NSObject, MKMapViewDelegate {
         let store: RailwayMapStore
+        var onMapAction: ((RailwayMapAction) -> Void)?
         var renderRevision = -1
         var cameraRevision = -1
         var cameraUpdatePending = false
@@ -381,6 +394,8 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var basemapOverlay: BasemapTileOverlay?
         var basemapKey = ""
         var shade: MKPolygon?
+        var overlayOrder: [ObjectIdentifier] = []
+        var lastViewport: MKCoordinateRegion?
         var labelRevision = -1
         var uiScale = 1.0
         var lightStationLabels = false
@@ -442,7 +457,10 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         private(set) var labelPasses = 0
         private var stationStyleRevision = -1
         private var stationStyles: [String: StationAppearance] = [:]
-        init(store: RailwayMapStore) { self.store = store }
+        init(store: RailwayMapStore, onMapAction: ((RailwayMapAction) -> Void)?) {
+            self.store = store
+            self.onMapAction = onMapAction
+        }
 
         func updateBasemap(_ map: MKMapView, source: BasemapSource, style: BasemapStyle, template: String?, dark: Bool) {
             let key = "\(style.rawValue)|\(source.rawValue)|\(template ?? "")|\(source.isVector && dark)"
@@ -513,6 +531,13 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 var value = mapView.region
                 value.center = self.store.alignment.original(Coordinate(value.center.latitude, value.center.longitude),
                     near: Coordinate(self.store.region.center.latitude, self.store.region.center.longitude)).location
+                let previous = self.lastViewport
+                let zooming = previous.map {
+                    abs(log(max(0.000001, value.span.longitudeDelta) / max(0.000001, $0.span.longitudeDelta))) > 0.015
+                        || abs(log(max(0.000001, value.span.latitudeDelta) / max(0.000001, $0.span.latitudeDelta))) > 0.015
+                } ?? false
+                self.lastViewport = value
+                self.onMapAction?(.cameraChanged(final: final, zooming: zooming))
                 self.store.viewportChanged(value, width: mapView.bounds.width, height: mapView.bounds.height)
                 if final { self.scheduleStationLabels(mapView) }
             }
@@ -623,6 +648,11 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         private func configure(_ view: MKAnnotationView, station: RailStation, label: Bool, appearance: StationAppearance? = nil) {
             setFocusOpacity(view, member: store.lineFocus?.includes(station) ?? true)
             let appearance = appearance ?? stationAppearance(station)
+            let zoom = store.displayZoom
+            view.isEnabled = label
+                || [.major, .connection, .interchange].contains(appearance.kind)
+                || zoom >= 14
+                || RailDisplayPolicy.labelVisible(appearance.kind, zoom: zoom)
             #if os(macOS)
             let density = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
             #else
@@ -741,39 +771,90 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             // Annotation selection has its own delegate callback. A pick on a
             // station must not immediately select the track beneath that station.
             #if os(macOS)
-            var hit = map.hitTest(map.convert(point, to: map.superview))
+            var hit = map.hitTest(point)
             #else
             var hit = map.hitTest(point, with: nil)
             #endif
             while let view = hit {
-                if view is MKAnnotationView { return }
+                if let annotationView = view as? MKAnnotationView {
+                    // An annotation view still owns the click area even when
+                    // its station label is hidden. Respect that ownership
+                    // while applying the same conservative visibility rule
+                    // as the nearby-annotation check below.
+                    guard isSelectableAnnotation(annotationView.annotation, view: annotationView, map: map) else { return }
+                    return
+                }
                 hit = view.superview
             }
+            if annotationIsNear(point, map: map) { return }
             let display = map.convert(point, toCoordinateFrom: map)
             let location = MKMapPoint(display)
-            let tolerance = map.visibleMapRect.width / max(1, map.bounds.width) * 9
+            let tolerance = map.visibleMapRect.width / max(1, map.bounds.width) * hitTolerancePixels(map)
             var nearest: (RailLine, Double)?
             for line in store.visibleLines {
-              for part in geometry[line.id]?.2 ?? [] {
-                let points = part.points()
-                for index in 1..<part.pointCount {
-                    let a = points[index - 1], b = points[index]
-                    let dx = b.x - a.x, dy = b.y - a.y
-                    let length = dx * dx + dy * dy
-                    let t = length > 0 ? max(0, min(1, ((location.x - a.x) * dx + (location.y - a.y) * dy) / length)) : 0
-                    let distance = hypot(location.x - a.x - t * dx, location.y - a.y - t * dy)
-                    if distance < tolerance && distance < (nearest?.1 ?? .infinity) { nearest = (line, distance) }
+                for part in geometry[line.id]?.2 ?? [] {
+                    let points = part.points()
+                    for index in 1..<part.pointCount {
+                        let a = points[index - 1], b = points[index]
+                        let dx = b.x - a.x, dy = b.y - a.y
+                        let length = dx * dx + dy * dy
+                        let t = length > 0 ? max(0, min(1, ((location.x - a.x) * dx + (location.y - a.y) * dy) / length)) : 0
+                        let distance = hypot(location.x - a.x - t * dx, location.y - a.y - t * dy)
+                        if distance < tolerance && distance < (nearest?.1 ?? .infinity) { nearest = (line, distance) }
+                    }
                 }
-              }
             }
-            if let nearest { store.selection = RailwayMapStore.item(nearest.0) }
-            else { store.clearLineFocus() }
+            guard let nearest else { return }
+            store.selection = RailwayMapStore.item(nearest.0)
+            onMapAction?(.featureSelected)
+        }
+        private func isSelectableAnnotation(_ annotation: MKAnnotation?, view: MKAnnotationView, map: MKMapView) -> Bool {
+            guard let annotation else { return false }
+            if annotation is PlatformNumberAnnotation { return true }
+            guard let station = annotation as? StationAnnotation else { return false }
+            let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
+            let appearance = stationAppearance(station.station)
+            let titleVisible = view is StationAnnotationView
+                && (view as? StationAnnotationView)?.symbolConfiguration?.title != nil
+            return titleVisible
+                || [.major, .connection, .interchange].contains(appearance.kind)
+                || zoom >= 14
+                || RailDisplayPolicy.labelVisible(appearance.kind, zoom: zoom)
+        }
+        private func annotationIsNear(_ point: CGPoint, map: MKMapView) -> Bool {
+            let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
+            let radius = zoom < 9 ? 4.0 : zoom < 13 ? 7.0 : 11.0
+            for annotation in map.annotations {
+                guard annotation is StationAnnotation
+                    || annotation is PlatformNumberAnnotation
+                    || annotation is ExperienceTrainAnnotation else { continue }
+                guard let view = map.view(for: annotation) else { continue }
+                let frame = view.convert(view.bounds, to: map).insetBy(dx: -radius, dy: -radius)
+                if frame.contains(point) { return true }
+            }
+            return false
+        }
+        private func hitTolerancePixels(_ map: MKMapView) -> Double {
+            let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
+            switch zoom {
+            case ..<8: return 3.5
+            case ..<11: return 4.5
+            case ..<14: return 6.5
+            case ..<17: return 8.5
+            default: return 11
+            }
         }
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let annotation = view.annotation as? StationAnnotation else { return }
+            if store.selection?.id == annotation.station.id { return }
+            guard isSelectableAnnotation(annotation, view: view, map: mapView) else {
+                mapView.deselectAnnotation(annotation, animated: false)
+                return
+            }
             Task { @MainActor [weak self] in
                 guard self?.store.selection?.id != annotation.station.id else { return }
                 self?.store.select(RailwayMapStore.item(annotation.station))
+                self?.onMapAction?(.featureSelected)
             }
         }
     }

@@ -36,6 +36,7 @@ async function main() {
       await page.locator("#downloadPostcard").click();
       const png=(await download);
       await png.saveAs(path.join(output,`${style}.png`));
+      await page.waitForTimeout(250);
     }
     await page.evaluate(async()=>{
       const other=await RailPaths.find({train:"C273",date:"2026-11-25"});

@@ -167,6 +167,23 @@ const LineFocus = (() => {
     if (p) set(name,[],[[name,p,id,colors]]);
     else clear();
   }
+  function fitFullLine(bounds, maxZoom) {
+    if (!bounds.isValid()) return;
+    // Opening a docked inspector can change the canvas width before Leaflet sees a resize.
+    map.invalidateSize({pan:false});
+    const size = map.getSize();
+    if (!size.x || !size.y) return;
+    map.fitBounds(bounds, {
+      padding: [Math.round(size.x * .10), Math.round(size.y * .10)],
+      maxZoom, animate: false
+    });
+  }
+  function trackHitRadius(zoom) {
+    if (zoom < 8) return 0;
+    if (zoom < 11) return 3;
+    if (zoom < 14) return 5;
+    return 8;
+  }
   function metro(city,route,{fit = false} = {}) {
     const key=AtlasPrefs.routeKey(city.name,route);
     const detail=state.metroCityLayers.get(city.id);
@@ -182,7 +199,7 @@ const LineFocus = (() => {
     if (fit) {
       const bounds=L.latLngBounds(stops.map(([,location])=>location));
       for (const member of members) bounds.extend(member.line.getBounds());
-      if (bounds.isValid()) map.fitBounds(bounds,{padding:[32,32],maxZoom:15,animate:false});
+      fitFullLine(bounds,15);
     }
   }
   function closestPart(parts,at) {
@@ -197,7 +214,9 @@ const LineFocus = (() => {
   async function directory(title,rows,names,fit=false) {
     const selection=set(title,[],rows,{directory:true,match:{name:title},note:"读取轨迹…",selectStop:n=>selectStation(n,{pan:false})});
     if (!selection) return;
-    if (fit && rows.length) map.fitBounds(rows.map(r=>r[1]),{padding:[36,36],maxZoom:13,animate:false});
+    const stationBounds=L.latLngBounds(rows.map(r=>r[1]));
+    if (fit) fitFullLine(stationBounds,13);
+    const initialCenter=map.getCenter(), initialZoom=map.getZoom();
     try {
       const index=await read("index.json");
       const entries=index[title] ? (await read(index[title]))[title] : [];
@@ -212,9 +231,17 @@ const LineFocus = (() => {
     } catch { if (current!==selection) return; selection.note="轨迹未载入，仅显示站点"; }
     drawBacking(selection.parts);
     $("lineFocusNote").textContent=selection.note;
+    if (fit && selection.parts.length && map.getCenter().equals(initialCenter) && map.getZoom()===initialZoom) {
+      // A bend between stations may extend beyond the preliminary station envelope.
+      const bounds=L.latLngBounds(selection.parts);
+      if (!stationBounds.isValid() || !stationBounds.contains(bounds)) {
+        if (stationBounds.isValid()) bounds.extend(stationBounds);
+        fitFullLine(bounds,13);
+      }
+    }
   }
   function endDirectory(title) { if(current?.directory && (!title || title===current.title)) clear(); }
-  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,
+  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,trackHitRadius,
     get active(){return current;},refresh:()=>{
       if (!current) return;
       paint();

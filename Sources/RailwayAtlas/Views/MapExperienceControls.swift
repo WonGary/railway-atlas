@@ -3,6 +3,8 @@ import SwiftUI
 
 struct MapExperienceControls: View {
     @ObservedObject var player: RailMapPlayback
+    @EnvironmentObject private var configuration: ConfigurationStore
+
     var body: some View {
         if let mode = player.mode {
             VStack(alignment: .leading, spacing: 10) {
@@ -12,6 +14,14 @@ struct MapExperienceControls: View {
                     Text(mode == .train ? RailTimetable.clock(player.seconds) : player.date)
                         .font(.system(.title3, design: .monospaced).weight(.medium))
                     Spacer()
+                    Button {
+                        configuration.interfaceSettings.experienceControlsVisible = false
+                    } label: {
+                        Image(systemName: "chevron.down")
+                    }
+                    .buttonStyle(.plain)
+                    .help("收起播放栏")
+                    .accessibilityLabel("收起播放栏")
                     Button { player.stop() } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).accessibilityLabel("退出地图漫游")
                 }
@@ -43,8 +53,9 @@ struct MapExperienceControls: View {
                 }
             }
             .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(.primary.opacity(0.08)))
+            .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
+                             opacity: configuration.interfaceSettings.playbackOpacity,
+                             cornerRadius: 16)
             .accessibilityIdentifier("main-map-experience-controls")
         }
     }

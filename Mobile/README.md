@@ -1,10 +1,10 @@
 # 手机测试版
 
-Android 8.0 及以上可安装 [铁道漫游 0.8.17（APK）](https://github.com/WonGary/railway-atlas/releases/download/web-v0.8.17/Railway-Atlas-0.8.17-Android.apk)。下载后在文件管理器中打开，按系统提示安装。已安装本仓库签名版的用户可直接点「更新」。随包城市可在首次打开时离线查看，在线底图和地图问答需要网络。[版本说明和 SHA-256 校验值](https://github.com/WonGary/railway-atlas/releases/tag/web-v0.8.17)
+Android 8 及以上使用 `Railway-Atlas-0.8.17-Android.apk`。在系统文件管理器点开 APK，按提示允许这次安装。以后使用同一签名的新版本可以覆盖升级。地图、城市线路资料和站区细节随包提供，在线底图和地图问答需要网络。
 
 ## iPhone 和 iPad
 
-在发布页下载 `.ipa`，用 SideStore 或 iLoader 以自己的 Apple 账户重新签名安装。iPhone 和 iPad 共用这个包，最低支持 iOS / iPadOS 17。覆盖更新时保留旧应用，并沿用原来的账号和应用标识。另附的 `iOS-xcarchive.zip` 是真机归档，供开发者重新导出。通过 TestFlight 分发需另行使用发行证书签名并上传 App Store Connect。
+`Railway-Atlas-0.8.17-iOS-xcarchive.zip` 里是原生 SwiftUI / MapKit 应用的真机归档，最低支持 iOS / iPadOS 17。归档使用临时签名。发给朋友时，请分享 App Store Connect 生成的 TestFlight 邀请。
 
 **用自己的个人开发者团队导出 IPA**　下面的步骤在 GitHub 的 Mac 上完成编译。自己的 Mac 只需要用 Transporter 上传。
 
@@ -23,5 +23,5 @@ Android 8.0 及以上可安装 [铁道漫游 0.8.17（APK）](https://github.com
 GitHub Actions 的 **Build the Android APK** 使用 Java 17、Android SDK 35、Gradle 8.11.1。下载 `android-unsigned` 后，用 Android Build Tools 中的 `apksigner.jar` 和本机专用签名目录执行以下命令。首次运行创建测试签名，以后复用同一目录。备份该目录，后续覆盖安装需要原密钥。
 
 ```sh
-python3 Mobile/sign-android.py /path/to/apksigner.jar app-release-unsigned.apk "Railway-Atlas-$(cat Mobile/VERSION)-Android.apk" --key-dir /path/to/private-signing-directory
+python3 Mobile/sign-android.py /path/to/apksigner.jar app-release-unsigned.apk Railway-Atlas-0.8.17-Android.apk --key-dir /path/to/private-signing-directory
 ```

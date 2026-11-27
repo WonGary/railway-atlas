@@ -1,0 +1,175 @@
+{
+  "day": "2026-11-26",
+  "source": "https://wongary.github.io/railway-atlas/?verify=5cc346d",
+  "browser": "158.0.4370.33",
+  "sampleSeed": "atlas-20261126:",
+  "mapImportedLibrary": false,
+  "cardImportedContours": false,
+  "cardStyle": "map",
+  "budgetMs": 5000,
+  "results": [
+    {
+      "train": "D174",
+      "cold": {
+        "ms": 524,
+        "status": "full",
+        "drawn": 14,
+        "legs": 14,
+        "from": "西宁",
+        "to": "攀枝花南",
+        "gaps": [],
+        "vertices": 1204,
+        "sources": [
+          1,
+          3
+        ],
+        "requests": [
+          {
+            "file": "D1-128db772793a.json",
+            "ms": 349,
+            "bytes": 140328
+          }
+        ]
+      },
+      "warm": {
+        "ms": 100,
+        "status": "full",
+        "drawn": 14,
+        "legs": 14,
+        "from": "西宁",
+        "to": "攀枝花南",
+        "gaps": [],
+        "vertices": 1204,
+        "sources": [
+          1,
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "陇南",
+        "to": "广元",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 552,
+        "ready": true,
+        "from": "陇南",
+        "to": "广元",
+        "legs": 1,
+        "message": "陇南 → 广元 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 666,
+        "bytes": 60889
+      }
+    },
+    {
+      "train": "V571",
+      "cold": {
+        "ms": 1747,
+        "status": "full",
+        "drawn": 29,
+        "legs": 29,
+        "from": "北京丰台",
+        "to": "厦门北",
+        "gaps": [],
+        "vertices": 1852,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": [
+          {
+            "file": "V5-8499cbe97ec1.json",
+            "ms": 1399,
+            "bytes": 162835
+          }
+        ]
+      },
+      "warm": {
+        "ms": 76,
+        "status": "full",
+        "drawn": 29,
+        "legs": 29,
+        "from": "北京丰台",
+        "to": "厦门北",
+        "gaps": [],
+        "vertices": 1852,
+        "sources": [
+          2,
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "菏泽",
+        "to": "浠水",
+        "legs": 5,
+        "date": "2026-11-27"
+      },
+      "postcard": {
+        "previewMs": 303,
+        "ready": true,
+        "from": "菏泽",
+        "to": "浠水",
+        "legs": 5,
+        "message": "菏泽 → 浠水 · 6 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 497,
+        "bytes": 81556
+      }
+    },
+    {
+      "train": "V604",
+      "cold": {
+        "ms": 1153,
+        "status": "full",
+        "drawn": 21,
+        "legs": 21,
+        "from": "运城",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1297,
+        "sources": [
+          3
+        ],
+        "requests": [
+          {
+            "file": "V6-aaff2bc96a74.json",
+            "ms": 845,
+            "bytes": 155305
+          }
+        ]
+      },
+      "warm": {
+        "ms": 62,
+        "status": "full",
+        "drawn": 21,
+        "legs": 21,
+        "from": "运城",
+        "to": "北京西",
+        "gaps": [],
+        "vertices": 1297,
+        "sources": [
+          3
+        ],
+        "requests": []
+      },
+      "playback": {
+        "from": "平遥",
+        "to": "太谷",
+        "legs": 1,
+        "date": "2026-11-26"
+      },
+      "postcard": {
+        "previewMs": 229,
+        "ready": true,
+        "from": "平遥",
+        "to": "太谷",
+        "legs": 1,
+        "message": "平遥 → 太谷 · 2 站 · 全国铁路车次径路 · 2026-11-24 · 沿线城市及海岸",
+        "pngMs": 321,
+        "bytes": 64593
+      }
+    }
+  ]
+}

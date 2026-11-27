@@ -756,7 +756,9 @@ function buildMetroCityLayers(city, detail) {
       lineJoin: "round",
       className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
     }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${city.name} · ${metroRouteLabel(route)}`}), { sticky: true });
-    line.on("click", () => selectMetroRoute(city, route,{fit:true}));
+    line.on("click", () => {
+      if (LineFocus.trackHitRadius(state.map.getZoom())) selectMetroRoute(city, route,{fit:true});
+    });
     line.addTo(routesLayer);
     const facts=AtlasPrefs.classify({...route.tags,route:route.type,...(construction?{state:"construction"}:{})},true);
     routeLines.push({line,route,construction,parts,identity:MetroHandoff.identity(facts,[route.id])});
@@ -935,6 +937,7 @@ function drawMetro() {
         className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
       }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${record.city || ""} · ${route.name || "城市轨道"}`}), { sticky: true });
       line.on("click",async e=>{
+        if (!LineFocus.trackHitRadius(state.map.getZoom())) return;
         RailMapLayers.inspect(route.name,route.tags,false,e.latlng,{parts:validParts,overview:true,
           styleForPart:()=>({color:construction || AtlasPrefs.value.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) ? line.options.color : null,dashArray:line.options.dashArray})});
         const focus=LineFocus.active,city=state.metroCities.find(c=>c.name===record.city);
@@ -1170,6 +1173,7 @@ function selectMetroStation(city, station, { pan = true } = {}) {
 }
 
 function selectMetroRoute(city, route, {fit = false} = {}) {
+  $("infoPanel").hidden = false;
   LineFocus.metro(city,route,{fit});
   state.selectedMapFeature=null;
   state.selectedMetroRoute = { city, route };
@@ -1192,7 +1196,6 @@ function selectMetroRoute(city, route, {fit = false} = {}) {
     const station = state.metroDetails.get(city.id)?.stations.find(item => item.id === button.dataset.metroStop);
     if (station) selectMetroStation(city, station);
   }));
-  $("infoPanel").hidden = false;
   refreshMetroDetailVisibility();
 }
 
@@ -1990,12 +1993,33 @@ function setupPanels() {
   $("exportPassport").addEventListener("click", exportPassportJSON);
   $("exportPassportCSV").addEventListener("click", exportPassportCSV);
   $("downloadPostcard").addEventListener("click", downloadPostcard);
+  $("postcardRandomize").addEventListener("click", () => {
+    globalThis.RailwayTicketFace?.randomizeFields?.({ onlyEmpty: true });
+    drawPostcard();
+  });
   $("postcardDate").value=todayLocal();
   ["postcardFrom", "postcardTo", "postcardTrain", "postcardDate"].forEach(id => {
     $(id).addEventListener("input", refreshPostcard);
     $(id).addEventListener("change", refreshPostcard);
   });
-  for (const id of ["postcardCaption","postcardStyle"]) $(id).oninput=drawPostcard;
+  for (const id of [
+    "postcardTicketNo","postcardPassenger","postcardIdNo","postcardPrice",
+    "postcardDeparture","postcardArrival","postcardCar","postcardSeat",
+    "postcardSeatClass","postcardGate","postcardMark","postcardIssuer",
+    "postcardFromLatin","postcardToLatin","postcardBottomNo","postcardNotice",
+    "postcardNotice2","postcardWatermark","postcardCaption","postcardStyle"
+  ]) {
+    $(id).addEventListener("input", drawPostcard);
+    $(id).addEventListener("change", drawPostcard);
+  }
+  $("postcardRoute").addEventListener("input", () => {
+    postcardRouteSource = "manual";
+    drawPostcard();
+  });
+  $("postcardRoute").addEventListener("change", () => {
+    postcardRouteSource = "manual";
+    drawPostcard();
+  });
   $("historyDate").addEventListener("input", renderHistoryEvent);
   $("nextQuiz").addEventListener("click", nextQuiz);
   $("quizChoices").addEventListener("click", chooseQuizAnswer);
@@ -2466,7 +2490,7 @@ async function importPassportFile(event) {
   }
 }
 
-let cardRequest=0, cardRoute=null, cardContext=null;
+let cardRequest=0, cardRoute=null, cardContext=null, postcardRouteSource="auto";
 async function passengerSection({train,date,from,to,timetable,departure}) {
   if (!train || !date || !from || !to) throw Error("请补全车次、乘车日期和上下车站。");
   const names=RailLibrary.trainNames(train.trim().toUpperCase()), candidates=[];
@@ -2498,10 +2522,16 @@ async function passengerSection({train,date,from,to,timetable,departure}) {
 function fillPostcard(journey,timetable) {
   cardContext={timetable,departure:journey.departure,train:journey.train,from:journey.from,date:journey.date};
   for (const field of ["From","To","Train","Date"]) $("postcard"+field).value=journey[field.toLowerCase()]||"";
+  postcardRouteSource="auto";
+  $("postcardRoute").value=routeDescription(timetable);
   $("postcardCaption").value=journey.note || "山川迢迢，来日方长。";
   setExperiencePage("postcard");
 }
+function routeDescription(route) {
+  return unique((route?.routing?.edges || []).map(edge => edge?.lineName)).join(" · ");
+}
 async function refreshPostcard() {
+  if (postcardRouteSource==="auto") $("postcardRoute").value="";
   const serial=++cardRequest, from=$("postcardFrom").value.trim(), to=$("postcardTo").value.trim(),
     train=$("postcardTrain").value.trim().toUpperCase(), date=$("postcardDate").value;
   cardRoute=null; $("downloadPostcard").disabled=true;
@@ -2514,7 +2544,11 @@ async function refreshPostcard() {
     const route=await passengerSection({train,date,from,to,timetable:ctx?.timetable,departure:ctx?.from===from ? ctx.departure : null});
     const hasGeography=await geography;
     if(serial!==cardRequest) return;
-    cardRoute=route; $("downloadPostcard").disabled=false;
+    cardRoute=route;
+    if (postcardRouteSource==="auto") {
+      $("postcardRoute").value=routeDescription(route);
+    }
+    $("downloadPostcard").disabled=false;
     status.textContent=`${from} → ${to} · ${route.stops.length} 站 · ${route.source?.title || "随包轨迹"}${cardContextNote(hasGeography)}`;
   } catch(error) { if(serial===cardRequest) status.textContent=error.message; }
   if(serial===cardRequest) drawPostcard();
@@ -2526,80 +2560,19 @@ function drawPostcard() {
   const context = canvas.getContext("2d");
   if (!context) return;
   const width = 640, height = 360;
-  context.setTransform(canvas.width/width,0,0,canvas.height/height,0,0);
   const style = $("postcardStyle").value;
-  const palettes = {
-    red: { paper: "#f5d5cc", ink: "#372727", accent: "#a6313c" },
-    blue: { paper: "#c7dce8", ink: "#142d3c", accent: "#28678c" },
-    map: { paper: "#e8eee9", ink: "#172d2b", accent: "#267c73" },
-    paper:{paper:"#f3c3b8",ink:"#2e1a1c",accent:"#902b38"}, magnetic:{paper:"#c3deed",ink:"#19252f",accent:"#345b77"},
-    voucher:{paper:"#e4eced",ink:"#232d31",accent:"#5a7379"}, night:{paper:"#182d3d",ink:"#f6e9ca",accent:"#ffc87a"},
-    ink:{paper:"#f2efe7",ink:"#272824",accent:"#454840"}
-  };
-  const palette = palettes[style] || palettes.red;
-  if (["paper","magnetic","voucher"].includes(style)) {drawTicketFace(context,style,palette,cardRoute);return;}
-  if (["map","night","ink"].includes(style)) {
-    const c=context;
-    c.save();c.fillStyle=palette.paper;c.fillRect(0,0,width,height);
-    c.fillStyle=palette.ink;c.font='600 24px "Songti SC",serif';
-    c.fillText(`${$("postcardFrom").value || "出发站"} → ${$("postcardTo").value || "到达站"}`,25,37,width-169);
-    c.textAlign="right";c.font="600 17px monospace";c.fillText($("postcardTrain").value,width-25,35,110);c.textAlign="left";
-    c.strokeStyle=palette.accent+"66";c.lineWidth=.75;c.strokeRect(22,51,width-44,height-115);
-    if(cardRoute) CardMap.draw(c,cardRoute,[23,52,width-46,height-117],palette.accent,palette.paper,3);
-    else {c.font="14px sans-serif";c.fillText("乘车区间待匹配",36,height/2);}
-    c.fillStyle=palette.ink;c.font='16px "Songti SC",serif';c.fillText($("postcardCaption").value,25,height-36,width-145);
-    c.font="12px monospace";c.textAlign="right";c.fillText($("postcardDate").value,width-25,height-36);
-    c.font="10px sans-serif";c.textAlign="left";
-    c.fillText(CardMap.hasContours?"乘车 ━　国界 ━·━　省界 ···":"乘车 ━",25,height-12);
-    c.textAlign="right";c.fillText(cardMapCredit(),width-25,height-12,width-218);
-    c.restore();return;
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
+  if (globalThis.RailwayTicketFace?.draw) {
+    globalThis.RailwayTicketFace.draw(context, style, undefined, cardRoute);
+    return;
   }
-  context.lineWidth=1;
-  context.fillStyle = palette.paper;
+  context.fillStyle = "#f3d6d0";
   context.fillRect(0, 0, width, height);
-  context.strokeStyle = `${palette.accent}20`;
-  for (let row = 0; row < 12; row += 1) {
-    context.beginPath();
-    for (let x = 0; x <= width; x += 8) {
-      const y = row * 38 + Math.sin(x / 28 + row) * 7;
-      if (!x) context.moveTo(x, y); else context.lineTo(x, y);
-    }
-    context.stroke();
-  }
-  context.fillStyle = palette.accent;
-  context.font = "600 18px Menlo, monospace";
-  context.fillText("RAILWAY ATLAS", 36, 42);
-  context.textAlign = "right";
-  context.font = '600 18px "Songti SC","SimSun",serif';
-  context.fillText("铁道漫游", width - 36, 42);
-  context.textAlign = "left";
-  context.fillStyle = palette.ink;
-  context.font = `600 38px ${style==="paper" || style==="red" ? '"Songti SC","SimSun",serif' : '"Heiti SC","Microsoft YaHei",sans-serif'}`;
-  context.fillText(($("postcardFrom").value || "出发站").slice(0, 10), 36, 128);
-  context.fillStyle = palette.accent;
-  context.font = "26px sans-serif";
-  context.fillText("→", width / 2 - 13, 128);
-  context.fillStyle = palette.ink;
-  context.textAlign = "right";
-  context.font = `600 38px ${style==="paper" || style==="red" ? '"Songti SC","SimSun",serif' : '"Heiti SC","Microsoft YaHei",sans-serif'}`;
-  context.fillText(($("postcardTo").value || "到达站").slice(0, 10), width - 36, 128);
-  context.textAlign = "left";
-  context.font = "20px Menlo, monospace";
-  context.fillText($("postcardTrain").value || "车次", 36, 174);
-  if (cardRoute) {
-    CardMap.draw(context,cardRoute,[36,193,width-72,105],palette.accent,palette.paper,3);
-  } else {
-    context.font="15px sans-serif"; context.fillText("乘车区间待匹配",36,245);
-  }
-  context.fillStyle = palette.ink;
-  context.font = "20px sans-serif";
-  const caption = $("postcardCaption").value || "一路山河，一程记忆。";
-  context.fillText(caption.slice(0, 38), 36, height - 42);
-  context.font = "13px sans-serif";
-  context.textAlign = "right";
-  context.fillText(`${$("postcardDate").value || ""} · 纪念设计`, width - 36, height - 42);
-  if (cardRoute) {context.font="10px sans-serif";context.fillText(cardMapCredit(),width-24,height-16,width-48);}
-  context.textAlign = "left";
+  context.fillStyle = "#a52d3b";
+  context.font = '600 18px "Songti SC", serif';
+  context.fillText("铁路漫游 · 纪念样张", 28, 38);
 }
 function cardMapCredit() {
   return `${CardMap.hasContours?"天地图 / 干旱区生态与资源科学数据中心 · ":""}Natural Earth · Jeremy Gao / © OpenStreetMap contributors`;

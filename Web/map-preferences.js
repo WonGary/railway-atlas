@@ -8,6 +8,19 @@ const AtlasPrefs = (() => {
   };
   const networks = {railway:"铁路",metro:"地铁",lightRail:"轻轨与单轨",tram:"有轨电车",industrial:"工业与专用铁路",narrowGauge:"窄轨",other:"其他轨道"};
   const minZoom = {urban:8,metro:8,lightRail:8,tram:8,freight:8,branch:8,industrial:9,narrowGauge:9,construction:10,disused:10,abandoned:10,service:15};
+  // Keep both native opacity keys. Old exports can be read without a migration.
+  const surfaceGroups = [
+    ["panelBackgroundOpacity", "panel", "工作区", 1],
+    ["inspectorBackgroundOpacity", "inspector", "要素栏与问答栏", 1],
+    ["topbarOpacity", "topbar", "顶部栏", .84],
+    ["playbackOpacity", "playback", "旅行播放栏", .88],
+    ["legendOpacity", "legend", "图例与缩放按钮", .88],
+    ["infoOpacity", "info", "地图信息浮窗与对话框", .88],
+    ["statusOpacity", "status", "地图状态、比例尺与版权条", .82],
+    ["noticeOpacity", "notice", "地图提示", .88]
+  ];
+  const surfaceDefaults = Object.fromEntries(surfaceGroups.map(([field,,,initial]) => [field,initial]));
+  const surfaceModes = {glass:"玻璃感（默认）",translucent:"半透明",text:"纯文字（无底色）"};
   const defaults = {
     automaticDetail:true,showsNationalMetroOverview:true,showsStations:true,showsStationLayouts:true,showsLabels:true,showsMetroColors:true,prioritizesUrbanTransit:false,
     showsStationOutlines:true,showsConcourses:true,showsPlatforms:true,showsPassengerPassages:true,showsPlatformNumbers:true,
@@ -15,14 +28,14 @@ const AtlasPrefs = (() => {
     categories:Object.keys(categories),networks:Object.keys(networks),forcedCategories:[],forcedNetworks:[],hiddenRoutes:[],
     metroWidthScale:1,railwayWidthScale:1,stationRadiusMultiplier:1.25,depotBrightness:.5,railwayPattern:true,viewportBuffer:.2,
     basemapDarkness:0,mapAppearance:"system",mode:"online",uiScale:1,panelWidth:320,inspectorWidth:380,panelSize:"medium",panelLayout:"floating",
-    inspectorLayout:"docked",panelVisible:false,panelBackgroundOpacity:1,inspectorBackgroundOpacity:1,statusVisible:true,
+    inspectorLayout:"docked",panelVisible:false,statusVisible:true,surfaceMode:"glass",surfaceGroupOpacity:1,...surfaceDefaults,
     assistantPresentation:"sidebar",statusX:0,statusY:0,focusColor:"#D45212"
   };
   const ranges = {metroWidthScale:[.5,2],railwayWidthScale:[.5,2],stationRadiusMultiplier:[.5,3],depotBrightness:[.1,1],
     viewportBuffer:[0,.5],basemapDarkness:[0,1],uiScale:[.75,1.6],panelWidth:[250,560],inspectorWidth:[200,560],
-    panelBackgroundOpacity:[0,1],inspectorBackgroundOpacity:[0,1],statusX:[-2000,2000],statusY:[-2000,2000]};
+    surfaceGroupOpacity:[0,1],...Object.fromEntries(surfaceGroups.map(([field]) => [field,[0,1]])),statusX:[-2000,2000],statusY:[-2000,2000]};
   const enums = {mode:["online","cached","offline"],mapAppearance:["system","light","dark"],panelSize:["small","medium","large"],panelLayout:["floating","docked"],
-    inspectorLayout:["floating","docked"],assistantPresentation:["sidebar","floating","window"]};
+    inspectorLayout:["floating","docked"],assistantPresentation:["sidebar","floating","window"],surfaceMode:Object.keys(surfaceModes)};
   const key = "railway-atlas-map-settings-v1";
   let p = {...defaults}, filter = "";
   const make = (tag, text) => Object.assign(document.createElement(tag), text == null ? {} : {textContent:text});
@@ -48,6 +61,8 @@ const AtlasPrefs = (() => {
     const saved = readStored(key,null);
     try { p = validated(saved || {}); } catch { p = {...defaults}; }
     if (!saved && !readStored(STORAGE.layers,null)) p.mapAppearance = "dark";
+    applySurface();
+    MapWindows.setup();
   }
   function persist() { writeStored(key,p); }
   function classify(t, urbanHint = false) {
@@ -99,12 +114,18 @@ const AtlasPrefs = (() => {
     for (const d of state.metroDetails.values()) for (const r of d.routes) if (!resolvedRoutes.has(r.id)) resolvedRoutes.set(r.id,routeKey(d.name,r));
   }
   const visibleRoute = (city,r) => !p.hiddenRoutes.includes(resolvedRoutes.get(r.id) || routeKey(city,r));
+  function applySurface() {
+    const root = document.documentElement;
+    root.dataset.uiSurfaceMode = p.surfaceMode;
+    root.toggleAttribute("data-apple-ui", /Mac|iPad|iPhone|iPod/i.test(navigator.platform));
+    for (const [field,group] of surfaceGroups) root.style.setProperty(`--ui-alpha-${group}`, p[field] * p.surfaceGroupOpacity);
+  }
   function apply(redraw=true) {
     const root = document.documentElement.style, shell = document.querySelector(".app-shell");
     root.setProperty("--left-size",p.panelWidth+"px"); root.setProperty("--right-size",p.inspectorWidth+"px");
-    root.setProperty("--ui-scale",p.uiScale); root.setProperty("--left-alpha",p.panelBackgroundOpacity);
-    root.setProperty("--right-alpha",p.inspectorBackgroundOpacity); root.setProperty("--left-height",({small:"43%",medium:"70%",large:"96%"})[p.panelSize]);
+    root.setProperty("--ui-scale",p.uiScale); root.setProperty("--left-height",({small:"43%",medium:"70%",large:"96%"})[p.panelSize]);
     shell.dataset.leftLayout=p.panelLayout; shell.dataset.rightLayout=p.inspectorLayout;
+    applySurface();
     const status=document.querySelector(".map-status");status.hidden=!p.statusVisible;
     if (!state.map) return;
     $("basemapModeNote").hidden=p.mode==="online";
@@ -117,7 +138,8 @@ const AtlasPrefs = (() => {
   }
   function change(k,v,redraw=true) {
     p[k]=v;persist();
-    if (k==="focusColor") {
+    if (k==="surfaceMode" || Object.hasOwn(surfaceDefaults,k)) applySurface();
+    else if (k==="focusColor") {
       recolorJourney();LineFocus.refresh();
       for (const b of document.querySelectorAll("[data-focus-ink]")) b.setAttribute("aria-pressed",b.dataset.focusInk===v.toUpperCase());
       const picker=$("pref-focusColor");if(picker)picker.value=v;
@@ -191,6 +213,51 @@ const AtlasPrefs = (() => {
     search.oninput=()=>{filter=search.value;routeList();};lines.append(search);
     button(lines,"显示全部城市线路",()=>{p.hiddenRoutes=[];p.categories=[...new Set([...p.categories,"urban"])];p.networks=[...new Set([...p.networks,"metro","lightRail","tram"])];persist();controls();apply();});
     const list=make("div");list.id="routeVisibility";lines.append(list);routeList();
+    const surfaces=section(s,"surfaces","浮窗外观");
+    select(surfaces,"surfaceMode","表面模式",surfaceModes);
+    const opacityControls=make("fieldset");
+    opacityControls.className="surface-ranges";
+    opacityControls.append(make("legend","背景透明度（100%为全透明）"));
+    const syncRanges=[];
+    const allLabel=make("label","全部地图界面"), allInput=make("input"), allOutput=make("output");
+    Object.assign(allInput,{id:"pref-surfaceGroupOpacity",type:"range",min:0,max:100,step:1});
+    const syncAll=()=>{
+      allInput.value=String(Math.round((1-p.surfaceGroupOpacity)*100));
+      allOutput.value=allInput.value+"%";
+      allInput.setAttribute("aria-valuetext",allOutput.value);
+    };
+    allInput.oninput=()=>{
+      p.surfaceGroupOpacity=1-allInput.valueAsNumber/100;
+      syncAll();applySurface();
+    };
+    allInput.onchange=persist;
+    syncAll();allLabel.append(allOutput,allInput);opacityControls.append(allLabel);
+    for (const [field,,title] of surfaceGroups) {
+      const row=make("label",title), input=make("input"), output=make("output");
+      Object.assign(input,{id:"pref-"+field,type:"range",min:0,max:100,step:1});
+      row.htmlFor=input.id;
+      output.setAttribute("for",input.id);
+      function sync() {
+        input.value=String(Math.round((1-p[field])*100));
+        output.value=input.value+"%";
+        input.setAttribute("aria-valuetext",output.value);
+      }
+      input.oninput=()=>{
+        p[field]=1-input.valueAsNumber/100;
+        sync();
+        applySurface();
+      };
+      input.onchange=persist;
+      sync();syncRanges.push(sync);
+      row.append(output,input);opacityControls.append(row);
+    }
+    surfaces.append(opacityControls);
+    button(surfaces,"恢复浮窗默认外观",()=>{
+      Object.assign(p,surfaceDefaults,{surfaceMode:defaults.surfaceMode});
+      p.surfaceGroupOpacity=defaults.surfaceGroupOpacity;
+      $("pref-surfaceMode").value=p.surfaceMode;
+      syncAll();syncRanges.forEach(sync=>sync());applySurface();persist();
+    });
     const source=section(s,"source","地图模式");select(source,"mode","数据来源",{online:"在线与本机缓存",cached:"仅随包与本机缓存",offline:"仅区域地图"});
     const render=section(s,"render","地图绘制");
     button(render,"调整底图与站点",openBasemap);
@@ -207,9 +274,9 @@ const AtlasPrefs = (() => {
     const ui=section(s,"ui","界面与面板",false);range(ui,"uiScale","界面缩放",.05,false);
     toggle(ui,"panelVisible","桌面打开地图时展开工作区",false);
     select(ui,"panelLayout","左栏布局",{floating:"浮窗",docked:"贴边分屏"});select(ui,"panelSize","左侧浮窗高度",{small:"小",medium:"中",large:"大"});
-    range(ui,"panelWidth","左栏宽度",1,false);range(ui,"panelBackgroundOpacity","左栏浮窗不透明度",.05,false);
+    range(ui,"panelWidth","左栏宽度",1,false);
     select(ui,"inspectorLayout","右栏布局",{floating:"浮窗",docked:"贴边分屏"});range(ui,"inspectorWidth","右栏宽度",1,false);
-    range(ui,"inspectorBackgroundOpacity","右栏浮窗不透明度",.05,false);toggle(ui,"statusVisible","在图例中显示地图状态",false);
+    toggle(ui,"statusVisible","在图例中显示地图状态",false);
     select(ui,"assistantPresentation","地图问答位置",{sidebar:"右侧面板",floating:"地图浮窗",window:"独立窗口"});
   }
   function openBasemap(){
@@ -220,6 +287,7 @@ const AtlasPrefs = (() => {
   }
   function setup(){
     controls();apply(false);
+    MapWindows.attachMap(state.map);
     const legend=$("speedLegend");
     for (const key of ["speed350","speed300","speed250","speed200","speed160","below160","unknown"]) {
       const [name,color]=categories[key], row=make("span"), line=make("i");
@@ -249,4 +317,117 @@ const AtlasPrefs = (() => {
     };
   }
   return {get value(){return p;},categories,visible,classify,restore,setup,routeList,visibleRoute,routeKey,indexRoutes,change,apply};
+})();
+
+// Fold only the presentation. The app owns actual closure, selection and playback.
+const MapWindows = (() => {
+  const folded = new Map();
+  const buttonFor = el => el.querySelector("[data-fold]");
+  function adjustTopbar(el, foldedState) {
+    if (el.id !== "mapTopbar") return;
+    if (foldedState) document.documentElement.style.setProperty("--bar-height", "0px");
+    else document.documentElement.style.removeProperty("--bar-height");
+  }
+  function forget(el) {
+    const chip=folded.get(el);
+    if (!chip) return;
+    folded.delete(el);chip.remove();
+    el.removeAttribute("data-ui-folded");
+    adjustTopbar(el, false);
+    buttonFor(el)?.setAttribute("aria-expanded","true");
+  }
+  function expand(el) {
+    forget(el);
+    if (el instanceof HTMLDialogElement && !el.open) el.showModal();
+    buttonFor(el)?.focus({preventScroll:true});
+  }
+  function fold(el) {
+    if (folded.has(el)) return;
+    const name=el.dataset.windowName, chip=document.createElement("button");
+    chip.type="button";chip.textContent=name;
+    chip.className="ui-restore";
+    chip.setAttribute("aria-label","展开"+name);
+    chip.setAttribute("aria-controls",el.id);
+    chip.setAttribute("aria-expanded","false");
+    chip.onclick=()=>expand(el);
+    folded.set(el,chip);
+    $("uiShelf").append(chip);
+    buttonFor(el).setAttribute("aria-expanded","false");
+    el.setAttribute("data-ui-folded","");
+    adjustTopbar(el, true);
+    // Closing the native top layer releases its backdrop and focus trap; form values stay in the DOM.
+    if (el instanceof HTMLDialogElement) el.close();
+    chip.focus({preventScroll:true});
+  }
+  function bind(el) {
+    const button=buttonFor(el);
+    button.type="button";
+    button.setAttribute("aria-controls",el.id);
+    button.setAttribute("aria-expanded","true");
+    button.title="收起"+el.dataset.windowName;
+    button.setAttribute("aria-label",button.title);
+    button.onclick=event=>{event.stopPropagation();fold(el);};
+  }
+  function setup() {
+    for (const el of document.querySelectorAll("[data-window-name]")) bind(el);
+    const transientHidden = el => {
+      if (el.classList.contains("map-notice-window")) return el.querySelector("p")?.hidden ?? true;
+      if (el.id === "appToastWindow") return $("appToast")?.hidden ?? true;
+      return false;
+    };
+    // Discard a restore chip if the app closes or reopens the underlying surface.
+    const observer=new MutationObserver(()=>{
+      for (const el of folded.keys()) {
+        if (el.hidden || el.matches("dialog[open]") ||
+            transientHidden(el) ||
+            (el.id==="workspacePanel" && !el.closest(".workspace-open"))) forget(el);
+      }
+    });
+    const observe=(el,attr)=>observer.observe(el,{attributes:true,attributeFilter:[attr]});
+    for (const el of document.querySelectorAll("[data-window-name]")) {
+      observe(el,el instanceof HTMLDialogElement ? "open" : "hidden");
+      if (el.classList.contains("map-notice-window")) observe(el.querySelector("p"),"hidden");
+      if (el.id === "appToastWindow") observe($("appToast"),"hidden");
+    }
+    observe(document.querySelector(".app-shell"),"class");
+    for (const id of ["toggleWorkspace","toggleInfo","toggleAssistant"]) {
+      const trigger=$(id), el=$(trigger.getAttribute("aria-controls"));
+      trigger.addEventListener("click",event=>{
+        if (!folded.has(el)) return;
+        event.stopImmediatePropagation();expand(el);
+      },true);
+    }
+  }
+  function addFoldButton(el, id, title) {
+    el.id=id;el.dataset.windowName=title;
+    el.dataset.uiSurface=id==="mapScale" ? "status" : "legend";
+    const button=document.createElement("button");
+    button.className="collapse-button";button.dataset.fold="";button.textContent="−";
+    el.append(button);bind(el);
+  }
+  function attachMap(map) {
+    const zoom=map.zoomControl?.getContainer();
+    if (zoom) addFoldButton(zoom,"mapZoomTools","缩放控件");
+    const scale=map.getContainer().querySelector(".leaflet-control-scale");
+    if (scale) {
+      addFoldButton(scale,"mapScale","比例尺");
+      L.DomEvent.disableClickPropagation(scale);
+    }
+    let popupId=0;
+    map.on("popupopen",({popup})=>{
+      const el=popup.getElement();
+      [el,el?.querySelector(".leaflet-popup-content-wrapper"),el?.querySelector(".leaflet-popup-tip")]
+        .filter(Boolean).forEach(part=>part.setAttribute("data-ui-surface","info"));
+      if (!buttonFor(el)) addFoldButton(el,"mapPopup"+(++popupId),"地点资料");
+    });
+    map.on("popupclose",({popup})=>forget(popup.getElement()));
+    // Docked panels and the restore shelf change the actual map viewport size.
+    // Painting a slider has no effect on this observer.
+    if (typeof ResizeObserver==="function") {
+      const observer=new ResizeObserver(()=>map.invalidateSize({pan:false,debounceMoveend:true}));
+      observer.observe(map.getContainer());
+      map.once("unload",()=>observer.disconnect());
+    }
+  }
+  return {setup,attachMap};
 })();

@@ -18,7 +18,7 @@ Claude 地址必须对应 Key 的签发服务。使用中转服务时，填写�
 | `assistant.claude.authentication` | `apiKey` 使用 x-api-key；`bearer` 使用 Authorization: Bearer，按网关要求选择 |
 | `assistant.claude.apiVersion` | anthropic-version，默认 `2023-06-01`；可按服务商要求修改 |
 | `assistant.claude.webSearch` / `webFetch` | 默认 `false`；分别启用 Claude Messages 服务端联网搜索与网页读取。仅在兼容的 Anthropic Messages API 服务启用；工具费用由服务商规则决定 |
-| `assistant.compatible` | DeepSeek、豆包和自定义服务各自的 `endpoint`、`model`、`maxOutputTokens` |
+| `assistant.compatible` | DeepSeek、豆包和自定义服务各自的 `endpoint`、`model`、`maxOutputTokens`；配置文件可以只写需要覆盖的服务，例如 `assistant.compatible.deepseek.model` |
 | `assistant.models` | 模型条目数组：UUID `id`、服务 `provider`、模型 ID `name`、显示名 `label`、备注 `note` |
 | `assistant.presentation` | macOS 显示位置：`sidebar` 右侧栏、`floating` 地图内浮窗、`window` 独立窗口（默认） |
 
@@ -85,6 +85,14 @@ Claude 在对话页及设置中有独立的“联网搜索”和“读取网页�
 | `interface.inspectorVisible` / `inspectorWidth` | 右侧面板可见性 / 基准宽度 200–560 点；浮窗、分屏均可拖动左缘调宽 |
 | `interface.inspectorLayout` | 右侧布局：`floating` 浮窗、`docked` 贴边分屏（默认） |
 | `interface.inspectorBackgroundOpacity` | 右侧浮窗玻璃背景不透明度，0–1，默认 1；独立于左侧。分屏时保留此值但使用实色背景 |
+| `interface.surfaceMode` | 面板表面：`glass` 玻璃、`translucent` 半透明、`textOnly` 仅文字。macOS 26 使用 `glassEffect`，其他版本和平台使用系统材质或透明背景 |
+| `interface.mapControlsOpacity` | 旧版地图控件统一背景不透明度，0–1，继续作为缺少细分字段的旧配置兼容值 |
+| `interface.topControlsOpacity` | 顶部地图工具栏背景不透明度，0–1，默认继承 `mapControlsOpacity` |
+| `interface.cornerControlsOpacity` | 右上角地图模式、缩放和全图按钮背景不透明度，0–1，默认继承 `mapControlsOpacity` |
+| `interface.bottomCounterOpacity` | 底部区段、车站计数和恢复按钮背景不透明度，0–1，默认继承 `mapControlsOpacity` |
+| `interface.playbackOpacity` | 沿线旅行和铁路时光机播放栏背景不透明度，0–1，默认继承 `mapControlsOpacity` |
+| `interface.statusBackgroundOpacity` | 地图状态卡背景不透明度，0–1，默认 1 |
+| `interface.topControlsVisible` / `bottomControlsVisible` / `experienceControlsVisible` | 顶部地图控件、底部地图控件和沿线旅行播放栏的可收起状态，默认显示；收起后保留恢复入口，播放任务继续运行 |
 | `interface.inspectorTab` | 右侧页签 `feature` 要素 / `assistant` GPT；点选线路或车站自动打开要素页 |
 | `interface.statusVisible` / `statusX` / `statusY` | 状态卡可见性 / 拖动偏移 |
 | `assistant` | API 端点、协议、模型、输出上限、联网搜索 |
@@ -103,7 +111,7 @@ Claude 在对话页及设置中有独立的“联网搜索”和“读取网页�
 
 宽度是界面缩放前的偏好值；实际显示时两侧共同分配空间，左侧至少 250 点、右侧至少 200 点（放大界面时最低宽度也相应增加），中间保留至少 `max(260, 280 × uiScale)` 点无遮挡地图。先缩窄面板；最低宽度仍放不下时，临时收起一侧，优先最近请求显示的面板。点选要素、打开 GPT 会优先右侧；地图顶部按钮可切换优先侧。浮窗还预留顶部工具栏、右侧缩放按钮和底部信息区；高度不足时临时收起。临时收起不会改写可见性、宽度、布局或左侧大小，扩大窗口后自动恢复。极窄窗口若连单侧最低宽度与地图都放不下，会临时收起两侧。
 
-旧配置通过现有递归 defaults 合并补入 `panelLayout: "floating"`、`inspectorLayout: "docked"` 及两个背景不透明度 `1`，无需修改配置版本；已有可见性、宽度、页签和大小保持原值。布局名称由 Codable 枚举验证，不透明度由 `validate()` 验证为有限的 0–1。未知字段、`null`、无效枚举或越界值沿用“拒绝整份应用并暂停写入”的行为。四个新字段已纳入 `ConfigurationStore.snapshot()` / `apply()`，继续使用现有自动保存、文件监视和原子重载路径。
+旧配置通过现有递归 defaults 合并补入 `panelLayout: "floating"`、`inspectorLayout: "docked"`、两个面板背景不透明度 `1`、`surfaceMode: "glass"`、地图控件背景不透明度 `1`、状态条背景不透明度 `1` 以及两个控件收起状态 `true`，无需修改配置版本；已有可见性、宽度、页签和大小保持原值。`assistant.compatible` 的服务配置按稀疏对象处理，`deepseek`、`doubao` 和 `custom` 只需写需要覆盖的字段，省略项使用各自默认值。布局和表面名称由 Codable 枚举验证，不透明度由 `validate()` 验证为有限的 0–1。未知字段、`null`、无效枚举或越界值沿用“拒绝整份应用并暂停写入”的行为。新增字段已纳入 `ConfigurationStore.snapshot()` / `apply()`，继续使用现有自动保存、文件监视和原子重载路径。左右面板的可见性字段同时作为浮窗的收起状态，设置入口可以恢复显示。
 
 站点与线路的尺寸使用地图逻辑点计算。站点颜色和归属不依靠尺寸匹配推定；附近轨道只用于没有线路关联时的宽度选择，不合并任何站点。界面字号缩放不会改变这组地图尺寸比例。
 

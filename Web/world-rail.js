@@ -115,7 +115,8 @@ const WorldRail = (() => {
     });
     const grid = new Grid({pane:"worldRail", minZoom:2, maxZoom:9, keepBuffer:1, attribution:credit});
     map.on("click", event => {
-      if (!map.hasLayer(grid) || event.sourceTarget !== map) return;
+      const radius = LineFocus.trackHitRadius(map.getZoom());
+      if (!radius || event.originalEvent?.atlasFeatureHit || !map.hasLayer(grid) || event.sourceTarget !== map) return;
       const z = Math.round(map.getZoom()), p = map.project(event.latlng, z);
       const x = Math.floor(p.x/size), y = Math.floor(p.y/size);
       const canvas = grid._tiles[`${x}:${y}:${z}`]?.el;
@@ -125,7 +126,8 @@ const WorldRail = (() => {
       ctx.resetTransform();
       let hit;
       if (ctx.isPointInPath(canvas.railClip, px, py, "evenodd")) {
-        for (const tolerance of [2, 5, 7]) {
+        const tileScale = map.getZoomScale(z,map.getZoom());
+        for (const tolerance of [2 * tileScale, 2 * radius * tileScale]) {
           ctx.lineWidth = tolerance;
           for (const [category, path] of [...canvas.bandPaths].reverse()) {
             if (category === "unknown" && canvas.speedMask && ctx.isPointInStroke(canvas.speedMask,px,py)) continue;

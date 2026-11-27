@@ -89,6 +89,9 @@ enum ExperienceValidation {
         let map = RailwayMapStore()
         map.mapMode = .offline
         map.statusVisible = false
+        let configuration = ConfigurationStore(
+            url: directory.appendingPathComponent("experience-config.json")
+        )
 
         let window = NSWindow(contentRect: CGRect(x: 100, y: 100, width: 1080, height: 830),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -181,7 +184,8 @@ enum ExperienceValidation {
         try require(stopPoint.map { RailTrackJourney.metres($0, futian) < 80 } ?? false,
                     "Futian dwell marker is not at the station")
         window.contentView = NSHostingView(rootView: MapScreen()
-            .environmentObject(map).environmentObject(AssistantStore()).environmentObject(Connectivity()))
+            .environmentObject(map).environmentObject(AssistantStore())
+            .environmentObject(Connectivity()).environmentObject(configuration))
         try await Task.sleep(for: .milliseconds(300))
         try require(map.experienceMarker == stopPoint && map.journeyPlayer.seconds == 979 * 60,
                     "paused train changed after rendering")
@@ -189,7 +193,7 @@ enum ExperienceValidation {
         window.contentView = NSHostingView(rootView: ZStack(alignment: .bottom) {
             AppleRailwayMap(store: map)
             MapExperienceControls(player: map.journeyPlayer).frame(width: 620).padding(40)
-        })
+        }.environmentObject(configuration))
         try await Task.sleep(for: .milliseconds(700))
         try require(map.experienceMarker == stopPoint, "Apple renderer changed the marker")
         report.append("POSITION Futian WGS84: \(map.experienceMarker!); displayed: \(map.alignment.display(map.experienceMarker!)); camera: \(map.region.center).")
@@ -198,7 +202,8 @@ enum ExperienceValidation {
         map.journeyPlayer.start(region)
         try require(map.historyMapActive && map.experienceLines.isEmpty, "initial history frame leaked current tracks")
         window.contentView = NSHostingView(rootView: MapScreen()
-            .environmentObject(map).environmentObject(AssistantStore()).environmentObject(Connectivity()))
+            .environmentObject(map).environmentObject(AssistantStore())
+            .environmentObject(Connectivity()).environmentObject(configuration))
         map.journeyPlayer.seek(Double(map.journeyPlayer.historyDates.firstIndex { $0 >= "1980-01-01" } ?? 1))
         let earlyCount = map.experienceLines.count
         try await Task.sleep(for: .milliseconds(300))

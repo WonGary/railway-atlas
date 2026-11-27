@@ -12,23 +12,28 @@
   <link rel="apple-touch-icon" href="./touch.png">
   <link rel="stylesheet" href="./vendor/leaflet.css">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./ticket-typography.css">
 </head>
 <body>
-  <header class="topbar">
+  <header id="mapTopbar" class="topbar" data-ui-surface="topbar" data-window-name="顶部栏">
     <div class="brand"><h1>铁道漫游</h1><span id="versionBadge">0.8.17</span></div>
     <div class="top-actions">
       <button id="toggleWorkspace" class="text-button" aria-controls="workspacePanel" title="打开图层与工作区">图层</button>
       <button id="homeMap" class="text-button" title="返回全国视野">全国</button>
       <button id="toggleInfo" class="text-button" aria-controls="infoPanel">要素</button>
       <button id="toggleAssistant" class="text-button" aria-controls="assistantPanel">问答</button>
+      <button class="collapse-button" data-fold type="button" aria-label="收起顶部栏">−</button>
     </div>
   </header>
 
   <main class="app-shell">
-    <aside id="workspacePanel" class="left-rail" aria-label="铁道漫游工作区">
+    <aside id="workspacePanel" class="left-rail" data-ui-surface="panel" data-window-name="工作区" aria-label="铁道漫游工作区">
       <div class="workspace-heading">
         <h2 id="workspaceTitle">地图图层</h2>
-        <button id="closeWorkspace" class="icon-button" title="关闭工作区" aria-label="关闭工作区">×</button>
+        <div class="header-actions">
+          <button id="minimizeWorkspace" class="collapse-button" data-fold type="button" aria-label="收起工作区">−</button>
+          <button id="closeWorkspace" class="icon-button" title="关闭工作区" aria-label="关闭工作区">×</button>
+        </div>
       </div>
       <nav class="workspace-nav" aria-label="工作区页面">
         <button class="workspace-tab selected" data-view="layers">图层</button>
@@ -138,10 +143,60 @@
           </section>
           <section class="experience-page" data-experience-page="postcard" hidden>
             <h3>制作旅程明信片</h3>
-            <label>出发站<input id="postcardFrom" type="text"></label>
-            <label>到达站<input id="postcardTo" type="text"></label>
-            <label>车次<input id="postcardTrain" type="text"></label>
-            <label>乘车日期<input id="postcardDate" type="date"></label>
+            <div class="two-fields">
+              <label>出发站<input id="postcardFrom" type="text"></label>
+              <label>到达站<input id="postcardTo" type="text"></label>
+            </div>
+            <div class="two-fields">
+              <label>车次<input id="postcardTrain" type="text"></label>
+              <label>乘车日期<input id="postcardDate" type="date"></label>
+            </div>
+            <details class="postcard-fields" open>
+              <summary>票面字段（可手填或填充空白样张）</summary>
+              <div class="two-fields">
+                <label>票号<input id="postcardTicketNo" type="text" placeholder="SAMPLE-"></label>
+                <label>旅客<input id="postcardPassenger" type="text" placeholder="旅客姓名或样张姓名"></label>
+              </div>
+              <div class="two-fields">
+                <label>证件号<input id="postcardIdNo" type="text" placeholder="默认生成脱敏样张号"></label>
+                <label>票价<input id="postcardPrice" type="text" inputmode="decimal" placeholder="票价"></label>
+              </div>
+              <div class="two-fields">
+                <label>发车时间<input id="postcardDeparture" type="text" placeholder="09:00"></label>
+                <label>到达时间<input id="postcardArrival" type="text" placeholder="12:30"></label>
+              </div>
+              <div class="two-fields">
+                <label>车厢号<input id="postcardCar" type="text" placeholder="01"></label>
+                <label>座位号<input id="postcardSeat" type="text" placeholder="01A"></label>
+              </div>
+              <div class="two-fields">
+                <label>席别
+                  <select id="postcardSeatClass">
+                    <option value="">自动生成</option>
+                    <option>二等座</option>
+                    <option>一等座</option>
+                    <option>商务座</option>
+                    <option>硬卧</option>
+                    <option>软卧</option>
+                  </select>
+                </label>
+                <label>检票信息<input id="postcardGate" type="text" placeholder="检票：样张"></label>
+              </div>
+              <div class="two-fields">
+                <label>票面标记<input id="postcardMark" type="text" placeholder="学惠 / 样张"></label>
+                <label>售票处<input id="postcardIssuer" type="text" placeholder="铁路图鉴·纪念样张"></label>
+              </div>
+              <div class="two-fields">
+                <label>出发站拼音<input id="postcardFromLatin" type="text" placeholder="可留空"></label>
+                <label>到达站拼音<input id="postcardToLatin" type="text" placeholder="可留空"></label>
+              </div>
+              <label>径路说明<input id="postcardRoute" type="text" placeholder="可留空，自动使用径路或站点摘要"></label>
+              <label>底部编号<input id="postcardBottomNo" type="text" placeholder="SAMPLE-"></label>
+              <label>票面提示<input id="postcardNotice" type="text" placeholder="纪念样张 · 不可乘车或报销"></label>
+              <label>补充说明<input id="postcardNotice2" type="text" placeholder="仅供收藏，未生成真实官方信息"></label>
+              <label>水印文字<input id="postcardWatermark" type="text" placeholder="纪念图 / SAMPLE"></label>
+              <button id="postcardRandomize" class="text-button" type="button">填充空白样张字段</button>
+            </details>
             <label>寄语<textarea id="postcardCaption" rows="3">山川迢迢，来日方长。</textarea></label>
             <label>样式
               <select id="postcardStyle">
@@ -150,6 +205,9 @@
                 <option value="map">地图绿</option>
                 <option value="paper">旧式红纸票</option><option value="magnetic">蓝色磁介票</option>
                 <option value="voucher">铁路报销凭证纪念版</option>
+                <option value="red-replica">红色电子客票纪念样张</option>
+                <option value="blue-replica">蓝色电子客票纪念样张</option>
+                <option value="voucher-replica">电子报销联纪念样张</option>
                 <option value="night">夜行线路卡</option><option value="ink">黑白线路卡</option>
               </select>
             </label>
@@ -234,16 +292,24 @@
 
     <section class="map-stage">
       <div id="map" role="application" aria-label="铁道漫游地图"></div>
-      <div id="basemapCreditLine" hidden>
+      <div id="basemapCreditLine" data-ui-surface="status" data-window-name="© 地图来源" hidden>
         <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>
         <a id="basemapPartnerCredit" hidden></a>
         <a id="railStyleCredit" hidden href="https://creativecommons.org/licenses/by-sa/2.0/">CC BY-SA 2.0</a>
+        <button class="collapse-button" data-fold type="button" aria-label="收起地图来源">−</button>
       </div>
-      <div id="lineFocusBar" class="line-focus-bar" hidden><span aria-live="polite"><strong id="lineFocusName"></strong> <small id="lineFocusNote"></small></span><button id="clearLineFocus" type="button">恢复全图</button></div>
-      <div id="playbackBar" class="playback-bar" hidden>
+      <div id="lineFocusBar" class="line-focus-bar" data-ui-surface="info" data-window-name="高亮线路" hidden>
+        <span aria-live="polite"><strong id="lineFocusName"></strong> <small id="lineFocusNote"></small></span>
+        <button id="clearLineFocus" type="button">恢复全图</button>
+        <button id="minimizeLineFocus" class="collapse-button" data-fold type="button" aria-label="收起高亮线路">−</button>
+      </div>
+      <div id="playbackBar" class="playback-bar" data-ui-surface="playback" data-window-name="播放栏" hidden>
         <button id="playJourney" class="play-button" title="播放沿线旅行" aria-label="播放沿线旅行">▶</button>
         <div class="playback-main">
-          <div class="playback-title"><strong id="playbackTrain">G337</strong><span id="playbackClock">16:55</span><span id="playbackPhase">准备出发</span></div>
+          <div class="playback-title">
+            <strong id="playbackTrain">G337</strong><span id="playbackClock">16:55</span><span id="playbackPhase">准备出发</span>
+            <button id="minimizePlayback" class="collapse-button" data-fold type="button" aria-label="收起播放栏">−</button>
+          </div>
           <input id="journeyProgress" type="range" min="0" max="1" step="1" value="0" aria-label="沿线旅行进度">
         </div>
         <label class="follow-control"><input id="followJourney" type="checkbox" checked>跟随列车</label>
@@ -256,22 +322,32 @@
         <button id="closePlayback" class="icon-button small" title="关闭沿线旅行" aria-label="关闭沿线旅行">×</button>
       </div>
       <div class="map-notices">
-        <p id="baseLayerWarning" role="status" hidden></p>
-        <p id="mapDataError" role="alert" hidden></p>
+        <div id="baseLayerWarningWindow" class="map-notice-window" data-ui-surface="notice" data-window-name="底图提示">
+          <p id="baseLayerWarning" role="status" hidden></p>
+          <button class="collapse-button" data-fold type="button" aria-label="收起底图提示">−</button>
+        </div>
+        <div id="mapDataErrorWindow" class="map-notice-window" data-ui-surface="notice" data-window-name="地图错误">
+          <p id="mapDataError" role="alert" hidden></p>
+          <button class="collapse-button" data-fold type="button" aria-label="收起地图错误">−</button>
+        </div>
       </div>
-      <details class="map-legend">
-        <summary>图例</summary>
-        <div class="legend-sheet">
+      <details id="mapLegend" class="map-legend" data-window-name="地图图例">
+        <summary data-ui-surface="legend">图例</summary>
+        <div class="legend-sheet" data-ui-surface="legend">
+          <button class="collapse-button" data-fold type="button" aria-label="收起地图图例">−</button>
           <div id="speedLegend" aria-label="铁路限速"></div>
           <span><i class="legend-line metro-line"></i>城市轨道（按线路着色）</span>
           <span><i class="legend-line railway-construction"></i>铁路在建或规划</span>
           <span><i class="legend-line construction-line"></i>城轨在建或规划</span>
-          <div class="map-status"><span id="dataStatus">正在打开铁路地图…</span><span id="zoomStatus"></span></div>
+        </div>
+        <div id="mapStatus" class="map-status" data-ui-surface="status" data-window-name="地图状态">
+          <span id="dataStatus">正在打开铁路地图…</span><span id="zoomStatus"></span>
+          <button class="collapse-button" data-fold type="button" aria-label="收起地图状态">−</button>
         </div>
       </details>
     </section>
 
-    <aside id="infoPanel" class="right-panel info-panel" aria-label="要素信息" hidden>
+    <aside id="infoPanel" class="right-panel info-panel" data-ui-surface="inspector" data-window-name="要素信息" aria-label="要素信息" hidden>
       <div class="panel-header">
         <div>
           <span class="eyebrow">要素信息</span>
@@ -279,13 +355,14 @@
         </div>
         <div class="header-actions">
           <button id="favoriteStation" class="icon-button" title="收藏要素" aria-label="收藏要素" hidden>☆</button>
+          <button id="minimizeInfo" class="collapse-button" data-fold type="button" aria-label="收起要素信息">−</button>
           <button id="closeInfo" class="icon-button" title="关闭要素信息" aria-label="关闭要素信息">×</button>
         </div>
       </div>
       <div id="infoContent" class="panel-content">点地图上的线路或车站查看资料。</div>
     </aside>
 
-    <aside id="assistantPanel" class="right-panel assistant-panel" aria-label="地图问答" hidden>
+    <aside id="assistantPanel" class="right-panel assistant-panel" data-ui-surface="inspector" data-window-name="地图问答" aria-label="地图问答" hidden>
       <div class="panel-header">
         <div>
           <span class="eyebrow">地图问答</span>
@@ -295,6 +372,7 @@
           <button id="openAssistantHistory" class="icon-button" title="问答历史" aria-label="问答历史">↺</button>
           <button id="assistantMode" class="icon-button" title="切换侧栏与浮窗" aria-label="切换侧栏与浮窗">◫</button>
           <button id="popoutAssistant" class="icon-button" title="在独立窗口打开" aria-label="在独立窗口打开">↗</button>
+          <button id="minimizeAssistant" class="collapse-button" data-fold type="button" aria-label="收起地图问答">−</button>
           <button id="closeAssistant" class="icon-button" title="关闭地图问答" aria-label="关闭地图问答">×</button>
         </div>
       </div>
@@ -372,34 +450,43 @@
     </aside>
   </main>
 
-  <dialog id="assistantHistoryDialog" class="station-dialog">
+  <nav id="uiShelf" aria-label="已收起的浮窗"></nav>
+  <dialog id="assistantHistoryDialog" class="station-dialog" data-ui-surface="info" data-window-name="问答历史">
     <div class="dialog-header">
       <div><span class="eyebrow">本机保存</span><h2>问答历史</h2></div>
       <div class="header-actions">
         <button id="clearAssistantHistory" class="text-button">清空</button>
+        <button class="collapse-button" data-fold type="button" aria-label="收起问答历史">−</button>
         <button id="closeAssistantHistory" class="icon-button" title="关闭" aria-label="关闭">×</button>
       </div>
     </div>
     <div id="assistantHistoryList" class="dialog-content"></div>
   </dialog>
 
-  <dialog id="stationDialog" class="station-dialog">
+  <dialog id="stationDialog" class="station-dialog" data-ui-surface="info" data-window-name="经停表">
     <div class="dialog-header">
       <div>
         <span class="eyebrow">车站与线路</span>
         <h2 id="dialogTitle">车站资料</h2>
       </div>
-      <button id="closeDialog" class="icon-button" title="关闭" aria-label="关闭">×</button>
+      <div class="header-actions">
+        <button class="collapse-button" data-fold type="button" aria-label="收起经停表">−</button>
+        <button id="closeDialog" class="icon-button" title="关闭" aria-label="关闭">×</button>
+      </div>
     </div>
     <div id="dialogContent" class="dialog-content"></div>
   </dialog>
-  <dialog id="favoriteEditor" class="station-dialog">
+  <dialog id="favoriteEditor" class="station-dialog" data-ui-surface="info" data-window-name="编辑收藏">
+    <div class="dialog-header"><h2>编辑收藏</h2><button class="collapse-button" data-fold type="button" aria-label="收起编辑收藏">−</button></div>
     <div class="dialog-content">
-      <h2>编辑收藏</h2><label>城市<input id="favoriteCity"></label><label>标签<input id="favoriteLabels" placeholder="换乘，想去"></label>
+      <label>城市<input id="favoriteCity"></label><label>标签<input id="favoriteLabels" placeholder="换乘，想去"></label>
       <button id="saveFavoriteNote" class="primary-button">保存</button><button id="cancelFavoriteNote" class="text-button">取消</button>
     </div>
   </dialog>
-  <div id="appToast" class="app-toast" role="status" aria-live="polite" hidden></div>
+  <div id="appToastWindow" class="app-toast" data-ui-surface="notice" data-window-name="操作提示">
+    <div id="appToast" class="app-toast-message" role="status" aria-live="polite" hidden></div>
+    <button class="collapse-button" data-fold type="button" aria-label="收起操作提示">−</button>
+  </div>
 
   <script src="./vendor/leaflet.js"></script>
   <script src="./vendor/vector.js"></script>

@@ -1,0 +1,38 @@
+name: Refresh shared city packs
+on:
+  schedule:
+    - cron: "17 21 * * *"
+  workflow_dispatch:
+    inputs:
+      area:
+        description: "City catalogue ID or quarter-degree area ID (empty for the rotating batch)"
+        type: string
+        required: false
+concurrency:
+  group: shared-city-publisher
+  cancel-in-progress: false
+permissions:
+  contents: write
+  actions: write
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build from public map data
+        env:
+          REQUESTED_AREA: ${{ inputs.area }}
+        run: node Scripts/build-shared-city-packs.mjs "${REQUESTED_AREA:---batch}"
+      - name: Publish changed packs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add -- Web/data/city-packs
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Refresh public metro area packs'
+          git push origin HEAD:main
+          gh workflow run pages.yml --ref main

@@ -30,8 +30,8 @@ K551/K554 的当日径路有 198 个节点，触发了 35 秒等待上限。加�
 
 ## 安装记录
 
-macOS arm64 Release 0.5.0（6）曾在本机启动。安装副本通过 `codesign --verify --deep --strict`，可执行文件与候选包逐字节一致。安装路径属于本机测试环境，不作为发布目录约定。
+macOS arm64 Release 0.5.0（6）已从 `/Users/garywon/Applications/Railway Atlas.app` 启动。安装副本通过 `codesign --verify --deep --strict`，可执行文件与候选包逐字节一致。原工程 `dist/Railway Atlas.app` 继续指向这个位置。
 
-- build 5 备份保留在本机应用目录，仅用于回滚核对。
+- build 5 备份：`/Users/garywon/Applications/.railway-atlas-previous.XqJwIM/Railway Atlas.app`
 - 安装包可执行文件 SHA-256：`ebe9142be3ba8fc0f26e68d82106de9e4c09f67c06600653a85f91bf67452d49`
 - 随附轨道资源：457,449 字节，SHA-256 `7124ff64af4713bba8b76e36f6b765b78f3339f725df1c821649396169f56027`

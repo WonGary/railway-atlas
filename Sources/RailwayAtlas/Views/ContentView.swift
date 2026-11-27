@@ -11,6 +11,7 @@ struct ContentView: View {
     private var uiScale: Double { store.uiScale }
     @EnvironmentObject private var store: RailwayMapStore
     @EnvironmentObject private var assistant: AssistantStore
+    @EnvironmentObject private var configuration: ConfigurationStore
     @State private var showPanel = false
 
     var body: some View {
@@ -36,7 +37,9 @@ struct ContentView: View {
                             Image(systemName: "chevron.up")
                         }
                         .atlasPadding(12)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24 * uiScale))
+                        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
+                                         opacity: configuration.interfaceSettings.bottomCounterOpacity,
+                                         cornerRadius: 24 * uiScale)
                     }
                     .buttonStyle(.plain)
                     .atlasPadding(.horizontal, 12)
