@@ -21,8 +21,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk=Mobile/Android/app/build/outputs/apk/release/app-release-unsigned.apk
+          unsigned=Mobile/Android/app/build/outputs/apk/release/app-release-unsigned.apk
+          apk=Mobile/Android/app/build/outputs/apk/release/app-release.apk
           tools="$ANDROID_HOME/build-tools/35.0.0"
+          keystore="$RUNNER_TEMP/railway-atlas-test-signing.p12"
+          key_password='railway-atlas-test'
+          keytool -genkeypair -noprompt \
+            -keystore "$keystore" -storetype PKCS12 \
+            -storepass "$key_password" -keypass "$key_password" \
+            -alias railway-atlas-test -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname 'CN=Railway Atlas Test, OU=Railway Atlas, O=WonGary, C=CN'
+          "$tools/apksigner" sign \
+            --ks "$keystore" \
+            --ks-key-alias railway-atlas-test \
+            --ks-pass "pass:$key_password" \
+            --key-pass "pass:$key_password" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$apk" "$unsigned"
           "$tools/aapt" dump badging "$apk" | head -n 12
           "$tools/zipalign" -c 4 "$apk"
           unzip -p "$apk" assets/index.html | cmp Web/index.html -
@@ -33,6 +50,6 @@ jobs:
           unzip -p "$apk" assets/vendor/sqlite/sqlite3.wasm | cmp Web/vendor/sqlite/sqlite3.wasm -
       - uses: actions/upload-artifact@v4
         with:
-          name: android-unsigned
-          path: Mobile/Android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: android-signed-test
+          path: Mobile/Android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
