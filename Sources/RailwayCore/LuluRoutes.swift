@@ -245,7 +245,13 @@ extension RailTimetable {
             stops.indices.filter { $0 > a && stops[$0].station == to }.map { (a, $0) }
         }
         guard pairs.count == 1 else { throw DataError.invalid("乘车起终点未按顺序出现在该车次中，或同名停站有歧义") }
-        let (a, b) = pairs[0]
+        return try passengerSection(indices: pairs[0].0...pairs[0].1)
+    }
+
+    /// A station board identifies the occurrence even on a train that calls twice.
+    public func passengerSection(indices: ClosedRange<Int>) throws -> Self {
+        let (a, b) = (indices.lowerBound, indices.upperBound)
+        guard a >= 0, a < b, b < stops.count else { throw DataError.invalid("乘车站序超出时刻表") }
         guard let departure = stops[a].departure, stops[b].arrival != nil else {
             throw DataError.invalid("乘车起终点缺少到发时刻")
         }

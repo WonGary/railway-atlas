@@ -22,7 +22,7 @@ public actor NationalJourneyPaths {
         }
     }
     private struct Row: Decodable {
-        let id: String, c: Int, s: [[Int?]], p: [Int], a: [Alias], r: String?
+        let id: String, c: Int, s: [[Int?]], p: [Int], k: [Int]?, a: [Alias], r: String?
     }
     private struct Group: Decodable {
         let paths: [String]
@@ -63,7 +63,7 @@ public actor NationalJourneyPaths {
         let row: Row, timetable: RailTimetable, group: Group, first: Int, last: Int
     }
     private func matching(_ train: String, date: String, expected: RailTimetable?, from: String?, to: String?,
-                          boarding: Bool, departure: String?) throws -> Match? {
+                          boarding: Bool, departure: String?, trip: String? = nil) throws -> Match? {
         guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("index.json").path) else { return nil }
         let index = try loadIndex(), numbers = LuluRouteDatabase.trainNames(train)
         let keys = Set(numbers.flatMap { index.lookup[$0] ?? [] })
@@ -88,6 +88,7 @@ public actor NationalJourneyPaths {
             var seen = Set<String>()
             for number in numbers {
                 for (primary, row) in group.byNumber[number] ?? [] where seen.insert(row.id).inserted {
+                    if let trip, trip != row.id { continue }
                     if let signature, row.r != signature { continue }
                     let stops: [RailTimetable.Stop] = row.s.compactMap { call in
                         guard call.count == 3, let i = call[0], index.names.indices.contains(i) else { return nil }
@@ -121,8 +122,44 @@ public actor NationalJourneyPaths {
     public func journey(_ input: RailTimetable, from: String? = nil, to: String? = nil) throws -> RailTrackJourney? {
         guard let match = try matching(input.train,date:input.serviceDate,expected:input,from:from,to:to,boarding:false,departure:nil) else { return nil }
         let table = try (from != nil && to != nil) ? input.passengerSection(from:from!,to:to!) : input
+        return try geometry(match, table: table, indices: match.first..<match.last)
+    }
+
+    public struct InspectedLeg: Sendable {
+        public let points: [Coordinate]
+        public let kind: Int?
+        public let issue: String?
+    }
+
+    /// Match the dated trip once. Preserve its original vertices and each missing interval.
+    public func inspectionLegs(_ table: RailTimetable) throws -> [InspectedLeg]? {
+        guard let match = try matching(table.train, date: table.serviceDate, expected: table, from: nil,
+                                       to: nil, boarding: false, departure: nil) else { return nil }
+        return try match.row.p.enumerated().map { i, index in
+            try Task.checkCancellation()
+            let kind = match.row.k.flatMap { $0.indices.contains(i) ? $0[i] : nil }
+            guard match.group.paths.indices.contains(index) else {
+                return InspectedLeg(points: [], kind: kind, issue: nil)
+            }
+            do { return InspectedLeg(points: try Self.decode(match.group.paths[index], densify: false), kind: kind, issue: nil) }
+            catch { return InspectedLeg(points: [], kind: kind, issue: error.localizedDescription) }
+        }
+    }
+
+    /// A dated board row and ordered call indices identify the boarded section.
+    public func relaySection(train: String, origin: String, trip: String, indices: ClosedRange<Int>) throws -> (RailTimetable, RailTrackJourney) {
+        guard let match = try matching(train, date: origin, expected: nil, from: nil, to: nil,
+                                       boarding: false, departure: nil, trip: trip) else {
+            throw DataError.invalid("全国径路库没有这份排图")
+        }
+        let table = try match.timetable.passengerSection(indices: indices)
+        return (table, try geometry(match, table: table, indices: indices.lowerBound..<indices.upperBound))
+    }
+
+    private func geometry(_ match: Match, table: RailTimetable, indices: Range<Int>) throws -> RailTrackJourney {
+        let input = match.timetable
         var legs: [[Coordinate]] = []
-        for i in match.first..<match.last {
+        for i in indices {
             try Task.checkCancellation()
             let path = match.row.p[i]
             guard match.group.paths.indices.contains(path) else {

@@ -1,5 +1,5 @@
 const VERSION = "0.8.17";
-const SHELL = `railway-atlas-web-${VERSION}-r9`;
+const SHELL = `railway-atlas-web-${VERSION}-r10`;
 // Retain immutable track, station and timetable chunks. City projections are versioned below.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
@@ -11,6 +11,7 @@ const coreFiles = [
   "map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js",
   "world-rail.js","packed-rail.js","station-layout-layer.js","data/station-layouts.js",
   "rail-games.js","games/outlines.json","history-network.js","run-info.js","route-inspector.js","data/history-network/index.json",
+  "journey-guide.js","station-directory/journey-guide-core.js","station-directory/journey-places.json",
   "data/history-network/beijing.json","data/history-network/hongkong.json","data/history-network/jinan.json",
   "data/history-network/macao.json","data/history-network/qingdao.json","data/history-network/tokyo.json",
   "data/railway-experience-corridors.json","data/railway-experience-routes.json","data/railway-experience-timetables.json",

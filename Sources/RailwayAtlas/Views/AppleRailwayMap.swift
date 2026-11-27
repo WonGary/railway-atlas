@@ -68,6 +68,8 @@ struct AppleRailwayMap: PlatformMapRepresentable {
 
     private func updateMap(_ map: MKMapView, context: Context) {
         let coordinator = context.coordinator
+        let allowsZoom = !store.journeyPlayer.holdsZoom
+        if map.isZoomEnabled != allowsZoom { map.isZoomEnabled = allowsZoom }
         coordinator.onMapAction = onMapAction ?? store.mapActionHandler
         if coordinator.historyActive != store.historyMapActive {
             coordinator.historyActive = store.historyMapActive
@@ -228,6 +230,17 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 coordinator.addBackground(overlay, to: map)
             }
         }
+        if let place = store.ridePlace {
+            let annotation = coordinator.ridePlace ?? RidePlaceAnnotation()
+            annotation.title = place.name
+            annotation.subtitle = place.note
+            let coordinate = store.alignment.display(.init(place.lat,place.lon)).location
+            if coordinator.ridePlace == nil || annotation.coordinate.latitude != coordinate.latitude ||
+                annotation.coordinate.longitude != coordinate.longitude { annotation.coordinate = coordinate }
+            if coordinator.ridePlace == nil { coordinator.ridePlace = annotation; map.addAnnotation(annotation) }
+        } else if let annotation = coordinator.ridePlace {
+            map.removeAnnotation(annotation); coordinator.ridePlace = nil
+        }
         if let point = store.experienceMarker {
             let annotation: ExperienceTrainAnnotation
             if let existing = coordinator.train { annotation = existing }
@@ -348,7 +361,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 var overlays: [MKMultiPolyline] = []
                 for (i,stroke) in strokes.enumerated() {
                     let multi = MKMultiPolyline(parts)
-                    multi.title = i == 0 ? "focus-rim" : "focus-rail"
+                    multi.title = key.hasPrefix("inspection/") && i > 0 ? key : (i == 0 ? "focus-rim" : "focus-rail")
                     styles[ObjectIdentifier(multi)] = stroke
                     if i == 0, key != "directory", let firstDetailInk { map.insertOverlay(multi, below: firstDetailInk) }
                     else { map.addOverlay(multi, level: .aboveLabels) }
@@ -358,6 +371,9 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 next[key] = FocusPiece(paths: paths, overlays: overlays)
             }
             sync("directory", focus.paths, [rim,RailStroke(color: focus.pathColor ?? store.renderSettings.focusInk, width: 4.4)])
+            for layer in focus.inspectionLayers {
+                sync("inspection/" + layer.ink.rawValue, layer.parts, [rim, layer.ink.stroke])
+            }
             for line in store.focusedLines(focus) {
                 sync(line.id,[line.coordinates],[rim]+store.appearance(line).focusStrokes(zoom: store.displayZoom, settings: store.renderSettings))
             }
@@ -369,6 +385,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         var experienceAlignment: MapAlignment?
         var experienceOverlays: [MKMultiPolyline] = []
         var train: ExperienceTrainAnnotation?
+        var ridePlace: RidePlaceAnnotation?
         var styles: [ObjectIdentifier: RailStroke] = [:]
         struct GroupKey: Hashable { let token: UUID; let alignment: MapAlignment }
         struct RenderInputs: Equatable {
@@ -509,6 +526,8 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         }
 
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            if store.journeyPlayer.mode == .train, store.journeyPlayer.follow,
+               !cameraUpdatePending, mapView.rideHasPanInput { store.journeyPlayer.userPanned() }
             updateViewport(mapView, final: false)
         }
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
@@ -609,6 +628,16 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 view.displayPriority = .required
                 view.image = annotation.image
                 setFocusOpacity(view, member: store.lineFocus == nil)
+                return view
+            }
+            if annotation is RidePlaceAnnotation {
+                let id = "ride-place"
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView
+                    ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: id)
+                view.annotation = annotation
+                view.canShowCallout = true
+                view.markerTintColor = .systemTeal
+                view.displayPriority = .required
                 return view
             }
             if annotation is ExperienceTrainAnnotation {

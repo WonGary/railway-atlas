@@ -246,6 +246,7 @@ struct ExperienceCommands: Commands {
         CommandMenu("漫游") {
             Button("打开铁道漫游") { openWindow(id: "railway-experiences") }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+            Button(ExperienceTab.simulation.title) { select(.simulation); openWindow(id: "railway-experiences") }
             Divider()
             ForEach(ExperienceTab.games) { tab in
                 Button(tab.title) { select(tab); openWindow(id: "railway-experiences") }

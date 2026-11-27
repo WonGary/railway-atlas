@@ -26,7 +26,7 @@ extension ExperienceStore {
         return result
     }
 
-    private func routedTimetable(_ input: RailTimetable, allowNetwork: Bool) async throws -> RailTimetable {
+    func routedTimetable(_ input: RailTimetable, allowNetwork: Bool) async throws -> RailTimetable {
         var timetable = input
         if timetable.routing == nil {
             if library.lulu?.routing == nil, library.lulu != nil, allowNetwork { await library.synchronizeLulu() }
@@ -83,21 +83,46 @@ extension ExperienceStore {
         }
         if train.routing == nil, train.routingIssue == nil, let known = trackJourneys.first(where: {
             $0.train == train.train && $0.serviceDate == train.serviceDate && $0.stations == train.stops.map(\.station)
-        }) { try known.validate(for: train); return try known.slice(from: journey.from, to: journey.to) }
+        }) {
+            try known.validate(for: train)
+            let section = try train.passengerSection(from: journey.from, to: journey.to)
+            var slice = try known.slice(from: journey.from, to: journey.to)
+            slice.serviceDate = section.serviceDate
+            return slice
+        }
         do {
-            if let result = try await NationalJourneyPaths.shared.journey(train,from:journey.from,to:journey.to) { return result }
+            var full = train
+            // A game can supply an already sliced public timetable. Verify its original trip
+            // and stop times before resolving a narrower passenger interval.
+            if train.id.hasPrefix("national:"), let cut = train.id.range(of: "/section/"),
+               let first = train.stops.first?.station, let last = train.stops.last?.station,
+               let parent = try await NationalJourneyPaths.shared.timetable(train: train.train, date: train.serviceDate,
+                    from: first, to: last, boarding: true, departure: RailTimetable.clock(Double(train.start * 60), includeSeconds: false)),
+               parent.id == String(train.id[..<cut.lowerBound]),
+               let replay = try? parent.passengerSection(from: first, to: last),
+               replay.serviceDate == train.serviceDate, replay.stops == train.stops { full = parent }
+            if let result = try await NationalJourneyPaths.shared.journey(full,from:journey.from,to:journey.to) { return result }
         } catch {
             try Task.checkCancellation()
             if let section = try? train.passengerSection(from:journey.from,to:journey.to),
-               let saved = await routeRepository.savedRoute(section) { return saved }
+               let saved = await cachedPassengerRoute(section, full: train) { return saved }
             if !retryMissing { throw error }
         }
         let routed = try await routedTimetable(train, allowNetwork: online && retryMissing)
         let section = try routed.passengerSection(from: journey.from, to: journey.to)
+        if let saved = await cachedPassengerRoute(section, full: routed) { return saved }
         if !retryMissing {
-            if let saved = await routeRepository.savedRoute(section) { return saved }
             throw DataError.invalid("该乘车区间还没有连续轨迹。可用「重新匹配乘车路线」补查。")
         }
         return try await routeRepository.route(section, allowNetwork: online)
+    }
+
+    private func cachedPassengerRoute(_ section: RailTimetable, full: RailTimetable) async -> RailTrackJourney? {
+        if let saved = await routeRepository.savedRoute(section) { return saved }
+        // An earlier simulation may have cached the full run before a passenger chose their stops.
+        guard let saved = await routeRepository.savedRoute(full), let first = section.stops.first, let last = section.stops.last,
+              var portion = try? saved.slice(from: first.station, to: last.station) else { return nil }
+        portion.serviceDate = section.serviceDate
+        return portion
     }
 }

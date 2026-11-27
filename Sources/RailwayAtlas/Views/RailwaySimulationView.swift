@@ -16,13 +16,8 @@ struct RailwaySimulationView: View {
     private var timetable: RailTimetable? { model.timetables.first { $0.id == selectedID } ?? model.timetables.first }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            TimetableLibraryPanel(library: model.library) { item in
-                if let index = model.timetables.firstIndex(where: { $0.id == item.id }) { model.timetables[index] = item }
-                else { model.timetables.append(item) }
-                selectedID = item.id
-                model.selectedTrainID = item.id
-                retry += 1
-            }
+            PassportTrainLookup(select: choose)
+            TimetableLibraryPanel(library: model.library, select: choose)
             if let timetable {
                 HStack {
                     Picker("已选车次", selection: $selectedID) {
@@ -62,6 +57,7 @@ struct RailwaySimulationView: View {
                         else { Button("用沿线瓦片补查轨迹", systemImage: "arrow.clockwise") { retryTrainID=timetable.id; retry += 1 } }
                     }
                 }.padding(20).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 14))
+                JourneyInspectorPanel(table: timetable).id(timetable.id)
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text("经停站").frame(maxWidth: .infinity, alignment: .leading)
@@ -99,6 +95,10 @@ struct RailwaySimulationView: View {
             }
         }
         .onAppear { if selectedID.isEmpty { selectedID = model.selectedTrainID.isEmpty ? timetable?.id ?? "" : model.selectedTrainID } }
+        .onChange(of: selectedID) { old, id in
+            if let map = model.map, map.lineFocus?.inspectionOwner == old { map.clearLineFocus() }
+            model.selectedTrainID = id
+        }
         .onChange(of: model.timetables.map(\.id)) { _, _ in
             if selectedID.isEmpty { selectedID = timetable?.id ?? "" }
         }
@@ -114,6 +114,13 @@ struct RailwaySimulationView: View {
                 error = "已保存 \(imported.count) 趟车的时刻快照。"
             } catch { self.error = error.localizedDescription }
         }
+    }
+    private func choose(_ item: RailTimetable) {
+        if let index = model.timetables.firstIndex(where: { $0.id == item.id }) { model.timetables[index] = item }
+        else { model.timetables.append(item) }
+        selectedID = item.id
+        model.selectedTrainID = item.id
+        retry += 1
     }
     private func time(_ minute: Int?) -> String {
         minute.map { RailTimetable.clock(Double($0 * 60), includeSeconds: false) } ?? "—"

@@ -16,7 +16,12 @@ final class RailMapPlayback: ObservableObject {
     @Published private(set) var mode: Mode?
     @Published var seconds = 0.0
     @Published var speed = 60.0
-    @Published var follow = true
+    @Published var follow = true {
+        didSet {
+            // A paused player produces no marker ticks to update MapKit's zoom gestures.
+            if follow != oldValue { map?.objectWillChange.send() }
+        }
+    }
     @Published private(set) var playing = false
     @Published private(set) var timetable: RailTimetable?
     @Published private(set) var region: RailHistoryRegion?
@@ -24,6 +29,23 @@ final class RailMapPlayback: ObservableObject {
     @Published var showUnknown = false { didSet { if mode == .history { drawHistory() } } }
     private weak var map: RailwayMapStore?
     private var route: RailTrackJourney?
+    let guide = RideGuideStore()
+    var playbackMap: RailwayMapStore? { map }
+    var playbackTrack: RailTrackJourney? { route }
+    var holdsZoom: Bool { mode == .train && follow && guide.zoomLocked }
+    func browse() { guide.selectCamera(.sightseeing); follow = false }
+    func userPanned() { if mode == .train && follow { follow = false } }
+    func resumeFollowing() {
+        map?.ridePlace = nil
+        guide.selectCamera(.train); follow = true; updateTrain(forceCamera: true)
+    }
+    func lockZoom(_ enabled: Bool) {
+        guide.setLock(enabled ? map?.region.span : nil)
+        if mode == .train { updateTrain(forceCamera: true) }
+    }
+    func inspectPlace(_ place: RidePlace) {
+        browse(); map?.ridePlace = place; focus(.init(place.lat,place.lon), span: 0.045)
+    }
     private var distances: [[Double]] = []
     private var stationMetres: [Double] = []
     private var work: Task<Void, Never>?
@@ -82,8 +104,10 @@ final class RailMapPlayback: ObservableObject {
         details.append("终到 \(RailTimetable.clock(Double(timetable.end * 60), includeSeconds: false))")
         return details.filter { !$0.isEmpty }.joined(separator: " · ")
     }
-    func start(_ timetable: RailTimetable, route: RailTrackJourney) throws {
+    func start(_ timetable: RailTimetable, route: RailTrackJourney, continuing: Bool = false) throws {
         try route.validate(for: timetable)
+        map?.ridePlace = nil
+        if continuing { guide.advanced() } else { guide.reset(timetable); follow = true }
         map?.clearLineFocus()
         pause()
         rememberCamera()
@@ -97,11 +121,13 @@ final class RailMapPlayback: ObservableObject {
             ExperienceMapLine(id: "\(route.id)/\($0.offset)", coordinates: $0.element, colour: nil)
         }
         map?.experienceGeometryRevision += 1
-        if let point = route.legs.first?.first { focus(point, span: 0.12) }
+        if !continuing, let point = route.legs.first?.first { focus(point, span: 0.12) }
         updateTrain()
         play()
     }
     func start(_ region: RailHistoryRegion) {
+        guide.reset()
+        map?.ridePlace = nil
         map?.clearLineFocus()
         pause()
         rememberCamera()
@@ -159,6 +185,8 @@ final class RailMapPlayback: ObservableObject {
         }
     }
     func stop() {
+        guide.reset()
+        map?.ridePlace = nil
         pause(); mode = nil; distances = []; stationMetres = []
         map?.experienceLines = []; map?.experienceMarker = nil
         map?.historyMapActive = false; map?.experienceGeometryRevision += 1
@@ -169,7 +197,8 @@ final class RailMapPlayback: ObservableObject {
     private func focus(_ point: Coordinate, span: Double? = nil) {
         guard let map else { return }
         map.region = MKCoordinateRegion(center: point.location,
-            span: span.map { MKCoordinateSpan(latitudeDelta: $0, longitudeDelta: $0 * 1.4) } ?? map.region.span)
+            span: span.map { MKCoordinateSpan(latitudeDelta: $0, longitudeDelta: $0 * 1.4) }
+                ?? (holdsZoom ? guide.lockedSpan : nil) ?? map.region.span)
         map.cameraRevision += 1
     }
     private func updateTrain(forceCamera: Bool = false) {

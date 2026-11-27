@@ -175,6 +175,14 @@ const JourneyKeepsakes = (() => {
   }
   async function openSharedRide() {
     const id = ++openVersion, request = journeyRequest;
+    if (location.hash.startsWith("#atlas=")) {
+      const query = new URLSearchParams(location.hash.slice(1)), name = query.get("name");
+      if (!name || name.length > 100) return;
+      if (query.get("atlas") === "station" && StationPanel.national.stations.has(name)) showStationBoard(name);
+      else if (query.get("atlas") === "line") showPublicLine(name);
+      else showToast("本版资料尚未收录这个站点。");
+      return;
+    }
     if (!location.hash.startsWith("#ride=")) return;
     try {
       const query = readRide(location.hash);
@@ -189,6 +197,40 @@ const JourneyKeepsakes = (() => {
       selectRoute(full.id,{from,to});
       revealJourneyMapOnPhone();
     } catch (err) { if (openVersion === id && journeyRequest === request) showToast(err.message); }
+  }
+
+  function publicLine(name) {
+    const matches = (globalThis.atlasRailDirectory?.lines || []).filter(([title])=>title === name);
+    if (matches.length === 1) return matches[0][1];
+    const originals = globalThis.atlasGeoGV;
+    if (!originals) return null;
+    const ids = new Set();
+    for (const station of Object.values(originals.stations)) for (const [title,id] of station.lines || [])
+      if (title === name) ids.add(id);
+    return ids.size === 1 ? originals.lines[[...ids][0]] : null;
+  }
+  function showPublicLine(name) {
+    const line = publicLine(name);
+    if (!line) return showToast("本版资料尚未收录这条线路。");
+    const names = line.map(row=>row[0]), points = names.map(n=>[n,StationMapBoard.coordinate(n)]).filter(([,p])=>p);
+    if (state.playbackVisible) closeJourney();
+    void LineFocus.directory(name,points,names,true);
+    $("infoPanel").hidden=false; $("infoTitle").textContent=name;
+    const list = document.createElement("ol"); list.className="rail-sequence";
+    for (const [station,km] of line) {
+      const row=document.createElement("li"), select=document.createElement("button");
+      select.textContent=station;select.onclick=()=>showStationBoard(station);row.append(select);
+      if (km != null && km !== "") row.append(document.createTextNode(` ${km} km`));
+      list.append(row);
+    }
+    $("infoContent").replaceChildren(list);
+    if (matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
+  }
+  function copyPlace(type,name) {
+    const exists = type === "line" ? publicLine(name) : StationPanel.national.stations.has(name);
+    if (!exists) return showToast("这项资料仅在本机可见。");
+    const query=new URLSearchParams({atlas:type,name});
+    return copyToClipboard(publicSite+"#"+query,"已复制地图链接。");
   }
 
   // Single-image PDF. Byte offsets are counted after encoding, including the binary JPEG stream.
@@ -246,6 +288,13 @@ const JourneyKeepsakes = (() => {
       setWorkspaceView("experiences");setWorkspaceOpen(true);fillPostcard(entry);
     };
     $("cardMapPreset").onchange=drawPostcard;
+    const lineShare=document.createElement("button");
+    lineShare.type="button";lineShare.className="text-button";lineShare.textContent="复制线路链接";
+    lineShare.onclick=()=>copyPlace("line",LineFocus.active?.title);
+    $("lineFocusBar").append(lineShare);
+    const currentFocus=()=>{lineShare.hidden=!LineFocus.active?.directory;};
+    new MutationObserver(currentFocus).observe($("lineFocusName"),{childList:true,subtree:true});
+    currentFocus();
     $("printRideQR").onchange=drawPostcard;
     $("createRideShare").onclick=share;
     $("exportCardFormat").onclick=exportFormat;
@@ -253,5 +302,5 @@ const JourneyKeepsakes = (() => {
     $("saveRideShare").onclick=async() => { if (sharedLink) downloadFile("铁路区间分享码.png",await imageBlob($("rideShareQR"))); };
     window.addEventListener("hashchange",openSharedRide);
   }
-  return {setup,remember,refreshPassport,resetShare,openSharedRide,idFor,rideURL,readRide,pdf};
+  return {setup,remember,refreshPassport,resetShare,openSharedRide,idFor,rideURL,readRide,pdf,copyPlace};
 })();

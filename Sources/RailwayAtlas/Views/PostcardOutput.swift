@@ -88,6 +88,12 @@ enum PostcardOutput: String, CaseIterable {
 }
 
 enum PostcardRouteShare {
+    static func place(_ name: String, type: String) -> URL? {
+        let allowed = CharacterSet(charactersIn:"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        guard ["station","line"].contains(type), !name.isEmpty, let encoded = name.addingPercentEncoding(withAllowedCharacters:allowed) else { return nil }
+        return URL(string:"https://wongary.github.io/railway-atlas/#atlas=\(type)&name=\(encoded)")
+    }
+
     static func url(_ entry: RailJourney) async throws -> URL {
         let store = NationalJourneyPaths.shared
         guard let timetable = try await store.timetable(train:entry.train,date:entry.date,from:entry.from,to:entry.to,

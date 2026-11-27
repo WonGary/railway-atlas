@@ -22,6 +22,7 @@ final class JourneyStore: ObservableObject {
         }
         if FileManager.default.fileExists(atPath: file.path) {
             do {
+                try PassportLocalFiles.prepare(self.directory)
                 let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                 guard size <= 10_000_000 else { throw DataError.invalid("护照文件过大") }
                 journeys = try RailJourneyArchive.decode(Data(contentsOf: file)).journeys
@@ -71,7 +72,7 @@ final class JourneyStore: ObservableObject {
             let sorted = input.sorted { ($0.date, $0.departure, $0.train) > ($1.date, $1.departure, $1.train) }
             let data = try RailJourneyArchive(journeys: sorted).encode()
             _ = try RailJourneyArchive.decode(data)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try PassportLocalFiles.prepare(directory)
             if FileManager.default.fileExists(atPath: file.path) {
                 let existing = try Data(contentsOf: file)
                 _ = try RailJourneyArchive.decode(existing)
@@ -168,6 +169,8 @@ final class ExperienceStore: ObservableObject {
     @Published var trackJourneys: [RailTrackJourney] = []
     @Published var selectedTrainID = ""
     let library: TimetableLibraryStore
+    private lazy var standaloneActivity = PassportActivityStore(directory: directory.appendingPathComponent("PassportActivity-v1"))
+    var passportActivity: PassportActivityStore { map?.passportActivity ?? standaloneActivity }
     lazy var routeRepository = RailJourneyRouteRepository(directory: directory.appendingPathComponent("JourneyRoutes"),
         mapCache: mapCacheDirectory.appendingPathComponent("railways.railcache"))
     weak var map: RailwayMapStore?
@@ -177,15 +180,17 @@ final class ExperienceStore: ObservableObject {
     private var customHistory: [RailHistoryEvent] = []
     private var archivesReadOnly = false
 
-    init(directory: URL? = nil) {
+    static var defaultDirectory: URL {
         let args = CommandLine.arguments
-        if let directory { self.directory = directory }
-        else if let i = args.firstIndex(of: "--ui-smoke"), args.count > i + 1 {
-            self.directory = URL(fileURLWithPath: args[i + 1]).appendingPathComponent("experiences")
-        } else {
-            self.directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("RailwayAtlas/Experiences", isDirectory: true)
+        if let i = args.firstIndex(of: "--ui-smoke"), args.indices.contains(i + 1) {
+            return URL(fileURLWithPath: args[i + 1]).appendingPathComponent("experiences")
         }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RailwayAtlas/Experiences", isDirectory: true)
+    }
+
+    init(directory: URL? = nil) {
+        self.directory = directory ?? Self.defaultDirectory
         library = TimetableLibraryStore(directory: self.directory.appendingPathComponent("TimetableLibrary"))
     }
 

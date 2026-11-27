@@ -8,6 +8,14 @@ import SwiftUI
 enum ExperienceValidation {
     static let flag = "--experiences-check"
     static func run(directory: URL) async throws {
+        if CommandLine.arguments.contains("--postcard-delivery-check") {
+            try await PostcardDeliveryValidation.run(in: directory)
+            return
+        }
+        if CommandLine.arguments.contains(PassportFootprintValidation.flag) {
+            await PassportFootprintValidation.run(directory: directory)
+            return
+        }
         func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
             guard condition() else { throw DataError.invalid("Experience UI: \(message)") }
         }

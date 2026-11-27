@@ -40,6 +40,10 @@ const StationMapBoard = (() => {
     StationPanel.mount(root,name,{library:RailLibrary.current,coordinate:n=>positions().get(n),
       locate:(rows,title,names,fit)=>LineFocus.directory(title,rows,names,fit),
       endLine:LineFocus.endDirectory,trainAction:openStationTrain});
+    const share=document.createElement("button");
+    share.type="button";share.className="text-button";share.textContent="复制本站链接";
+    share.onclick=()=>JourneyKeepsakes.copyPlace("station",name);
+    root.append(share);
     if (location.origin==="http://127.0.0.1:18763") appendOriginalStationLookup(root,name);
   }
   function focus(name) {

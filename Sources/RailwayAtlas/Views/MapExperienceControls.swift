@@ -37,9 +37,12 @@ struct MapExperienceControls: View {
                         Picker("倍速", selection: $player.speed) {
                             ForEach([1.0, 10, 60, 300, 900], id: \.self) { Text("\(Int($0))×").tag($0) }
                         }.frame(width: 140)
-                        Toggle("跟随列车", isOn: $player.follow).font(.caption)
+                        Toggle("跟随列车", isOn: Binding(get: { player.follow }, set: { value in
+                            if value { player.resumeFollowing() } else { player.browse() }
+                        })).font(.caption)
                         Spacer()
                     }
+                    RideGuideControls(player: player, guide: player.guide)
                     Text("\(train.serviceDate) · 24 小时制 · 沿轨道按时刻插值，非实时定位")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else {

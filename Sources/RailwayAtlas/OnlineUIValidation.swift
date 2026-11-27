@@ -28,6 +28,11 @@ enum OnlineUIValidation {
             window?.setContentSize(NSSize(width: 1240, height: 820))
             window?.center()
             window?.title = "铁道图鉴 · 本地验证"
+            if arguments.contains("--journey-guide-check") {
+                try await RideGuideValidation.run(store, directory: directory)
+                NSApp.terminate(nil)
+                return
+            }
             if arguments.contains("--check-v604") {
                 let model=store.journeyWorkspace
                 await model.load()

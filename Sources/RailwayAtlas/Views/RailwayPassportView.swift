@@ -17,6 +17,22 @@ struct JourneyImportBatch: Identifiable {
     let id = UUID()
     var journeys: [RailJourney]
     var notes: [String]
+    var isSection = false
+
+    static func section(_ journey: RailJourney) -> Self {
+        .init(journeys: [PassportActivity.pending(journey, source: journey.source)], notes: [], isSection: true)
+    }
+
+    static func selection(_ drafts: [RailJourney], existing: [RailJourney]) -> (selected: Set<UUID>, duplicates: Set<UUID>) {
+        var keys = Set(existing.map(\.duplicateKey))
+        let knownIDs = Set(existing.map(\.id))
+        var selected = Set<UUID>(), duplicates = Set<UUID>()
+        for item in drafts {
+            if !keys.insert(item.duplicateKey).inserted || knownIDs.contains(item.id) { duplicates.insert(item.id) }
+            else if item.validationMessage == nil { selected.insert(item.id) }
+        }
+        return (selected, duplicates)
+    }
 }
 
 struct RailwayPassportView: View {
@@ -33,6 +49,8 @@ struct RailwayPassportView: View {
     @State private var exportName = "铁路护照"
     @State private var query = ""
     @State private var statusFilter: RailJourney.Status?
+    @State private var activityKind: PassportActivityKind?
+    @State private var sectionRequest: PassportSectionRequest?
 
     private var filtered: [RailJourney] {
         passport.journeys.filter {
@@ -42,12 +60,71 @@ struct RailwayPassportView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            TimetableLibraryPanel(library: model.library) { editing = $0.draftJourney }
+            Picker("经历", selection: $activityKind) {
+                Text("真实乘车").tag(Optional<PassportActivityKind>.none)
+                ForEach(PassportActivityKind.allCases, id: \.self) { Text($0.title).tag(Optional($0)) }
+            }.pickerStyle(.segmented).accessibilityIdentifier("passport-shelves")
+            DisclosureGroup("从实际车次选择区间") {
+                VStack(alignment: .leading, spacing: 12) {
+                    PassportTrainLookup { sectionRequest = PassportSectionRequest($0) }
+                    if !model.timetables.isEmpty {
+                        Menu("选择已保存的日期车次") {
+                            ForEach(model.timetables) { train in
+                                Button("\(train.train) · \(train.serviceDate)") { sectionRequest = PassportSectionRequest(train) }
+                            }
+                        }
+                    }
+                    TimetableLibraryPanel(library: model.library) { sectionRequest = PassportSectionRequest($0) }
+                }.padding(.top, 8)
+            }
+            if let activityKind {
+                PassportActivityList(store: model.passportActivity, kind: activityKind,
+                    review: { batch = .section($0) }, adjust: { sectionRequest = $0 },
+                    preview: { routeJourney = $0 }, canImport: !passport.readOnly)
+            } else {
+                rideLedger
+            }
+        }
+        .sheet(item: $sectionRequest) { request in
+            PassportSectionPicker(request: request).environmentObject(model).environmentObject(passport)
+        }
+        .sheet(item: $batch) { batch in
+            JourneyImportReviewView(batch: batch).environmentObject(passport)
+        }
+        .sheet(item: $editing) { journey in
+            JourneyEditorView(journey: journey).environmentObject(passport).environmentObject(model)
+        }
+        .sheet(item: $routeJourney) { journey in
+            PassengerRouteView(journey: journey).environmentObject(model)
+        }
+        .fileImporter(isPresented: $importing,
+                      allowedContentTypes: [.json, .commaSeparatedText, .plainText, .pdf, .image],
+                      allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls):
+                reading = true
+                Task {
+                    let result = await JourneyDocumentImport.read(urls)
+                    batch = JourneyImportBatch(journeys: result.journeys, notes: result.notes)
+                    reading = false
+                }
+            case .failure(let error): passport.error = error.localizedDescription
+            }
+        }
+        .fileExporter(isPresented: $exporting, document: exportFile, contentType: exportType,
+                      defaultFilename: exportName) { result in
+            if case .failure(let error) = result { passport.error = error.localizedDescription }
+        }
+    }
+
+    private var rideLedger: some View {
+        VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
                 metric("\(passport.travelled.count)", label: "已乘坐")
                 metric("\(passport.visitedStations)", label: "到访车站")
                 metric("\(passport.pendingCount)", label: "待核对")
             }
+            PassportFootprintPanel(rides: passport.travelled, activity: model.passportActivity, library: model.library)
             ViewThatFits {
                 HStack { actions }
                 VStack(alignment: .leading, spacing: 8) { actions }
@@ -102,7 +179,7 @@ struct RailwayPassportView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                                 if !journey.note.isEmpty { Text(journey.note).font(.caption).lineLimit(2).foregroundStyle(.secondary) }
                                 Button("查看乘车路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
-                                    routeJourney = journey
+                                    previewRide(journey)
                                 }.font(.caption).buttonStyle(.borderless)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             VStack(alignment: .trailing, spacing: 8) {
@@ -112,7 +189,7 @@ struct RailwayPassportView: View {
                                                 in: Capsule())
                                 Menu {
                                     Button("核对或编辑") { editing = journey }
-                                    Button("查看乘车路线") { routeJourney = journey }
+                                    Button("查看乘车路线") { previewRide(journey) }
                                     Button("制成明信片") { model.makePostcard(journey) }
                                     Divider()
                                     Button("移除记录", role: .destructive) { passport.remove(journey) }
@@ -134,32 +211,20 @@ struct RailwayPassportView: View {
                 }.font(.caption2)
             }.padding(14).background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
         }
-        .fileImporter(isPresented: $importing,
-                      allowedContentTypes: [.json, .commaSeparatedText, .plainText, .pdf, .image],
-                      allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls):
-                reading = true
-                Task {
-                    let result = await JourneyDocumentImport.read(urls)
-                    batch = JourneyImportBatch(journeys: result.journeys, notes: result.notes)
-                    reading = false
-                }
-            case .failure(let error): passport.error = error.localizedDescription
+    }
+
+    private func previewRide(_ journey: RailJourney) {
+        routeJourney = journey
+        Task {
+            let table: RailTimetable?
+            if let local = try? model.timetable(for: journey) { table = local }
+            else {
+                table = try? await NationalJourneyPaths.shared.timetable(train: journey.train, date: journey.date,
+                    from: journey.from, to: journey.to, boarding: true, departure: journey.departure)
             }
-        }
-        .sheet(item: $batch) { batch in
-            JourneyImportReviewView(batch: batch).environmentObject(passport)
-        }
-        .sheet(item: $editing) { journey in
-            JourneyEditorView(journey: journey).environmentObject(passport).environmentObject(model)
-        }
-        .sheet(item: $routeJourney) { journey in
-            PassengerRouteView(journey: journey).environmentObject(model)
-        }
-        .fileExporter(isPresented: $exporting, document: exportFile, contentType: exportType,
-                      defaultFilename: exportName) { result in
-            if case .failure(let error) = result { passport.error = error.localizedDescription }
+            if let table, let segment = try? PassportActivity.segment(table, from: journey.from, to: journey.to) {
+                model.passportActivity.record(segment, as: .browsed)
+            }
         }
     }
 
@@ -262,7 +327,7 @@ struct JourneyImportReviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("导入前核对").font(.title2.weight(.semibold))
-            Text("识别结果先作为待核对记录；缺项可展开补全。重复候选默认不选，勾选后会保留为独立记录。")
+            Text(batch.isSection ? "区间将存为待核对。实际乘车后，可在护照里改为已乘坐。重复候选默认跳过。" : "请核对候选记录。重复候选默认跳过，勾选后会另存一条。")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(Array(batch.notes.enumerated()), id: \.offset) { _, note in
                 Text(note).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
@@ -275,7 +340,9 @@ struct JourneyImportReviewView: View {
                                 if value { selected.insert(journey.id) } else { selected.remove(journey.id) }
                             })).labelsHidden().padding(.top, 3)
                             DisclosureGroup {
-                                JourneyFields(journey: $journey).padding(.top, 14)
+                                if batch.isSection {
+                                    Text("\(journey.departure) 上车 · \(journey.source) · 待核对").font(.caption)
+                                } else { JourneyFields(journey: $journey).padding(.top, 14) }
                             } label: {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text("\(journey.date.isEmpty ? "日期待补" : journey.date) · \(journey.train)")
@@ -296,6 +363,8 @@ struct JourneyImportReviewView: View {
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("导入所选") { if passport.importReviewed(chosen) { dismiss() } }.buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("passport-import-selected")
+                    .keyboardShortcut(.defaultAction)
                     .disabled(chosen.isEmpty || chosen.contains { $0.validationMessage != nil } || passport.readOnly)
             }
         }.padding(24)
@@ -304,13 +373,9 @@ struct JourneyImportReviewView: View {
         #endif
         .onAppear {
             guard !initialized else { return }; initialized = true
-            var keys = Set(passport.journeys.map(\.duplicateKey))
-            let knownIDs = Set(passport.journeys.map(\.id))
-            for i in drafts.indices {
-                let duplicateKey = !keys.insert(drafts[i].duplicateKey).inserted
-                if duplicateKey || knownIDs.contains(drafts[i].id) { duplicates.insert(drafts[i].id) }
-                else if drafts[i].validationMessage == nil { selected.insert(drafts[i].id) }
-            }
+            let result = JourneyImportBatch.selection(drafts, existing: passport.journeys)
+            selected = result.selected
+            duplicates = result.duplicates
         }
     }
 }

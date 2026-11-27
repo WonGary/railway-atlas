@@ -15,6 +15,10 @@ struct MapLineFocus {
     var directionID: String?
     var directionStops = Set<String>()
     var directory = false
+    var inspectionOwner: String?
+    var inspectionLayers: [InspectionLayer] = []
+    var inspectionDirectory: InspectionLine?
+    var inspectionSummary: String?
 
     func includes(_ line: RailLine) -> Bool {
         if line.id == featureID { return true }
@@ -44,12 +48,21 @@ enum MapContextFiles {
         return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
     }()
     static func parts(_ name: String, stops: Set<String>? = nil) -> [[Coordinate]] {
+        sections(name, stops: stops).map(\.points)
+    }
+
+    struct Section: Sendable {
+        let from, to: String
+        let points: [Coordinate]
+    }
+    static func sections(_ name: String, stops: Set<String>? = nil) -> [Section] {
         guard let file = index[name],
               let data = try? Data(contentsOf: directory.appendingPathComponent("lines").appendingPathComponent(file)),
               let rows = (try? JSONDecoder().decode([String: [[String]]].self, from: data))?[name] else { return [] }
         return rows.compactMap {
             guard $0.count == 3, stops?.contains($0[0]) != false, stops?.contains($0[1]) != false else { return nil }
-            return try? NationalJourneyPaths.decode($0[2], densify: false)
+            guard let path = try? NationalJourneyPaths.decode($0[2], densify: false), path.count > 1 else { return nil }
+            return Section(from: $0[0], to: $0[1], points: path)
         }
     }
 }

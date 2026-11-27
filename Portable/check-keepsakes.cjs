@@ -69,6 +69,12 @@ async function check({browser,devices,url}, phone, folder) {
       await view.waitForFunction(()=>state.route?.stops.map(s=>s.name).join("/") === "陇南/广元");
       const incoming = await view.evaluate(()=>({trip:state.route.trip,rides:state.journeys.length,legs:state.route.legs.length}));
       assert.deepEqual(incoming,{trip:"880000D17403",rides:0,legs:1});
+      await view.goto(url+"#"+new URLSearchParams({atlas:"line",name:"北同蒲线"}));
+      await view.waitForFunction(()=>document.querySelector("#infoTitle").textContent==="北同蒲线" && LineFocus.active?.parts.length);
+      await view.locator("#infoContent .rail-sequence button").filter({hasText:/^忻州$/}).click();
+      await view.getByRole("button",{name:"复制本站链接"}).waitFor();
+      await view.goto(url+"#"+new URLSearchParams({atlas:"station",name:"陇南"}));
+      await view.waitForFunction(()=>document.querySelector("#infoTitle").textContent==="陇南");
     } finally { await recipient.close(); }
     assert.deepEqual(failures,[]);
     console.log(`${phone?"手机":"桌面"}：D174 陇南至广元，护照记录、独立足迹、票面及分享接收通过。`);

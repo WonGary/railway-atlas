@@ -212,6 +212,26 @@
     return details;
   };
   const lineDirectory = new URL("station-directory/lines/", document.currentScript?.src || document.baseURI);
+  const scriptsBase = new URL(".", document.currentScript?.src || document.baseURI);
+  let loadingGuide;
+  function attachRideTools() {
+    if (loadingGuide || globalThis.RailwayJourneyGuide) return;
+    async function load(path) {
+      const url = new URL(path, scriptsBase).href;
+      if (Array.from(document.scripts).some(script => script.src === url)) return;
+      await new Promise((resolve,reject) => {
+        const script = document.createElement("script");
+        script.src = url;
+        script.onload = resolve;
+        script.onerror = () => { script.remove(); reject(Error(path)); };
+        document.head.append(script);
+      });
+    }
+    const coreReady = typeof JourneyGuideCore !== "undefined";
+    loadingGuide = (coreReady ? Promise.resolve() : load("station-directory/journey-guide-core.js"))
+      .then(() => globalThis.RailwayJourneyGuide || load("journey-guide.js"))
+      .catch(() => { loadingGuide = null; });
+  }
   const dirFiles = new Map(), colour = {a:"#087cba", b:"#c03977", shared:"#17805a"};
   let ui, current, context, overlay, renderer, comparisonSerial=0, inspectionSerial=0;
   let focusedDirectory, detachMapHandlers = () => {};
@@ -413,7 +433,8 @@
     for (const [label,av,bv] of [
       ["始发日期",a.serviceDate,b.serviceDate],["停站",a.stops.length,b.stops.length],["运行时间",minutes(a),minutes(b)],
       ["几何覆盖",legText(a),legText(b)],["已收录轨道长度",km(geometry.a.onlyMetres+geometry.a.sharedMetres),km(geometry.b.onlyMetres+geometry.b.sharedMetres)],
-      ["与对方重合",km(geometry.a.sharedMetres),km(geometry.b.sharedMetres)],["经由线路",lines(a),lines(b)]
+      ["与对方重合",km(geometry.a.sharedMetres),km(geometry.b.sharedMetres)],
+      ["本车独有",km(geometry.a.onlyMetres),km(geometry.b.onlyMetres)],["经由线路",lines(a),lines(b)]
     ]) { const tr=el("tr");tr.append(el("th",label),el("td",av),el("td",bv));table.append(tr); }
     result.append(table);
     const calls=box("两车逐站到发与停留",result);
@@ -452,9 +473,12 @@
       ui.result.replaceChildren();
       if (comparable) {
         displayPaths([{type:"a",parts:geometry.a.only,style:{color:colour.a}}, {type:"b",parts:geometry.b.only,style:{color:colour.b,dashArray:"8 4"}},
-          {type:"shared",parts:geometry.a.shared,style:{color:colour.shared}}]);
+          {type:"shared",parts:geometry.a.shared.length ? geometry.a.shared : geometry.b.shared,style:{color:colour.shared}}]);
       }
-      ui.result.append(el("p",comparable ? `蓝实线 ${route.train} · 紫虚线 ${other.train} · 绿线为两份轨迹在 45 m 内且走向一致的部分。缺轨区间无法判断共线。` :
+      const legend = [geometry.a.only.length && `蓝实线为 ${route.train} 独有区段`,
+        geometry.b.only.length && `紫虚线为 ${other.train} 独有区段`,
+        (geometry.a.shared.length || geometry.b.shared.length) && "绿线为共线区段"].filter(Boolean).join("，");
+      ui.result.append(el("p",comparable ? `${legend}。按轨迹间距 45 m 和走向比较，缺轨区间不参与。` :
         "至少一趟车缺少可比较的轨道几何，以下仅列已知数据。"));
       compareTables(route,other,geometry);
       ui.result.append(button("收起比较图层",()=>{clearMap();ui.result.replaceChildren();}));
@@ -471,6 +495,7 @@
     clearMap(); detachMapHandlers();
     current=route; ui.root.hidden=!route;
     if (!route) return;
+    attachRideTools();
     context=serviceContext(route);
     const full=context.full;
     if (lastFull!==full) {checkedSaves=new Set();lastFull=full;}

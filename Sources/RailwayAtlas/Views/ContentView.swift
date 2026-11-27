@@ -70,6 +70,15 @@ struct ContentView: View {
         #endif
         .task {
             await store.start()
+            let args = CommandLine.arguments
+            if args.contains(JourneyInspectionValidation.flag),
+               let i = args.firstIndex(of: "--ui-smoke"), args.indices.contains(i + 1) {
+                await JourneyInspectionValidation.run(map: store, directory: URL(fileURLWithPath: args[i + 1]))
+                #if os(macOS)
+                NSApp.terminate(nil)
+                #endif
+                return
+            }
             if RailGamesAcceptance.requested {
                 await RailGamesAcceptance.run(store: store, showDiscovery: {
                     store.selectedTab = 0

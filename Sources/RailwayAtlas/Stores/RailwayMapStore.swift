@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import MapKit
 import RailwayCore
@@ -5,7 +6,15 @@ import SwiftUI
 
 @MainActor
 final class RailwayMapStore: ObservableObject {
-    lazy var journeyPlayer = RailMapPlayback(map: self)
+    lazy var passportActivity = PassportActivityStore(directory: ExperienceStore.defaultDirectory.appendingPathComponent("PassportActivity-v1"))
+    private var passportPlaybackObservation: AnyCancellable?
+    lazy var journeyPlayer: RailMapPlayback = {
+        let player = RailMapPlayback(map: self)
+        passportPlaybackObservation = player.$timetable.compactMap { $0 }.sink { [weak self] timetable in
+            self?.passportActivity.simulationStarted(timetable)
+        }
+        return player
+    }()
     lazy var journeyWorkspace: ExperienceStore = {
         let model = ExperienceStore()
         model.map = self
@@ -77,6 +86,7 @@ final class RailwayMapStore: ObservableObject {
             showMetroDirection(entry, fit: true)
             return
         }
+        passportActivity.browseLine(route.id, name: route.name)
         clearLineFocus()
         pendingDirection=route.id
         let paths = nationalMetroSnapshot?.lines.filter { $0.routes?.contains(where: { $0.id == route.id }) == true }.map(\.coordinates) ?? []
@@ -92,6 +102,7 @@ final class RailwayMapStore: ObservableObject {
 
     func showMetroDirection(_ entry: MetroDirectionCatalog.Entry, fit: Bool) {
         let direction = entry.direction, paths = direction.paths
+        if fit { passportActivity.browseLine(direction.id, name: direction.name) }
         var ids = Set<String>()
         let pins = direction.stops.compactMap { stop -> RailStation? in
             guard let location = stop.location, ids.insert(stop.id).inserted else { return nil }
@@ -117,15 +128,18 @@ final class RailwayMapStore: ObservableObject {
         rebuildVisible()
     }
 
-    #if os(macOS)
-    func focusDirectoryLine(_ title: String, names: [String], fit: Bool) {
+    func focusDirectoryLine(_ title: String, names: [String], fit: Bool,
+                            inspection: InspectionLine? = nil, owner: String? = nil, drawing: InspectionLineAtlas.Drawing? = nil) {
+        if fit || lineFocus?.title != title { passportActivity.browseLine("directory/\(title)", name: title) }
         let stops = Set(names)
         let pins = NationalDirectoryPins.all.filter { stops.contains($0.name) }
-        let paths = MapContextFiles.parts(title, stops: stops)
-        if lineFocus?.directory != true || lineFocus?.title != title || lineFocus?.stopNames != stops {
+        let paths = drawing?.parts ?? MapContextFiles.parts(title, stops: stops)
+        if lineFocus?.directory != true || lineFocus?.title != title || lineFocus?.stopNames != stops ||
+            (owner != nil && lineFocus?.inspectionOwner != owner) {
             stationBoardPins = pins
             lineFocus = MapLineFocus(title: title, trackName: title, stopNames: stops,
-                                     paths: paths, directory: true)
+                                     paths: paths, directory: true, inspectionOwner: owner,
+                                     inspectionDirectory: inspection, inspectionSummary: inspection.flatMap { drawing?.note(for: $0) })
             labelRevision += 1
         }
         if fit {
@@ -136,9 +150,36 @@ final class RailwayMapStore: ObservableObject {
         }
         rebuildVisible()
     }
-    #endif
+
+    func showInspectionLine(_ line: InspectionLine, report: JourneyInspection) async throws {
+        let drawing = try await InspectionLineAtlas.shared.drawing(line, report: report)
+        try Task.checkCancellation()
+        prepareInspectionFocus()
+        focusDirectoryLine(line.title, names: line.stops.map(\.name), fit: true, inspection: line,
+                           owner: report.table.id, drawing: drawing)
+    }
+
+    func showInspectionLayers(_ layers: [InspectionLayer], title: String, owner: String, summary: String? = nil) {
+        prepareInspectionFocus()
+        guard !layers.isEmpty else { return }
+        lineFocus = MapLineFocus(title: title, inspectionOwner: owner, inspectionLayers: layers, inspectionSummary: summary)
+        if let fitted = paddedRegion(for: layers.flatMap { $0.parts.flatMap { $0 } }) {
+            region = fitted
+            cameraRevision += 1
+        }
+        labelRevision += 1
+        rebuildVisible()
+    }
+
+    private func prepareInspectionFocus() {
+        if journeyPlayer.mode == .history { journeyPlayer.stop() }
+        if journeyPlayer.mode == .train && journeyPlayer.follow { journeyPlayer.browse() }
+        if selection != nil { selection = nil }
+        clearLineFocus()
+    }
     @Published var experienceLines: [ExperienceMapLine] = []
     @Published var experienceMarker: Coordinate?
+    @Published var ridePlace: RidePlace?
     @Published var experienceGeometryRevision = 0
     @Published var historyMapActive = false { didSet { scheduleStationLayouts() } }
     var applyingConfiguration = false
@@ -406,6 +447,7 @@ final class RailwayMapStore: ObservableObject {
     @Published var labelRevision = 0
     @Published var selection: RailwaySelection? {
         didSet {
+            if let item = selection, item.id != oldValue?.id { passportActivity.browse(item) }
             if let item = selection, let line = line(withID: item.id) {
                 clearLineFocus()
                 let routes = line.routes ?? []
@@ -630,6 +672,15 @@ final class RailwayMapStore: ObservableObject {
     }
 
     func start() async {
+        #if os(iOS)
+        let args = CommandLine.arguments
+        if args.contains(PassportFootprintValidation.flag), let i = args.firstIndex(of: "--ui-smoke"), args.indices.contains(i + 1) {
+            guard !onlineStarted else { return }
+            onlineStarted = true
+            await PassportFootprintValidation.run(directory: URL(fileURLWithPath: args[i + 1], isDirectory: true))
+            return
+        }
+        #endif
         if CommandLine.arguments.contains("--retina-check") || CommandLine.arguments.contains("--loading-check")
             || CommandLine.arguments.contains("--settings-check") || CommandLine.arguments.contains("--viewport-check")
             || CommandLine.arguments.contains("--scale-check") || CommandLine.arguments.contains("--urban-lifecycle-check")
@@ -641,7 +692,8 @@ final class RailwayMapStore: ObservableObject {
             || CommandLine.arguments.contains("--assistant-personalization-check")
             || CommandLine.arguments.contains("--v020-interchange-check")
             || CommandLine.arguments.contains("--v020-national-check")
-            || CommandLine.arguments.contains("--experiences-check")
+            || CommandLine.arguments.contains("--experiences-check") || CommandLine.arguments.contains("--journey-guide-check")
+            || CommandLine.arguments.contains(JourneyInspectionValidation.flag)
             || CommandLine.arguments.contains("--journey-frame-benchmark")
             || CommandLine.arguments.contains("--interface-check") || CommandLine.arguments.contains("--macao-check")
             || CommandLine.arguments.contains("--hongkong-check") || CommandLine.arguments.contains("--beijing-check") { mapMode = .offline }
@@ -956,6 +1008,7 @@ final class RailwayMapStore: ObservableObject {
     }
 
     func zoom(_ factor: Double) {
+        guard !journeyPlayer.holdsZoom else { return }
         region.span.latitudeDelta = min(100, max(0.001, region.span.latitudeDelta * factor))
         region.span.longitudeDelta = min(200, max(0.001, region.span.longitudeDelta * factor))
         cameraRevision += 1

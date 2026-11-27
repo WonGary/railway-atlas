@@ -1,9 +1,5 @@
-#if os(macOS)
-import AppKit
-import MapKit
+import Foundation
 import RailwayCore
-import SwiftUI
-import WebKit
 
 enum NationalDirectoryPins {
     static let all: [RailStation] = {
@@ -31,7 +27,15 @@ enum NationalDirectoryPins {
         }
         return []
     }()
+
+    static let byName = Dictionary(all.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
 }
+
+#if os(macOS)
+import AppKit
+import MapKit
+import SwiftUI
+import WebKit
 
 struct StationInspectorBoard: View {
     let name: String
@@ -47,6 +51,9 @@ struct StationInspectorBoard: View {
                 Text("线路与车次").tag(false)
                 Text("原站查询").tag(true)
             }.pickerStyle(.segmented).labelsHidden()
+            if let link = PostcardRouteShare.place(name,type:"station") {
+                ShareLink("分享车站地图", item:link).font(.caption)
+            }
             if online {
                 StationDirectoryView(name: name, inline: true).frame(height: 465)
             } else {

@@ -72,9 +72,18 @@ struct MapScreen: View {
                                              opacity: configuration.interfaceSettings.topControlsOpacity,
                                              cornerRadius: 12 * uiScale)
                             if let focus = store.lineFocus {
-                                HStack(spacing: 8) {
-                                    Text(focus.title).atlasFont(.caption.weight(.semibold)).lineLimit(2)
-                                    Button("恢复全图") { store.clearLineFocus() }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 8) {
+                                        Text(focus.title).atlasFont(.caption.weight(.semibold)).lineLimit(2)
+                                        Button("恢复全图") { store.clearLineFocus() }
+                                    }
+                                    if let line = focus.inspectionDirectory {
+                                        InspectionStationSequence(line: line, map: store).id(focus.revision)
+                                    }
+                                    if let note = focus.inspectionSummary {
+                                        Text(note).atlasFont(.caption).fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: 236, alignment: .leading)
+                                    }
                                 }
                                 .padding(7)
                                 .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
@@ -451,6 +460,18 @@ struct OfflineRailwayMap: View {
                     }
                     context.stroke(path, with:.color(.white), style:StrokeStyle(lineWidth:7,lineCap:.round,lineJoin:.round))
                     context.stroke(path, with:.color((focus.pathColor ?? store.renderSettings.focusInk).tint), style:StrokeStyle(lineWidth:4.4,lineCap:.round,lineJoin:.round))
+                    for layer in focus.inspectionLayers {
+                        var ink = Path()
+                        for part in layer.parts {
+                            guard let first = part.first else { continue }
+                            ink.move(to: projection.screen(first))
+                            for point in part.dropFirst() { ink.addLine(to: projection.screen(point)) }
+                        }
+                        let style = layer.ink.stroke
+                        context.stroke(ink, with: .color(.white), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+                        context.stroke(ink, with: .color(style.color.tint), style: StrokeStyle(lineWidth: style.width,
+                                       lineCap: .round, lineJoin: .round, dash: style.dash.map { CGFloat($0) }))
+                    }
                     let groups = Dictionary(grouping: store.focusedLines(focus), by: store.appearance)
                     let styled = groups.map { appearance, lines in
                         var track = Path()
@@ -542,6 +563,12 @@ struct OfflineRailwayMap: View {
                     context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: line.uncertain ? 2 : 4,
                         lineCap: .round, dash: line.uncertain ? [4, 5] : []))
                 }
+                if let place = store.ridePlace {
+                    let p = projection.screen(.init(place.lat,place.lon))
+                    context.draw(Text(Image(systemName:"mappin.circle.fill")).foregroundColor(.teal), at:p)
+                    context.draw(Text(place.name).font(.caption).foregroundColor(.primary),
+                                 at:CGPoint(x:p.x+10,y:p.y), anchor:.leading)
+                }
                 if let point = store.experienceMarker {
                     let p = projection.screen(point)
                     context.fill(Path(ellipseIn: CGRect(x: p.x - 16, y: p.y - 16, width: 32, height: 32)), with: .color(store.renderSettings.focusInk.tint))
@@ -553,6 +580,7 @@ struct OfflineRailwayMap: View {
                 DragGesture(minimumDistance: 3)
                     .updating($drag) { value, state, _ in state = value.translation }
                     .onChanged { value in
+                        store.journeyPlayer.userPanned()
                         let next = RailProjection(region: store.region, size: geometry.size, drag: value.translation)
                         store.rebuildVisible(in: next.visibleBounds)
                     }
@@ -563,8 +591,11 @@ struct OfflineRailwayMap: View {
             )
             .simultaneousGesture(
                 MagnifyGesture()
-                    .updating($magnification) { value, state, _ in state = value.magnification }
+                    .updating($magnification) { value, state, _ in
+                        if !store.journeyPlayer.holdsZoom { state = value.magnification }
+                    }
                     .onChanged { value in
+                        guard !store.journeyPlayer.holdsZoom else { return }
                         let next = RailProjection(region: store.region, size: geometry.size, magnification: value.magnification)
                         store.rebuildVisible(in: next.visibleBounds)
                     }
