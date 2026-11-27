@@ -213,6 +213,7 @@
         </section>
         <section class="workspace-page" data-page="settings" hidden>
           <div id="mapSettings"></div>
+          <p id="offlineReady" class="panel-note" role="status" hidden></p>
           <button class="text-button" id="exportMapSettings">导出地图设置</button>
           <label class="file-button">导入地图设置 JSON<input type="file" id="importMapSettings" accept=".json,application/json"></label>
           <footer id="mapCredits" aria-labelledby="creditsHeading">
@@ -431,7 +432,27 @@
   <script src="./app.js"></script>
   <script>
     if ("serviceWorker" in navigator && location.protocol !== "file:" && location.hostname !== "appassets.androidplatform.net") {
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
+      const offlineNote = document.getElementById("offlineReady");
+      const workers = navigator.serviceWorker;
+      offlineNote.hidden = false;
+      offlineNote.textContent = "正在保存网页和基础车次，请保持联网。";
+      function showOfflineReady() {
+        if (!workers.controller) return;
+        offlineNote.textContent = "网页和基础车次已可离线打开。在线查看过的车次路线也会保存在本机。";
+        if (navigator.onLine) workers.controller.postMessage("warm-offline-map");
+      }
+      function offlineSetupFailed() {
+        if (!workers.controller) offlineNote.textContent = "离线资料尚未存好。请联网后重新打开网页。";
+      }
+      workers.addEventListener("controllerchange", showOfflineReady);
+      window.addEventListener("online", showOfflineReady);
+      workers.register("./sw.js").then(registration => {
+        const installing = registration.installing;
+        installing?.addEventListener("statechange", () => {
+          if (installing.state === "redundant") offlineSetupFailed();
+        });
+        showOfflineReady();
+      }).catch(offlineSetupFailed);
     }
   </script>
 </body>

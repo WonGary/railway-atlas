@@ -32,6 +32,7 @@ async function run() {
     assert.deepEqual(await page.evaluate(()=>[state.route,state.map.hasLayer(state.routeLayer),state.map.hasLayer(state.historyLayer),state.workspaceView]),[null,false,false,"layers"]);
     await page.tap("#toggleWorkspace");
     await page.tap('[data-view="settings"]');
+    await page.waitForFunction(()=>navigator.serviceWorker.controller?.state==="activated",null,{timeout:90000});
     await page.selectOption("#pref-mode","cached");
     await page.tap('[data-view="layers"]');
     await page.uncheck("#pref-showsStations");
@@ -61,8 +62,6 @@ async function run() {
     await page.selectOption("#metroCitySelect","macao");
     await page.waitForFunction(()=>document.querySelector("#directoryStatus").textContent.includes("32 / 32"));
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-    await page.evaluate(()=>navigator.serviceWorker.ready.then(()=>true));
-    await page.waitForFunction(()=>navigator.serviceWorker.controller);
     await page.evaluate(()=>fetch("./data/metro/macao.json").then(r=>r.json()));
     await context.setOffline(true);
     await page.reload({waitUntil:"domcontentloaded"});

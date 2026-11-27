@@ -23,18 +23,17 @@ async function exercise(browser, phone) {
     const progress = page.locator("#journeyProgress");
     await page.goto(url, {waitUntil: "domcontentloaded", timeout: 60000});
     await page.bringToFront();
-    const ready = () => page.waitForFunction(() => typeof state !== "undefined" && state.routes.length && state.map,
+    const ready = () => page.waitForFunction(() => typeof state !== "undefined" && state.routes.length > 0 && Boolean(state.map),
       null, {polling: 100, timeout: 60000}).catch(async error => {
-      throw Error(`${error.message} (${[...errors, await page.locator("#mapDataError").textContent()].join(" ")})`);
+      const detail = await page.evaluate(() => ({
+        online:navigator.onLine, map:typeof state !== "undefined" && Boolean(state.map),
+        routes:typeof state !== "undefined" && state.routes.length,
+        controller:navigator.serviceWorker?.controller?.state, error:document.querySelector("#mapDataError")?.textContent
+      }));
+      throw Error(`${error.message} ${JSON.stringify({phone, detail, errors})}`);
     });
     await ready();
-    if (process.env.RAILWAY_TEST_SHELL) {
-      await page.waitForFunction(async shell => navigator.serviceWorker.controller &&
-        (await caches.keys()).includes(shell), process.env.RAILWAY_TEST_SHELL, {timeout: 90000});
-      await page.reload({waitUntil: "domcontentloaded"});
-      await ready();
-    }
-    await press("#toggleWorkspace");
+    if (await page.locator("#toggleWorkspace").getAttribute("aria-expanded") !== "true") await press("#toggleWorkspace");
     let before;
     if (phone) {
       await press('[data-view="stations"]');
@@ -130,11 +129,40 @@ async function exercise(browser, phone) {
       await page.waitForFunction(() => state.route?.train === "TEST");
       assert.ok(await follow.isDisabled() && await progress.isDisabled() && await page.locator("#playJourney").isDisabled());
     }
+    if (process.env.RAILWAY_TEST_SHELL) {
+      await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated", null, {timeout: 90000});
+      const cached = await page.evaluate(async shell => {
+        const keys = await caches.keys();
+        return keys.includes(shell) && Boolean(await (await caches.open(shell)).match(new URL("index.html", location.href)));
+      }, process.env.RAILWAY_TEST_SHELL);
+      assert.ok(cached, "the current shell must be installed before disconnecting");
+      await context.setOffline(true);
+      assert.equal(await page.evaluate(() => fetch("./sw.js?offline-probe", {cache:"no-store"}).then(() => true, () => false)), false);
+      const reopened = await page.reload({waitUntil:"domcontentloaded"});
+      assert.ok(reopened?.fromServiceWorker(), "expected offline navigation from the installed worker");
+      await ready();
+      if (await page.locator("#toggleWorkspace").getAttribute("aria-expanded") !== "true") await press("#toggleWorkspace");
+      await press('[data-view="experiences"]');
+      await press("#toggleJourney");
+      await page.locator("#libraryDate").fill(day);
+      await page.locator("#libraryTrain").fill("D174");
+      const match = page.locator("#libraryResults button").filter({hasText:/^D174\b/}).first();
+      if (phone) await match.tap(); else await match.click();
+      await page.waitForFunction(() => state.route?.trip === "880000D17403" && state.route.geometryAvailable)
+        .catch(async err => { throw Error(`${err.message}: ${await page.locator("#libraryStatus").textContent()}`); });
+      await page.locator("#playbackSpeed").selectOption("120");
+      await press("#playJourney");
+      const origin = await camera(page);
+      await page.waitForFunction(center => state.map.distance(center, state.map.getCenter()) > 500, origin.center);
+      assert.ok((await camera(page)).offset < 24, "the camera should follow D174 after reopening offline");
+    }
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({url, view: phone ? "phone / station board" : "desktop / train search",
       train: "D174", previewZoom: preview.zoom, followZoom: initial.zoom, userZoom,
-      movingCameraOffsetPx: moving.offset, reacquiredOffsetPx: resumed.offset, returnOffsetPx: returnOffset}));
+      movingCameraOffsetPx: moving.offset, reacquiredOffsetPx: resumed.offset, returnOffsetPx: returnOffset,
+      reopenedD174Offline: Boolean(process.env.RAILWAY_TEST_SHELL)}));
   } finally {
+    await context.setOffline(false);
     await context.close();
   }
 }

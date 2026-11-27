@@ -28,9 +28,20 @@ const RailPaths = (() => {
   }
   function read(name) {
     if (!files.has(name)) {
-      const request = fetch(new URL(name, base)).then(response => {
+      const url = new URL(name, base);
+      // On a first visit the user can pick a train before the worker controls this page.
+      const saveFirstRide = /^[A-Z0-9]+-[0-9a-f]{12}\.json$/.test(name)
+        && globalThis.navigator?.serviceWorker && !navigator.serviceWorker.controller && globalThis.caches
+        && url.hostname !== "appassets.androidplatform.net";
+      const request = fetch(url).then(async response => {
         if (!response.ok) throw Error(`路线资料未能读取（${response.status}）。`);
-        return response.json();
+        const copy = saveFirstRide && !response.redirected ? response.clone() : null;
+        const data = await response.json();
+        if (copy) {
+          try { await (await caches.open("railway-atlas-detail-0.7.0")).put(url, copy); }
+          catch { /* A full cache still permits this journey online. */ }
+        }
+        return data;
       }).catch(error => { files.delete(name); throw error; });
       if (files.size > 32) files.delete([...files.keys()].find(k => k !== "index.json"));
       files.set(name, request);
