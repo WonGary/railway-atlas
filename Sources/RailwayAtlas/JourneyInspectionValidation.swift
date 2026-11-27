@@ -23,7 +23,7 @@ enum JourneyInspectionValidation {
         let bundle = Bundle.main.bundleURL.path
         let day = "2026-11-26"
         var pairs: [Pair] = []
-        var physicalLine = "", station = "", source = "", stage = "包内目录"
+        var physicalLine = "", station = "", source = "", lineCoverage = "", stage = "包内目录"
         var stationCount = 0, pinnedStations = 0, lineParts = 0, legVertices = 0
         var error: String?
     }
@@ -69,6 +69,7 @@ enum JourneyInspectionValidation {
             record.stage = "线路全线与站所"
             try await until("全线站序") { map.lineFocus?.inspectionDirectory?.title == physical.title }
             record.physicalLine = physical.title; record.stationCount = physical.stops.count
+            record.lineCoverage = map.lineFocus?.inspectionSummary ?? ""
             record.lineParts = map.lineFocus?.paths.count ?? 0; record.pinnedStations = map.stationBoardPins.count
             guard record.stationCount == 20, record.lineParts > 0, record.pinnedStations > 1,
                   let station = map.stationBoardPins.first(where: { $0.name == "广元" }) else {
@@ -125,8 +126,12 @@ enum JourneyInspectionValidation {
             let p = Coordinate(31, 110), q = Coordinate(31, 110.01), r = Coordinate(31, 110.02), s = Coordinate(31, 110.03)
             let crossing = try await JourneyTrackComparison.compare([[p,s]], [[.init(30.99,110.015), .init(31.01,110.015)]])
             let gap = try await JourneyTrackComparison.compare([[p,q],[r,s]], [[p,s]])
+            var traces = primary.legs.map { JourneyInspection.Trace(points: $0.points, source: $0.source) }
+            traces[leg.id] = .init()
+            let damaged = try JourneyInspection.make(table, traces: traces, library: nil, notice: nil)
             guard crossing.a.sharedMetres == 0, gap.a.uniqueMetres == 0, gap.b.uniqueMetres > 700,
-                  gap.a.shared.count == 2 else { throw DataError.invalid("交叉或缺轨被误画为连续共线") }
+                  gap.a.shared.count == 2, !damaged.complete, damaged.paths.count == 13,
+                  damaged.legs[leg.id].status == "缺少区间轨迹" else { throw DataError.invalid("交叉或缺轨被误画为连续共线") }
             map.clearLineFocus()
             guard map.lineFocus == nil, map.journeyPlayer.mode == nil else { throw DataError.invalid("比较改变了播放器") }
             record.stage = "完成"; record.status = "PASS"
@@ -169,10 +174,13 @@ enum JourneyInspectionValidation {
         #endif
         let width = image.width, height = image.height
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
-        guard let cs = CGColorSpace(name: CGColorSpace.sRGB), let ctx = CGContext(data: &rgba, width: width, height: height,
-            bitsPerComponent: 8, bytesPerRow: width * 4, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue |
-            CGBitmapInfo.byteOrder32Big.rawValue) else { throw DataError.invalid("截图像素不可读") }
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        try rgba.withUnsafeMutableBytes { storage in
+            guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
+                  let ctx = CGContext(data: storage.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                    bytesPerRow: width * 4, space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue |
+                    CGBitmapInfo.byteOrder32Big.rawValue) else { throw DataError.invalid("截图像素不可读") }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
         let rgb = [("first",8,124,186), ("second",192,57,119), ("shared",23,128,90)]
         var hits = [String: Int]()
         for p in stride(from: 0, to: rgba.count, by: 4) {

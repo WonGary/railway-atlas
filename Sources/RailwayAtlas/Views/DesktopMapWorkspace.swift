@@ -341,12 +341,24 @@ struct AtlasInspectorView: View {
                 AtlasAssistantView(embedded: true)
             } else {
               ScrollView {
+                if let focus = map.lineFocus, focus.inspectionOwner != nil {
+                    VStack(alignment: .leading, spacing: 9 * scale) {
+                        Text(focus.title).atlasFont(.headline)
+                        if let note = focus.inspectionSummary {
+                            Text(note).atlasFont(.caption).fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let line = focus.inspectionDirectory {
+                            InspectionStationSequence(line: line, map: map).id(focus.revision)
+                        }
+                        Button("恢复全图") { map.clearLineFocus() }
+                    }.atlasPadding(14).frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if let selection = map.selection {
                     FeatureDetails(item: selection)
                         .atlasPadding(14)
                 } else if let id=map.lineFocus?.directionID, let entry=map.directions.entries[id] {
                     MetroDirectionInspector(entry:entry).atlasPadding(14)
-                } else {
+                } else if map.lineFocus?.inspectionOwner == nil {
                     VStack(alignment: .leading, spacing: 12 * scale) {
                         Image(systemName: "cursorarrow.click.2")
                             .atlasFont(.system(size: 28)).foregroundStyle(.secondary)

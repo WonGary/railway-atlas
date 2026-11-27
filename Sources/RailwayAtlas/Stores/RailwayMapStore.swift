@@ -176,6 +176,10 @@ final class RailwayMapStore: ObservableObject {
         if journeyPlayer.mode == .train && journeyPlayer.follow { journeyPlayer.browse() }
         if selection != nil { selection = nil }
         clearLineFocus()
+        #if os(macOS)
+        inspectorPane = .feature
+        inspectorVisible = true
+        #endif
     }
     @Published var experienceLines: [ExperienceMapLine] = []
     @Published var experienceMarker: Coordinate?

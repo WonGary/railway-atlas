@@ -77,6 +77,7 @@ struct MapScreen: View {
                                         Text(focus.title).atlasFont(.caption.weight(.semibold)).lineLimit(2)
                                         Button("恢复全图") { store.clearLineFocus() }
                                     }
+                                    #if !os(macOS)
                                     if let line = focus.inspectionDirectory {
                                         InspectionStationSequence(line: line, map: store).id(focus.revision)
                                     }
@@ -84,6 +85,7 @@ struct MapScreen: View {
                                         Text(note).atlasFont(.caption).fixedSize(horizontal: false, vertical: true)
                                             .frame(maxWidth: 236, alignment: .leading)
                                     }
+                                    #endif
                                 }
                                 .padding(7)
                                 .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
@@ -470,7 +472,7 @@ struct OfflineRailwayMap: View {
                         let style = layer.ink.stroke
                         context.stroke(ink, with: .color(.white), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
                         context.stroke(ink, with: .color(style.color.tint), style: StrokeStyle(lineWidth: style.width,
-                                       lineCap: .round, lineJoin: .round, dash: style.dash.map { CGFloat($0) }))
+                                       lineCap: style.dash.isEmpty ? .round : .butt, lineJoin: .round, dash: style.dash.map { CGFloat($0) }))
                     }
                     let groups = Dictionary(grouping: store.focusedLines(focus), by: store.appearance)
                     let styled = groups.map { appearance, lines in

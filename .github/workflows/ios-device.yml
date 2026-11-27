@@ -53,3 +53,28 @@ jobs:
           path: out/*.zip
           compression-level: 0
           if-no-files-found: error
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise the installed iPhone app
+        shell: bash
+        run: |
+          set -euo pipefail
+          device=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for runtime in sorted(devices, reverse=True) if ".iOS-" in runtime
+                     for d in devices[runtime] if d["name"].startswith("iPhone")))')
+          xcrun simctl bootstatus "$device" -b &
+          boot=$!
+          xcodebuild -project RailwayAtlas.xcodeproj -scheme RailwayAtlas-iOS \
+            -configuration Release -destination "id=$device" \
+            -derivedDataPath "$RUNNER_TEMP/atlas-sim-build" CODE_SIGNING_ALLOWED=NO build
+          wait "$boot"
+          app="$RUNNER_TEMP/atlas-sim-build/Build/Products/Release-iphonesimulator/RailwayAtlas-iOS.app"
+          xcrun simctl install "$device" "$app"
+          for suite in games passport inspector; do
+            node Checks/check-rail-games-installed.cjs ios "$device" "$suite"
+          done

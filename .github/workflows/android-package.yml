@@ -53,3 +53,9 @@ jobs:
           name: android-signed-test
           path: Mobile/Android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-unsigned
+          path: Mobile/Android/app/build/outputs/apk/release/app-release-unsigned.apk
+          compression-level: 0
+          if-no-files-found: error

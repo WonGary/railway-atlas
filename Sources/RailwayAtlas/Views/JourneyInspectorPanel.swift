@@ -50,6 +50,7 @@ struct JourneyInspectorPanel: View {
     @State private var work: Task<Void, Never>?
     @State private var result: Compared?
     @State private var comparisonError: String?
+    @State private var openingLine: String?
     @State private var passengerRequest: PassportSectionRequest?
 
     private struct Compared {
@@ -72,6 +73,9 @@ struct JourneyInspectorPanel: View {
                         if let note = report.notice { Text(note).foregroundStyle(.secondary) }
                         ForEach(report.legs) { leg in
                             Button {
+                                work?.cancel()
+                                openingLine = nil
+                                comparing = false
                                 rowID = rowID == leg.id ? nil : leg.id
                             } label: {
                                 HStack {
@@ -95,10 +99,12 @@ struct JourneyInspectorPanel: View {
                         passengerRequest = PassportSectionRequest(table)
                     }
                 }
+                if let reportError { Text(reportError).font(.caption).foregroundStyle(.orange) }
             } else if let reportError { Text(reportError).foregroundStyle(.orange) }
             else { ProgressView("正在读取逐段轨迹…").controlSize(.small) }
         }
         .task(id: table) {
+            report = nil; reportError = nil
             do {
                 let loaded = try await model.inspectJourney(table)
                 try Task.checkCancellation()
@@ -129,6 +135,7 @@ struct JourneyInspectorPanel: View {
             if leg.drawable {
                 Button("主地图查看此区间") {
                     guard let map = model.map else { return }
+                    work?.cancel(); openingLine = nil; comparing = false
                     map.showInspectionLayers([.init(ink: .first, parts: [leg.points])],
                         title: "\(table.train) · \(leg.from) → \(leg.to)", owner: table.id)
                     showMap()
@@ -141,6 +148,7 @@ struct JourneyInspectorPanel: View {
                     ForEach(endpoints, id: \.id) { station in
                         Button(station.name) {
                             guard let map = model.map else { return }
+                            work?.cancel(); openingLine = nil; comparing = false
                             map.select(RailwayMapStore.item(station))
                             showMap()
                         }
@@ -151,13 +159,15 @@ struct JourneyInspectorPanel: View {
                 Button("\(leg.planned ? "经由" : "线路目录候选") · \(line.title)全线") {
                     guard let map = model.map else { return }
                     work?.cancel()
+                    openingLine = line.title; comparing = false; reportError = nil
                     work = Task {
-                        do { try await map.showInspectionLine(line, report: report); showMap() }
-                        catch { if !Task.isCancelled { reportError = error.localizedDescription } }
+                        do { try await map.showInspectionLine(line, report: report); openingLine = nil; showMap() }
+                        catch { if !Task.isCancelled { openingLine = nil; reportError = error.localizedDescription } }
                     }
                 }.disabled(model.map == nil).accessibilityIdentifier("inspection-line-\(line.title)")
                     .inspectionProbe("inspection-line-\(line.title)")
             }
+            if let openingLine { ProgressView("正在核对\(openingLine)的轨迹…").controlSize(.small) }
             if leg.viaLines.isEmpty { Text("本机目录没有可展开的经由线路。").foregroundStyle(.secondary) }
         }.font(.caption).padding(.leading, 18).padding(.bottom, 6)
     }
@@ -248,7 +258,7 @@ struct JourneyInspectorPanel: View {
     }
 
     private func invalidate() {
-        work?.cancel(); work = nil; comparing = false; result = nil; comparisonError = nil
+        work?.cancel(); work = nil; comparing = false; openingLine = nil; result = nil; comparisonError = nil
         if let map = model.map, map.lineFocus?.inspectionOwner == table.id,
            map.lineFocus?.inspectionLayers.isEmpty == false { map.clearLineFocus() }
     }
