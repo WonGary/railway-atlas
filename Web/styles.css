@@ -215,7 +215,7 @@ h2 { font-size: 16px; line-height: 1.3; margin-top: 4px; }
 .left-note p + p { margin-top: 10px; }
 
 .map-stage { min-width: 0; position: relative; background: #d9e0e0; }
-#map { width: 100%; height: 100%; }
+#map { width: 100%; height: 100%; isolation: isolate; }
 .leaflet-container { background: #b9c2c3; font-family: inherit; }
 #map {
   --station-ink: #2e2e2e;
@@ -292,6 +292,10 @@ h2 { font-size: 16px; line-height: 1.3; margin-top: 4px; }
 #playbackClock { font-variant-numeric: tabular-nums; }
 #playbackPhase { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #journeyProgress { height: 14px; padding: 0; accent-color: var(--accent); }
+.playback-bar .follow-control { display: inline-flex; flex: none; align-items: center; gap: 5px; min-height: 36px; cursor: pointer; white-space: nowrap; }
+.follow-control input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.follow-control:has(:checked) { color: var(--accent-strong); }
+.playback-bar .follow-control:has(:disabled) { color: var(--faint); cursor: default; }
 .speed-select { width: 60px; padding: 5px 4px; font-size: 10px; }
 .map-status { display: grid; gap: 4px; border-top: 1px solid var(--map-edge); padding-top: 8px; color: var(--map-muted); }
 .map-notices { position: absolute; z-index: 500; bottom: 54px; left: 10px; max-width: min(340px,70%); pointer-events: none; }
@@ -419,6 +423,7 @@ tr:last-child td { border-bottom: 0; }
   .right-panel { top: 10px; right: 10px; bottom: 10px; width: min(410px, calc(100% - 20px)); }
   .app-shell:has(#playbackBar:not([hidden])) > .right-panel:not(.floating) { bottom: 82px; }
   .map-stage:has(#playbackBar:not([hidden])) .map-legend { bottom: 82px; }
+  .map-stage:has(#playbackBar:not([hidden])) .leaflet-bottom.leaflet-left { bottom: 82px; }
   .playback-bar { bottom: 10px; }
   .top-actions { min-width: 0; gap: 4px; overflow-x: auto; scrollbar-width: none; }
   .top-actions::-webkit-scrollbar { display: none; }
@@ -433,8 +438,18 @@ tr:last-child td { border-bottom: 0; }
   .top-actions .text-button { min-width: 42px; padding: 0 6px; }
   .text-button { padding: 5px 5px; font-size: 10px; }
   .two-fields { grid-template-columns: 1fr; }
-  .playback-bar { width: calc(100% - 22px); bottom: 10px; }
-  .playback-title { gap: 6px; }
+  .playback-bar {
+    width: calc(100% - 22px); bottom: 10px; display: grid; gap: 0 8px; padding: 4px 9px;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "title title title close" "play progress follow speed";
+  }
+  .playback-main { display: contents; }
+  .playback-title { grid-area: title; gap: 6px; min-width: 0; }
+  #playJourney { grid-area: play; }
+  #journeyProgress { grid-area: progress; }
+  .follow-control { grid-area: follow; }
+  #playbackSpeed { grid-area: speed; width: 52px; }
+  #closePlayback { grid-area: close; justify-self: end; }
   .right-panel { top: 8px; right: 8px; bottom: 8px; width: min(410px, calc(100% - 16px)); }
   .assistant-config { max-height: 46%; padding: 10px 12px; }
   .conversation { padding: 12px; }

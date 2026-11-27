@@ -61,6 +61,9 @@ const state = {
   playbackTimer: null,
   playbackSeconds: 0,
   playbackVisible: false,
+  journeyPreviewZoom: null,
+  lastFollowPan: 0,
+  mapZooming: false,
   metroVisible: false,
   showMetro: true,
   showConstruction: true,
@@ -450,9 +453,7 @@ function setWorkspaceOpen(open) {
   document.querySelector(".app-shell").classList.toggle("workspace-open", open);
   document.querySelector(".app-shell").classList.toggle("workspace-closed", !open);
   $("workspaceScrim").hidden = !open;
-  $("toggleWorkspace").setAttribute("aria-label", open ? "收起图层与工作区" : "打开图层与工作区");
   $("toggleWorkspace").setAttribute("aria-expanded", String(open));
-  $("toggleWorkspace").title = $("toggleWorkspace").getAttribute("aria-label");
   updateJourneyControl();
   if(state.map)requestAnimationFrame(()=>state.map.invalidateSize({pan:false}));
 }
@@ -473,9 +474,16 @@ function updateJourneyControl() {
   button.setAttribute("aria-pressed", String(open));
   button.textContent = open ? "关闭沿线旅行" : "沿线旅行";
   button.title = open ? "关闭沿线旅行" : "打开沿线旅行";
+  const workspace = $("toggleWorkspace");
+  const routePanel = state.playbackVisible && state.workspaceView === "route";
+  const expanded = workspace.getAttribute("aria-expanded") === "true";
+  workspace.textContent = routePanel ? "车次" : "图层";
+  workspace.title = (expanded ? "收起" : "打开") + (routePanel ? "车次面板" : "图层与工作区");
+  workspace.setAttribute("aria-label", workspace.title);
 }
 
 function setPlaybackVisible(visible) {
+  if (visible && !state.playbackVisible) $("followJourney").checked = true;
   state.playbackVisible = visible;
   $("playbackBar").hidden = !visible;
   if (!visible) stopPlayback();
@@ -504,9 +512,15 @@ function leaveJourney() {
 function closeWorkspace() {
   if (state.playbackVisible && state.workspaceView === "settings") {
     setWorkspaceView("route");
-    setWorkspaceOpen(false);
-  } else if (journeyOpen()) closeJourney();
-  else setWorkspaceOpen(false);
+  }
+  setWorkspaceOpen(false);
+}
+
+function revealJourneyMapOnPhone() {
+  if (!state.playbackVisible || !state.route?.geometryAvailable || !matchMedia("(max-width: 900px)").matches) return;
+  $("infoPanel").hidden = true;
+  $("assistantPanel").hidden = true;
+  setWorkspaceOpen(false);
 }
 
 function setJourneyOpen(open) {
@@ -539,11 +553,14 @@ function fitRoute() {
     showToast("这趟车次没有随包轨道几何。");
     return;
   }
+  if (state.playbackTimer) $("followJourney").checked = false;
   state.map.fitBounds(bounds.pad(0.08), { animate: false });
+  state.journeyPreviewZoom = state.map.getZoom();
 }
 
 function drawSelectedRoute() {
   stopPlayback();
+  state.journeyPreviewZoom = null;
   state.routeLayer.clearLayers();
   state.stationMarkers.clear();
   state.routePolylines = [];
@@ -604,8 +621,9 @@ function updatePlaybackBounds() {
   input.min = String(start * 60);
   input.max = String(Math.max(start * 60 + 1, end * 60));
   input.value = String(start * 60);
-  input.disabled = !route?.geometryAvailable;
+  input.disabled = !state.playbackMarker || end <= start;
   $("playJourney").disabled = input.disabled;
+  $("followJourney").disabled = input.disabled;
   input.setAttribute("aria-label", `${route?.train || "列车"} 沿线旅行进度`);
   $("playbackTrain").textContent = route?.train || "沿线旅行";
   $("playbackTrain").title = route ? routeTitle(route) : "";
@@ -1036,16 +1054,34 @@ function stopPlayback() {
   }
 }
 
-function updatePlayback() {
-  const input = $("journeyProgress");
+function followJourneyPosition(position, instant) {
+  const map = state.map;
+  if (!state.playbackVisible || !$("followJourney").checked || state.mapZooming) return;
+  const zoom = map.getZoom();
+  // The first ride starts at track level unless the rider already chose a zoom.
+  const targetZoom = state.journeyPreviewZoom === zoom ? Math.max(zoom, 12) : zoom;
+  state.journeyPreviewZoom = null;
+  const size = map.getSize();
+  const offset = map.latLngToContainerPoint(position).distanceTo(size.divideBy(2));
+  const now = performance.now();
+  if (!instant && (offset < 2 || (now - state.lastFollowPan < 900 && offset < 24))) return;
+  state.lastFollowPan = now;
+  const animate = !instant && offset < Math.min(size.x, size.y) / 2 && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  map.setView(position, targetZoom, {animate, duration: 0.20});
+}
+
+function updatePlayback(value = Number($("journeyProgress").value), camera = "preview") {
   const range = routeTimeRange();
-  const seconds = Math.max(range.start, Math.min(range.end, Number(input.value)));
+  const seconds = Math.max(range.start, Math.min(range.end, value));
   state.playbackSeconds = seconds;
-  input.value = String(seconds);
+  $("journeyProgress").value = String(seconds);
   $("playbackClock").textContent = formatClock(seconds / 60);
   $("playbackPhase").textContent = playbackPhase(seconds);
   const position = coordinateAtJourneyTime(seconds);
-  if (position && state.playbackMarker) state.playbackMarker.setLatLng(position);
+  if (position && state.playbackMarker) {
+    state.playbackMarker.setLatLng(position);
+    if (camera !== "preview") followJourneyPosition(position, camera === "snap" || seconds >= range.end);
+  }
   if (seconds >= range.end) stopPlayback();
 }
 
@@ -1056,15 +1092,18 @@ function startPlayback() {
     showToast("这趟车次没有完整的起终时刻。");
     return;
   }
-  if (state.playbackSeconds >= range.end) $("journeyProgress").value = String(range.start);
   stopPlayback();
+  updatePlayback(state.playbackSeconds >= range.end ? range.start : state.playbackSeconds, "snap");
   $("playJourney").textContent = "Ⅱ";
   $("playJourney").title = "暂停沿线旅行";
   $("playJourney").setAttribute("aria-label", "暂停沿线旅行");
-  const rate = Math.max(1, Number($("playbackSpeed").value));
+  let lastTick = performance.now();
   state.playbackTimer = setInterval(() => {
-    $("journeyProgress").value = String(Math.min(range.end, state.playbackSeconds + rate * 0.25));
-    updatePlayback();
+    const now = performance.now();
+    const elapsed = (now - lastTick) / 1000;
+    lastTick = now;
+    const rate = Number($("playbackSpeed").value);
+    updatePlayback(state.playbackSeconds + elapsed * rate, "track");
   }, 250);
 }
 
@@ -1867,14 +1906,15 @@ function setupPanels() {
   $("toggleJourney").addEventListener("click", () => setJourneyOpen(!journeyOpen()));
   $("closePlayback").addEventListener("click", closeJourney);
   $("playJourney").addEventListener("click", () => state.playbackTimer ? stopPlayback() : startPlayback());
-  $("journeyProgress").addEventListener("input", updatePlayback);
-  $("playbackSpeed").addEventListener("change", () => {
-    if (state.playbackTimer) startPlayback();
+  $("journeyProgress").addEventListener("input", event => updatePlayback(Number(event.target.value), "snap"));
+  $("followJourney").addEventListener("change", event => {
+    if (event.target.checked && state.playbackMarker) followJourneyPosition(state.playbackMarker.getLatLng(), true);
+    else state.map.stop();
   });
   $("routeSelect").addEventListener("change", event => {
     const id=event.target.value;
     if (id.startsWith("search:")) journeyChoices[Number(id.slice(7))]?.open();
-    else selectRoute(id);
+    else { selectRoute(id); revealJourneyMapOnPhone(); }
   });
   function setJourneyRange() {
     const from=Number($("routeFrom").value);
@@ -2049,6 +2089,7 @@ function displayTimetableJourney(route) {
   if (!journeyOpen()) state.journeyCamera={center:state.map.getCenter(),zoom:state.map.getZoom()};
   state.routes=[...state.routes.filter(item=>item.id!==route.id),route];
   populateRoutePicker(); setWorkspaceView("route"); setWorkspaceOpen(true); setPlaybackVisible(true); selectRoute(route.id);
+  revealJourneyMapOnPhone();
 }
 async function openTimetableJourney(timetable, trip) {
   const serial=++journeyRequest;
@@ -2679,8 +2720,8 @@ function nationalView() {
 function closeTopMapPanel() {
   const dialog=document.querySelector("dialog[open]");if(dialog){dialog.close();return true;}
   for(const id of ["assistantPanel","infoPanel"])if(!$(id).hidden){$(id).hidden=true;return true;}
-  if(journeyOpen()){closeJourney();return true;}
-  if(document.querySelector(".workspace-open")){setWorkspaceOpen(false);return true;}return false;
+  if(document.querySelector(".workspace-open")){closeWorkspace();return true;}
+  if(journeyOpen()){closeJourney();return true;}return false;
 }
 let startupCredit=true;
 function updateBasemapCreditLine() {
@@ -2759,6 +2800,9 @@ function initializeMap() {
     "versatiles-vector": AtlasVectorBasemap.create("versatiles")
   };
   L.control.scale({imperial:false,position:"bottomleft"}).addTo(state.map);
+  state.map.on("dragstart", () => { if (state.playbackVisible) $("followJourney").checked = false; });
+  state.map.on("zoomstart", () => { state.mapZooming = true; });
+  state.map.on("zoomend", () => { state.mapZooming = false; });
   state.map.on("zoomend", updateZoom);
   state.map.on("moveend", refreshMetroDetailVisibility);
   state.map.on("moveend",()=>{if(!state.playbackVisible){const c=state.map.getCenter();writeStored("railway-atlas-map-camera",{lat:c.lat,lng:c.lng,z:state.map.getZoom()});}});

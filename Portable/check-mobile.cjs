@@ -43,6 +43,8 @@ async function run() {
     await page.tap("#toggleJourney");
     const routeID=await page.evaluate(()=>state.routes.find(route=>route.train==="G337").id);
     await page.selectOption("#routeSelect",routeID);
+    assert.ok(await page.locator("#followJourney").isVisible());
+    await page.tap("#toggleWorkspace");
     assert.equal(await page.locator("#stationList button").count(),7);
     await page.selectOption("#routeFrom","2");
     await page.selectOption("#routeTo","4");
@@ -50,6 +52,8 @@ async function run() {
     await page.tap("#fullJourney");
     assert.equal(await page.evaluate(()=>state.route.legs.length),6);
     await page.tap("#closeWorkspace");
+    assert.equal(await page.locator("#playbackBar").isVisible(),true);
+    await page.tap("#closePlayback");
     assert.equal(await page.locator("#playbackBar").isVisible(),false);
     assert.equal(await page.evaluate(()=>state.map.hasLayer(state.routeLayer)),false);
     await page.tap("#toggleWorkspace");
