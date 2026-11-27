@@ -47,6 +47,8 @@ public final class AtlasActivity extends Activity {
     private WebView makeView() {
         WebView view = new WebView(this);
         frame.addView(view, -1, -1);
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        view.setContentDescription("铁道漫游地图");
         WebSettings s = view.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
