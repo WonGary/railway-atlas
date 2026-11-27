@@ -59,6 +59,10 @@
             <label>下车站<select id="routeTo"></select></label>
           </div>
           <button id="fullJourney" class="text-button" hidden>恢复全程</button>
+          <div class="record-actions">
+            <button id="recordRidden" class="text-button" type="button">将这个区间记为已乘坐</button>
+            <button id="routeToCard" class="text-button" type="button">制作区间明信片</button>
+          </div>
           <button id="matchTracks" class="text-button" hidden>用本机瓦片匹配径路</button>
           <p id="matchStatus" class="panel-note" role="status" hidden></p>
           <label class="file-button">导入时刻/径路 JSON<input id="importTimetable" type="file" accept=".json,application/json"></label>
@@ -139,6 +143,13 @@
               <label class="file-button">导入记录<input id="importPassport" type="file" accept=".json,.csv,application/json,text/csv"></label>
             </div>
             <div id="passportSummary" class="passport-summary"></div>
+            <details id="footprintPanel">
+              <summary>我的足迹与护照章</summary>
+              <label>查看记录<select id="footprintKind"><option value="travelled">实际乘坐</option><option value="simulated">模拟旅行</option><option value="browsed">浏览过的区间</option></select></label>
+              <p id="footprintStats" class="panel-note" role="status"></p>
+              <div id="footprintMap" style="height:260px;min-width:0" aria-label="所选记录的实际区间地图"></div>
+              <div id="footprintStamps" class="record-actions"></div>
+            </details>
             <div id="passportList" class="record-list"></div>
           </section>
           <section class="experience-page" data-experience-page="postcard" hidden>
@@ -208,12 +219,30 @@
                 <option value="red-replica">红色电子客票纪念样张</option>
                 <option value="blue-replica">蓝色电子客票纪念样张</option>
                 <option value="voucher-replica">电子报销联纪念样张</option>
+                <option value="stock-blue">蓝色磁介票 · 参考票面</option>
+                <option value="stock-red">红色纸票 · 参考票面</option>
                 <option value="night">夜行线路卡</option><option value="ink">黑白线路卡</option>
               </select>
             </label>
             <canvas id="postcardPreview" class="postcard-preview" width="1280" height="720"></canvas>
             <p id="postcardStatus" role="status" class="panel-note"></p>
             <button id="downloadPostcard" class="primary-button wide-button">导出 PNG 明信片</button>
+            <details id="cardOutput">
+              <summary>打印、壁纸和路线分享</summary>
+              <label>路线图层<select id="cardMapPreset"><option value="standard">省界、国界与沿线城市</option><option value="simple">仅线路</option><option value="boundaries">省界和国界</option><option value="cities">主要城市</option><option value="stations">含经停站</option></select></label>
+              <label>导出格式<select id="cardExportFormat"><option value="ticket">票据 PDF（85.6 × 54 毫米）</option><option value="a4">A4 打印 PDF</option><option value="wallpaper">手机壁纸 PNG（1080 × 1920）</option><option value="svg">SVG（内嵌票面图像）</option></select></label>
+              <button id="exportCardFormat" type="button" class="text-button">导出选定格式</button>
+              <button id="createRideShare" type="button" class="text-button">生成区间分享码</button>
+              <div id="rideShareResult" hidden>
+                <canvas id="rideShareQR" width="240" height="240" aria-label="打开此乘车区间的二维码"></canvas>
+                <a id="rideShareLink" target="_blank" rel="noopener noreferrer">打开公开车次区间</a>
+                <button id="copyRideShare" type="button" class="text-button">复制路线链接</button>
+                <button id="saveRideShare" type="button" class="text-button">保存分享码</button>
+                <label><input id="printRideQR" type="checkbox">在参考票面上印区间分享码</label>
+                <p class="panel-note">扫码可查看车次、乘车日期与上下车站。姓名、票号和备注保存在本机。</p>
+              </div>
+              <p id="cardExportStatus" class="panel-note" role="status"></p>
+            </details>
           </section>
           <section class="experience-page" data-experience-page="history" hidden>
             <p class="panel-note">正在读取有建设日期的轨道区段。</p>
@@ -510,11 +539,14 @@
   <script src="./station-directory/paths/manifest.js"></script>
   <script src="./station-directory/paths.js"></script>
   <script src="./ticket-face.js"></script>
+  <script src="./data/station-transliterations.js"></script>
   <script src="./card-map.js"></script>
   <script src="./station-directory/panel.js"></script>
   <script src="./station-board.js"></script>
   <script src="./history-network.js"></script>
   <script src="./run-info.js"></script>
+  <script src="./vendor/qrcode-generator.js"></script>
+  <script src="./journey-keepsakes.js"></script>
   <script src="./app.js"></script>
   <script src="./rail-games.js"></script>
   <script src="./route-inspector.js"></script>

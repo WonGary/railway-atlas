@@ -2,6 +2,7 @@ import CoreText
 import Foundation
 import RailwayCore
 import SwiftUI
+import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
 #else
@@ -11,6 +12,7 @@ import UIKit
 enum PostcardStyle: String, CaseIterable, Identifiable {
     case red, blue, map, paper, magnetic, voucher, night, inkMap
     case redReplica, blueReplica, voucherReplica
+    case stockRed, stockBlue
 
     var id: String { rawValue }
 
@@ -27,6 +29,8 @@ enum PostcardStyle: String, CaseIterable, Identifiable {
         case .redReplica: "国铁红票复刻样张"
         case .blueReplica: "国铁蓝票复刻样张"
         case .voucherReplica: "电子报销凭证复刻样张"
+        case .stockRed: "红色纸票 · 参考票面"
+        case .stockBlue: "蓝色磁介票 · 参考票面"
         }
     }
 }
@@ -197,7 +201,11 @@ struct RailwayPostcardView: View {
     private var caption: String { model.postcardCaption }
 
     @State private var exporting = false
-    @State private var output = ExperienceFile(Data())
+    @State private var format = PostcardOutput.png
+    @State private var shareURL: URL?
+    @State private var shareCode: CGImage?
+    @State private var shareKey = ""
+    @State private var output = PostcardDocument(Data())
     @State private var error: String?
     @State private var route: RailTrackJourney?
     @State private var loadedKey = ""
@@ -256,8 +264,10 @@ struct RailwayPostcardView: View {
                     }
                     .buttonStyle(.bordered)
 
-                    Button("导出 PNG", systemImage: "square.and.arrow.up") {
-                        export()
+                    Menu("导出", systemImage: "square.and.arrow.up") {
+                        ForEach(PostcardOutput.allCases, id:\.self) { item in
+                            Button(item.title) { export(item) }
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(currentRoute == nil)
@@ -279,6 +289,30 @@ struct RailwayPostcardView: View {
                 .frame(maxWidth: 900)
                 .aspectRatio(760.0 / 440, contentMode: .fit)
                 .accessibilityIdentifier("postcard-preview")
+
+                HStack {
+                    Button("生成区间分享码", systemImage:"qrcode") {
+                        let key = routeKey, draft = journey
+                        Task {
+                            do {
+                                let url = try await PostcardRouteShare.url(draft)
+                                guard key == routeKey else { return }
+                                shareCode = PostcardRouteShare.qr(url)
+                                shareURL = url
+                                shareKey = key
+                                error = nil
+                            } catch { if key == routeKey { self.error = error.localizedDescription } }
+                        }
+                    }.disabled(currentRoute == nil)
+                    if shareKey == routeKey, let shareURL, let shareCode {
+                        Image(decorative:shareCode, scale:1).interpolation(.none).resizable().frame(width:120,height:120)
+                        ShareLink("分享公开车次区间", item:shareURL)
+                        Button("保存分享码") {
+                            do { format = .png; output = PostcardDocument(try format.encode(shareCode)); exporting = true }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }
+                }
 
                 HStack {
                     Menu("使用护照中的旅程") {
@@ -339,12 +373,12 @@ struct RailwayPostcardView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("路线图只使用所选车次从上车站到下车站的实际乘车径路。票号、姓名、证件号和二维码区域仅用于纪念样张，二维码区域不可识别，所有版式均不可乘车或报销。")
+                Text("分享码打开所选乘车区间。姓名、票号、证件号和备注留在本机。纪念票不可乘车或报销。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("纪念卡的编辑不会改动护照记录。导出为 1520 × 880 像素图片。")
+                Text("打印时选择 100% 比例。票据 PDF 为 85.6 × 54 毫米，A4 版将票面放在纸张中央。")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
@@ -389,7 +423,7 @@ struct RailwayPostcardView: View {
         .fileExporter(
             isPresented: $exporting,
             document: output,
-            contentType: .png,
+            contentType: format.type,
             defaultFilename: "铁道漫游-\(style.title)"
         ) { result in
             if case .failure(let error) = result {
@@ -419,7 +453,7 @@ struct RailwayPostcardView: View {
         ticket.destinationLatin = TicketText.stationLatin(for: journey.to)
     }
 
-    private func export() {
+    private func export(_ selected: PostcardOutput) {
         guard currentRoute != nil else {
             error = "请先完成实际乘车区间匹配"
             return
@@ -445,19 +479,16 @@ struct RailwayPostcardView: View {
             return
         }
 
-        #if os(macOS)
-        let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
-        #else
-        let data = UIImage(cgImage: cgImage).pngData()
-        #endif
-
-        guard let data else {
-            error = "图片编码失败"
-            return
-        }
-        output = ExperienceFile(data)
-        error = nil
-        exporting = true
+        do {
+            let stock = style == .stockRed || style == .stockBlue
+            let w = Int((Double(cgImage.height) * 85.6 / 54).rounded())
+            let crop = CGRect(x:(cgImage.width-w)/2,y:0,width:w,height:cgImage.height)
+            let image = stock ? (cgImage.cropping(to:crop) ?? cgImage) : cgImage
+            output = PostcardDocument(try selected.encode(image))
+            format = selected
+            error = nil
+            exporting = true
+        } catch { self.error = error.localizedDescription }
     }
 }
 
@@ -597,6 +628,8 @@ struct TicketPostcardArt: View {
     var body: some View {
         Group {
             switch style {
+            case .stockBlue, .stockRed:
+                ReferenceTicketFace(blue:style == .stockBlue, ticket:ticket, journey:journey)
             case .redReplica:
                 replicaTicket(theme: .red)
             case .blueReplica:
@@ -614,7 +647,9 @@ struct TicketPostcardArt: View {
         .frame(width: 760, height: 440)
         .clipped()
         .overlay {
-            TicketSampleWatermark(dark: style == .night || style == .inkMap)
+            if style != .stockRed && style != .stockBlue {
+                TicketSampleWatermark(dark: style == .night || style == .inkMap)
+            }
         }
         .accessibilityElement(children: .combine)
     }

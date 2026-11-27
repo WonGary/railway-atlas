@@ -30,6 +30,8 @@
     "blue-voucher": "blue",
     "red-replica": "red-replica",
     "blue-replica": "blue-replica",
+    "stock-blue": "blue-replica",
+    "stock-red": "red-replica",
     map: "map",
     "route-map": "map",
     paper: "paper",
@@ -148,7 +150,7 @@
 
   function latinStation(value) {
     const raw = String(value || "").trim().replace(/站$/, "");
-    return COMMON_STATION_LATIN[raw] || "";
+    return COMMON_STATION_LATIN[raw] || global.atlasStationTransliterations?.[raw] || "";
   }
 
   function formatDate(value) {
@@ -494,10 +496,10 @@
           palette.paper,
           options.weight || 2.2,
           {
-            showProvince: true,
-            showCountry: true,
-            showCities: true,
-            showStations: Boolean(options.showStations),
+            showProvince: !["simple","cities"].includes(inputValue(["cardMapPreset"])),
+            showCountry: !["simple","cities"].includes(inputValue(["cardMapPreset"])),
+            showCities: !["simple","boundaries"].includes(inputValue(["cardMapPreset"])),
+            showStations: inputValue(["cardMapPreset"]) === "stations" || (inputValue(["cardMapPreset"], "standard") === "standard" && Boolean(options.showStations)),
             fitPadding: options.fitPadding ?? 0.16,
             cityLimit: options.cityLimit ?? 8,
             cityRank: options.cityRank ?? 5
@@ -1244,6 +1246,55 @@
     text(ctx, data.bottomNo, 609, 330, 10, { family: MONO, align: "right", colour: palette.ink, maxWidth: 200 });
   }
 
+  function stockTicket(ctx, data, blue) {
+    const paper = ctx.createLinearGradient(0,0,0,404);
+    paper.addColorStop(0, blue ? "#d3e9ec" : "#f4d7d0");
+    paper.addColorStop(.6, blue ? "#e6f0ec" : "#f8e1d4");
+    paper.addColorStop(1, blue ? "#bbdce0" : "#edc4bd");
+    ctx.fillStyle=paper;ctx.fillRect(0,0,640,404);
+    const ink="#212621", tint=blue?"#418995":"#a25857";
+    const row=(v,x,y,size,width,align="left",family=SERIF,weight=600,colour=ink)=>
+      text(ctx,v,x,y,size,{maxWidth:width,align,family,weight,colour});
+    // Ticket stock has a station suffix in a smaller face on the same baseline.
+    function station(value, latin, x) {
+      const name=value.replace(/站$/,""), chars=Array.from(name);
+      row(chars.length===2 ? chars.join("　") : name,x-10,95,38,174,"center");
+      const w=Math.min(174,ctx.measureText(chars.length===2 ? chars.join("　") : name).width);
+      row("站",x-7+w/2,94,19,22);
+      row(latin,x,119,17,180,"center",SERIF);
+    }
+    paperTexture(ctx,{accent:tint});
+    row(data.ticketNo,25,37,24,230,"left",SERIF,600,"#aa3543");
+    row(/^检票[：:]/.test(data.gate)?data.gate:`检票：${data.gate}`,615,37,19,268,"right",SANS);
+    station(data.fromTicket,data.fromLatin==="ORIGIN" ? "" : data.fromLatin,140);
+    station(data.toTicket,data.toLatin==="DESTINATION" ? "" : data.toLatin,494);
+    row(data.train,320,90,32,116,"center",MONO);
+    line(ctx,261,98,379,98,ink,1.6);line(ctx,372,93,379,98,ink,1.6);
+    row(`${data.dateText} ${data.departure || "—"} 开`,26,156,23,365);
+    row(`${data.car}车 ${data.seat.replace(/号$/,"")}号`,480,156,22,217,"center");
+    row(`¥ ${data.price} 元`,26,192,24,190,"left",SERIF);
+    row(data.mark,320,192,19,103,"center");
+    row(data.seatClass,480,192,23,190,"center");
+    row("铁路图鉴 · 纪念样张",320,230,22,350,"center",SANS,700,blue?"#81a9af":"#bd8c86");
+    row(data.notice,27,267,18,445,"left",SANS);
+    row(`${data.idNoDisplay}　${data.passenger}`,27,293,19,448,"left",SANS);
+    ctx.save();ctx.strokeStyle=tint;ctx.setLineDash([4,3]);ctx.strokeRect(32,307,420,53);ctx.restore();
+    const defaultNotice="二维码、验证码及官方凭证编号未生成";
+    row(data.notice2===defaultNotice ? (element("printRideQR")?.checked ? "扫码查看这段铁路行程" : "铁路旅程收藏") : data.notice2,242,328,14,401,"center");
+    row("纪念样张 · 不可乘车或报销",242,351,17,400,"center");
+    const qr=element("rideShareQR");
+    if (qr && element("printRideQR")?.checked && !element("rideShareResult")?.hidden) {
+      ctx.save();ctx.imageSmoothingEnabled=false;ctx.drawImage(qr,492,245,111,111);ctx.restore();
+    } else {
+      ctx.strokeStyle=tint;ctx.lineWidth=2;ctx.strokeRect(510,259,77,77);
+      row("铁路",549,292,21,66,"center",SERIF,600,tint);
+      row("纪念",549,321,21,66,"center",SERIF,600,tint);
+    }
+    ctx.fillStyle=blue?"#8ac5cb":"#db9d98";ctx.fillRect(0,370,640,34);
+    row(data.bottomNo,27,394,17,318,"left",MONO);
+    row(data.issuer,614,394,15,243,"right");
+  }
+
   function drawTicketFace(ctx, style, palette, journey) {
     const key = normalizeStyle(style);
     const variant = String(style || "");
@@ -1251,7 +1302,8 @@
     const data = resolveData(journey);
     ctx.save();
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
-    if (key === "red-replica") drawRedReplica(ctx, data, colours, journey);
+    if (variant === "stock-red" || variant === "stock-blue") stockTicket(ctx,data,variant === "stock-blue");
+    else if (key === "red-replica") drawRedReplica(ctx, data, colours, journey);
     else if (key === "blue-replica") drawBlueReplica(ctx, data, colours, journey);
     else if (key === "voucher-replica") drawVoucherReplica(ctx, data, colours, journey);
     else if (key === "red") drawRedTicket(ctx, data, colours, journey);

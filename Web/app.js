@@ -660,6 +660,7 @@ function selectRoute(id, { fit = true, from = 0, to } = {}) {
   fillOptions($("routeTo"),from+1,full.stops.length,to);
   $("fullJourney").hidden=!partial;
   state.route = route;
+  if (state.playbackVisible) JourneyKeepsakes.remember(route, "browsed");
   $("matchTracks").hidden = !route.routing || route.geometryAvailable;
   $("matchTracks").disabled = false;
   $("matchStatus").hidden = !route.cacheMatched;
@@ -1074,6 +1075,7 @@ function startPlayback() {
   }
   stopPlayback();
   updatePlayback(state.playbackSeconds >= range.end ? range.start : state.playbackSeconds, "snap");
+  JourneyKeepsakes.remember(state.route, "simulated");
   $("playJourney").textContent = "Ⅱ";
   $("playJourney").title = "暂停沿线旅行";
   $("playJourney").setAttribute("aria-label", "暂停沿线旅行");
@@ -2312,10 +2314,19 @@ function saveJourney(event) {
     to: String(data.get("to") || "").trim(),
     departure: String(data.get("departure") || ""),
     status: String(data.get("status") || "needsReview"),
-    note: String(data.get("note") || "").trim()
+    note: String(data.get("note") || "").trim(),
+    source: "manual"
   };
-  state.journeys.unshift(journey);
-  writeStored(STORAGE.passport, state.journeys);
+  if (event.currentTarget.dataset.routeKey === JourneyKeepsakes.idFor(journey)) journey.source = "journey";
+  const existing = state.journeys.findIndex(item => JourneyKeepsakes.idFor(item) === JourneyKeepsakes.idFor(journey));
+  const next = [...state.journeys];
+  if (existing >= 0) {
+    const old = next[existing];
+    next[existing] = {...old, ...journey, id:old.id, note:journey.note || old.note || ""};
+  } else next.unshift(journey);
+  if (!writeStored(STORAGE.passport, next)) return;
+  state.journeys = next;
+  delete event.currentTarget.dataset.routeKey;
   event.currentTarget.reset();
   event.currentTarget.elements.date.value = todayLocal();
   renderPassport();
@@ -2335,6 +2346,7 @@ function renderPassport() {
       <div class="record-main">
         <strong>${escapeHTML(journey.from)} → ${escapeHTML(journey.to)}</strong>
         <span>${escapeHTML(journey.date)} · ${escapeHTML(journey.train || "车次未记")} · ${journeyStatus(journey.status)}</span>
+        <span>${escapeHTML(({journey:"沿线旅行",manual:"手动录入",import:"文件导入"})[journey.source] || journey.source || "早期记录")}</span>
         ${journey.note ? `<span>${escapeHTML(journey.note)}</span>` : ""}
       </div>
       <div class="record-actions">
@@ -2355,6 +2367,7 @@ function renderPassport() {
     const journey = state.journeys[Number(button.dataset.index)];
     fillPostcard(journey,journey.timetable);
   }));
+  JourneyKeepsakes.refreshPassport();
 }
 
 async function importCardContours(event) {
@@ -2418,7 +2431,7 @@ function csvEscape(value) {
 }
 
 function exportPassportCSV() {
-  const columns = ["date", "train", "from", "to", "departure", "status", "note"];
+  const columns = ["date", "train", "from", "to", "departure", "status", "note", "source"];
   const lines = [columns.join(","), ...state.journeys.map(item => columns.map(column => csvEscape(item[column])).join(","))];
   downloadFile("railway-atlas-passport.csv", new Blob(["\uFEFF", lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
 }
@@ -2460,10 +2473,16 @@ async function importPassportFile(event) {
       to: String(item.to),
       departure: String(item.departure || ""),
       status: ["travelled", "cancelled", "needsReview"].includes(item.status) ? item.status : "needsReview",
-      note: String(item.note || "")
+      note: String(item.note || ""),
+      source: ["manual","import","journey"].includes(item.source) ? item.source : "import"
     }));
     const known = new Set(state.journeys.map(item => `${item.date}|${item.train}|${item.from}|${item.to}`));
-    const additions = valid.filter(item => !known.has(`${item.date}|${item.train}|${item.from}|${item.to}`));
+    const additions = valid.filter(item => {
+      const key = `${item.date}|${item.train}|${item.from}|${item.to}`;
+      if (known.has(key)) return false;
+      known.add(key);
+      return true;
+    });
     state.journeys = [...additions, ...state.journeys];
     writeStored(STORAGE.passport, state.journeys);
     renderPassport();
@@ -2518,6 +2537,7 @@ async function refreshPostcard() {
   const serial=++cardRequest, from=$("postcardFrom").value.trim(), to=$("postcardTo").value.trim(),
     train=$("postcardTrain").value.trim().toUpperCase(), date=$("postcardDate").value;
   cardRoute=null; $("downloadPostcard").disabled=true;
+  JourneyKeepsakes.resetShare();
   const status=$("postcardStatus"); status.textContent=""; drawPostcard();
   if (!from || !to || !train || !date) { status.textContent="填写车次、乘车日期与上下车站。";return; }
   status.textContent="正在读取乘车区间…";
@@ -2540,10 +2560,12 @@ async function refreshPostcard() {
 function drawPostcard() {
   const canvas = $("postcardPreview");
   if (!canvas) return;
+  const style = $("postcardStyle").value;
+  const height = style.startsWith("stock-") ? 404 : 360;
+  if (canvas.height !== height * 2) canvas.height = height * 2;
   const context = canvas.getContext("2d");
   if (!context) return;
-  const width = 640, height = 360;
-  const style = $("postcardStyle").value;
+  const width = 640;
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
@@ -2761,9 +2783,11 @@ async function start() {
   initializeMap();AtlasPrefs.setup();
   setupPassportDefaults();
   setupLibrary();
+  JourneyKeepsakes.setup();
   try {
     await loadData();
     updateZoom();
+    void JourneyKeepsakes.openSharedRide();
   } catch (error) {
     showError(error);
   }

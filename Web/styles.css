@@ -635,3 +635,8 @@ body:has(#mapTopbar[data-ui-folded]) { --bar-height:0px; }
   .map-legend .legend-sheet > .collapse-button { top:0; }
   .map-status,.map-notices p { padding-right:48px; min-height:44px; }
 }
+#footprintMap { background: #e9ece1; border-radius: 8px; margin-block: 6px; }
+#footprintStamps { max-height: 15rem; overflow: auto; }
+.footprint-stamp { display: inline-flex; border: 1px dashed currentColor; border-radius: 5px; padding: 3px 6px; font-size: .78rem; }
+#rideShareResult { margin-block: .6rem; }
+#rideShareQR { display: block; max-width: min(100%, 210px); height: auto; image-rendering: pixelated; }
