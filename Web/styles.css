@@ -191,7 +191,7 @@ details[open] > * + * { margin-top: 9px; }
   outline: 2px solid rgba(242,201,76,.72); outline-offset: 2px;
 }
 .app-toast {
-  position: fixed; z-index: 1400; left: 50%; bottom: 22px; transform: translateX(-50%);
+  position: fixed; z-index: 1400; left: 50%; bottom: calc(22px + var(--ui-shelf-height,0px)); transform: translateX(-50%);
   max-width: min(560px, calc(100vw - 32px)); padding: 10px 14px; border: 1px solid var(--line);
   border-radius: 6px; background: rgba(16,24,28,.96); color: var(--ink); font-size: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,.28);
@@ -222,6 +222,8 @@ h2 { font-size: 16px; line-height: 1.3; margin-top: 4px; }
 .left-note p + p { margin-top: 10px; }
 
 .map-stage { min-width: 0; position: relative; background: #d9e0e0; }
+.map-overlays { position:absolute; inset:0 0 var(--ui-shelf-height,0px); pointer-events:none; }
+.map-overlays > :is(#basemapCreditLine,.line-focus-bar,.playback-bar), .map-readouts > * { pointer-events:auto; }
 #map { width: 100%; height: 100%; isolation: isolate; }
 .leaflet-container { background: #b9c2c3; font-family: inherit; }
 #map {
@@ -322,18 +324,22 @@ h2 { font-size: 16px; line-height: 1.3; margin-top: 4px; }
   padding: 6px 40px 6px 9px;
   color: inherit; border-radius: 6px; font-size: 11px;
 }
-.map-legend {
-  position: absolute; right: 10px; bottom: 42px; z-index: 500; padding: 0;
-  overflow: hidden;
+.map-readouts {
+  position:absolute; right:10px; bottom:42px; z-index:500; display:grid; justify-items:end; max-width:calc(100% - 20px);
+}
+.map-legend, .map-status {
+  position:relative; overflow:hidden;
   color: var(--map-type);
   border-radius: 7px; font-size: 12px;
 }
+.map-legend details { padding:0; }
+.map-legend:not(:has(details[open])) + .map-status:not([data-ui-recalled]) { display:none; }
 .map-legend summary { min-height: 38px; padding: 9px 11px; cursor: pointer; }
 .map-legend .legend-sheet { display: grid; gap: 7px; margin: 0; padding: 2px 13px 12px; }
 .legend-sheet > span, #speedLegend span { display: flex; align-items: center; gap: 8px; }
 #speedLegend { display: grid; grid-template-columns: repeat(2,auto); gap: 6px 12px; border-bottom: 1px solid var(--map-edge); padding-bottom: 8px; }
-.map-legend[open] .legend-sheet { max-height: min(50dvh, 330px); overflow-y: auto; }
-.map-stage:has(#playbackBar:not([hidden],[data-ui-folded])) .map-legend { bottom: var(--playback-clearance,126px); }
+.map-legend details[open] .legend-sheet { max-height: min(50dvh, 330px); overflow-y: auto; }
+.map-stage:has(#playbackBar:not([hidden],[data-ui-folded])) .map-readouts { bottom: var(--playback-clearance,126px); }
 .map-stage .leaflet-bar { border: 1px solid var(--map-edge); box-shadow: none; overflow: hidden; }
 .map-stage .leaflet-bar a {
   color: var(--map-type);
@@ -457,7 +463,7 @@ tr:last-child td { border-bottom: 0; }
     top: auto; bottom: 10px; max-height: 39%; height: auto;
   }
   .app-shell:has(#playbackBar:not([hidden],[data-ui-folded])) > .right-panel:not(.floating) { bottom: var(--playback-clearance,82px); }
-  .map-stage:has(#playbackBar:not([hidden],[data-ui-folded])) .map-legend { bottom: var(--playback-clearance,82px); }
+  .map-stage:has(#playbackBar:not([hidden],[data-ui-folded])) .map-readouts { bottom: var(--playback-clearance,82px); }
   .map-stage:has(#playbackBar:not([hidden],[data-ui-folded])) .leaflet-bottom.leaflet-left { bottom: var(--playback-clearance,82px); }
   .playback-bar { bottom: 10px; }
   .top-actions { min-width: 0; gap: 4px; overflow-x: auto; scrollbar-width: none; }
@@ -502,7 +508,8 @@ tr:last-child td { border-bottom: 0; }
 #basemapModeNote {margin:5px 0}
 .workspace-page input[type=range] {padding:0;accent-color:var(--accent)}
 .panel-content pre {white-space:pre-wrap;overflow-wrap:anywhere}
-.map-stage .leaflet-bottom.leaflet-left {bottom:24px;left:5px}
+.map-stage .leaflet-bottom.leaflet-left {bottom:36px;left:5px}
+.map-stage .leaflet-bottom { margin-bottom:var(--ui-shelf-height,0px); }
 .workspace-content,.panel-content,.assistant-config,.conversation {zoom:var(--ui-scale,1)}
 .workspace-page .toggle-row {display:flex;align-items:center}
 #routeVisibility {max-height:40vh;overflow:auto}
@@ -545,46 +552,39 @@ tr:last-child td { border-bottom: 0; }
 .focus-palette input {width:32px;height:28px;padding:1px}
 .journey-results { max-height: 12rem; overflow-y: auto; }
 
-/* Surface alpha affects the paint only. Text, focus rings and hit targets keep their normal opacity. */
-[data-ui-surface="panel"] { --surface-alpha:var(--ui-alpha-panel); --surface-rgb:16,24,28; }
-[data-ui-surface="inspector"] { --surface-alpha:var(--ui-alpha-inspector); --surface-rgb:23,33,38; }
-[data-ui-surface="topbar"] { --surface-alpha:var(--ui-alpha-topbar); }
-[data-ui-surface="playback"] { --surface-alpha:var(--ui-alpha-playback); --surface-rgb:16,24,28; }
-[data-ui-surface="legend"] { --surface-alpha:var(--ui-alpha-legend); }
-[data-ui-surface="info"] { --surface-alpha:var(--ui-alpha-info); --surface-rgb:23,42,49; }
-[data-ui-surface="status"] { --surface-alpha:var(--ui-alpha-status); }
-[data-ui-surface="notice"] { --surface-alpha:var(--ui-alpha-notice); }
-:root[data-ui-surface-mode] [data-ui-surface] {
-  --paint-alpha:calc(var(--surface-alpha, 1) * var(--paint-enabled, 1));
-  background-color:rgba(var(--surface-rgb, var(--ui-map-rgb)), var(--paint-alpha));
-  box-shadow:0 1px 4px rgba(0,0,0,calc(.16 * var(--paint-alpha)));
+/* Paint the Leaflet bubble and tip once. The outer popup is just a positioner. */
+:is([data-ui-surface="panel"],[data-ui-surface="playback"],[data-ui-surface="toast"]) { --surface-rgb:16,24,28; --surface-halo:#0b171c; }
+:is(.right-panel,.station-dialog,#mapHistoryHUD) { --surface-rgb:23,33,38; --surface-halo:#0b171c; }
+:is([data-ui-surface="info"],[data-ui-surface="lineFocus"]) { --surface-rgb:23,42,49; --surface-halo:#0b171c; }
+[data-ui-paint] { --surface-shadow:0 1px 4px rgba(0,0,0,calc(.16 * var(--paint-alpha))); --surface-filter:none; }
+[data-ui-paint="glass"] { --surface-shadow:inset 0 1px 0 rgba(255,255,255,calc(.22 * var(--paint-alpha))), 0 2px 6px rgba(0,0,0,calc(.18 * var(--paint-alpha))); }
+[data-apple-ui] [data-ui-paint="glass"] {
+  --surface-filter:blur(calc(14px * var(--paint-alpha))) saturate(calc(1 + .35 * var(--paint-alpha)));
+  --surface-shadow:inset 0 1px 0 rgba(255,255,255,calc(.36 * var(--paint-alpha))), 0 3px 10px rgba(0,0,0,calc(.2 * var(--paint-alpha)));
 }
-:root[data-apple-ui][data-ui-surface-mode="glass"] [data-ui-surface] {
-  -webkit-backdrop-filter:blur(calc(14px * var(--paint-alpha))) saturate(calc(1 + .35 * var(--paint-alpha)));
-  backdrop-filter:blur(calc(14px * var(--paint-alpha))) saturate(calc(1 + .35 * var(--paint-alpha)));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,calc(.36 * var(--paint-alpha))), 0 3px 10px rgba(0,0,0,calc(.2 * var(--paint-alpha)));
+:root :is([data-ui-paint]:not(.leaflet-popup),.leaflet-popup[data-ui-paint] :is(.leaflet-popup-content-wrapper,.leaflet-popup-tip)) {
+  background-color:rgba(var(--surface-rgb,var(--ui-map-rgb)),var(--paint-alpha));
+  box-shadow:var(--surface-shadow);
+  -webkit-backdrop-filter:var(--surface-filter); backdrop-filter:var(--surface-filter);
 }
-/* On other browsers glass has a rim highlight; the translucent mode is a flat tint. */
-:root:not([data-apple-ui])[data-ui-surface-mode="glass"] [data-ui-surface] {
-  box-shadow:inset 0 1px 0 rgba(255,255,255,calc(.22 * var(--paint-alpha))), 0 2px 6px rgba(0,0,0,calc(.18 * var(--paint-alpha)));
-}
-:root[data-ui-surface-mode="text"] { --paint-enabled:0; }
-:root[data-ui-surface-mode="text"] [data-ui-surface] {
-  border-color:transparent;
-  box-shadow:none;
+[data-ui-paint="text"] {
+  --surface-shadow:none; border-color:transparent;
   text-shadow:0 0 2px var(--surface-halo,var(--ui-map-halo)), 0 1px 3px var(--surface-halo,var(--ui-map-halo));
 }
-:is([data-ui-surface="panel"],[data-ui-surface="inspector"],[data-ui-surface="playback"],[data-ui-surface="info"],.app-toast) { --surface-halo:#0b171c; }
-:root[data-ui-surface-mode="text"] [data-ui-surface] :where(button:not([data-focus-ink]),select,textarea,input:not([type=color]),.record-item,.info-cell,.route-card,.file-button) {
-  background-color:transparent; text-shadow:inherit;
+:root [data-ui-paint="text"] :where(button:not([data-focus-ink]),a,summary,select,textarea,input:not([type=color]),th,pre,code,
+    .record-item,.info-cell,.route-card,.file-button,.directory-tools,.passport-summary > div,.rail-sequence .here) {
+  background-color:transparent !important; text-shadow:inherit;
 }
-:root[data-ui-surface-mode="text"] :is(.primary-button,#clearLineFocus) { color:var(--accent-strong); }
-:root[data-ui-surface-mode="text"] .station-dialog::backdrop { background:transparent; backdrop-filter:none; }
+[data-ui-paint="text"] :is(.primary-button,#clearLineFocus) { color:var(--accent-strong); }
+.station-dialog[data-ui-paint]::backdrop { background:rgba(0,0,0,calc(.55 * var(--paint-alpha))); backdrop-filter:blur(calc(3px * var(--paint-alpha))); }
+.station-dialog[data-ui-paint="text"]::backdrop, .left-rail[data-ui-paint="text"] + .workspace-scrim { background:transparent; backdrop-filter:none; }
 .surface-ranges { min-width:0; margin:.65rem 0; padding:0; border:0; }
 .surface-ranges legend { color:var(--ink); font-size:12px; }
 .surface-ranges label { grid-template-columns:1fr auto; align-items:center; margin-top:9px; }
 .surface-ranges output { font-variant-numeric:tabular-nums; }
 .surface-ranges input { grid-column:1 / -1; min-height:24px; }
+.surface-item { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; column-gap:8px; }
+.surface-item select { width:auto; max-width:10em; margin-bottom:2px; padding:4px 2px; font-size:11px; }
 
 /* Map pixels extend under the toolbar; keep controls and floating panels below it. */
 body { display:flex; flex-direction:column; height:100dvh; }
@@ -600,8 +600,12 @@ body > .topbar { position:absolute; inset:0 0 auto; }
 body:has(#mapTopbar[data-ui-folded]) { --bar-height:0px; }
 [data-ui-folded], #workspacePanel[data-ui-folded] + .workspace-scrim { display:none !important; }
 
-#uiShelf { flex:none; display:flex; gap:6px; max-width:100%; overflow-x:auto; padding:3px 8px max(3px,env(safe-area-inset-bottom)); }
-#uiShelf:empty { display:none; }
+#uiShelf {
+  position:absolute; z-index:1100; bottom:0; align-self:center; display:flex; align-items:center; gap:4px;
+  max-width:calc(100% - 12px); padding:2px 4px max(2px,env(safe-area-inset-bottom)); border-radius:6px; color:var(--map-type);
+}
+#uiShelfItems { display:flex; min-width:0; overflow-x:auto; gap:4px; overscroll-behavior-x:contain; }
+.app-shell > :is(.left-rail,.right-panel) { margin-bottom:var(--ui-shelf-height,0px); }
 .ui-restore,.collapse-button {
   flex:none; min-width:32px; min-height:32px; border:1px solid var(--line); border-radius:6px;
   padding:2px 7px; cursor:pointer; color:inherit; background:transparent; line-height:1;
@@ -612,10 +616,8 @@ body:has(#mapTopbar[data-ui-folded]) { --bar-height:0px; }
 .line-focus-bar .collapse-button { background:transparent; color:inherit; }
 .collapse-button:focus-visible,.ui-restore:focus-visible,summary:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .collapse-button:hover,.ui-restore:hover { border-color:currentColor; }
-.map-legend summary { padding-right:12px; }
-.map-legend[open] summary { padding-right:46px; }
-.map-legend .legend-sheet > .collapse-button { position:absolute; right:3px; top:3px; }
-.map-legend > .map-status { margin:0; }
+.map-legend summary { margin-right:38px; }
+.map-legend > .collapse-button { position:absolute; right:3px; top:3px; }
 .map-status > span { min-width:0; }
 .map-status .collapse-button,.map-notices .collapse-button { position:absolute; top:0; right:0; }
 .map-notices .collapse-button { pointer-events:auto; }
@@ -625,18 +627,38 @@ body:has(#mapTopbar[data-ui-folded]) { --bar-height:0px; }
 .app-toast .collapse-button { pointer-events:auto; }
 .app-toast-message { flex:1; }
 #basemapCreditLine .collapse-button { margin-left:auto; }
-#mapScale { display:flex; align-items:flex-end; color:var(--map-type); }
+#mapScale,#mapCoordinates { display:flex; align-items:center; gap:2px; color:var(--map-type); border-radius:4px; }
+.map-coordinate-value { display:flex; gap:.5em; padding:0 4px; font:11px/1.3 ui-monospace,monospace; font-variant-numeric:tabular-nums; }
 #mapScale .leaflet-control-scale-line { background:transparent; color:inherit; border-color:currentColor; text-shadow:inherit; }
-#mapScale .collapse-button,#mapZoomTools .collapse-button { display:block; color:var(--map-type); font-size:11px; }
+#mapZoomTools { width:max-content; color:var(--map-type); }
+#mapZoomTools > :is(a,.collapse-button) { display:grid; place-items:center; width:34px; height:34px; }
+#mapZoomTools .collapse-button { font-size:11px; padding:0; }
+#mapHistoryHUD { grid-template-columns:minmax(0,1fr) auto; }
+#mapHistoryHUD > div { grid-row:2; }
+#mapHistoryHUD > .collapse-button { grid-column:2; grid-row:1 / 3; align-self:start; }
 .leaflet-popup-content { margin-right:68px; }
 .leaflet-popup .collapse-button { position:absolute; top:2px; right:26px; color:var(--ink); }
 .leaflet-popup .leaflet-popup-content-wrapper,.leaflet-popup a.leaflet-popup-close-button { color:var(--ink); }
 .leaflet-popup-content a { color:#9cd6ff; }
 @media (pointer:coarse) {
+  .map-stage .leaflet-bottom.leaflet-left { bottom:48px; }
   .collapse-button,.ui-restore,.map-legend summary { min-height:44px; min-width:44px; }
-  .map-legend[open] summary { padding-right:50px; }
-  .map-legend .legend-sheet > .collapse-button { top:0; }
+  .map-legend summary { margin-right:49px; }
+  .map-legend > .collapse-button { top:0; }
+  #mapZoomTools > :is(a,.collapse-button) { width:44px; height:44px; }
   .map-status,.map-notices p { padding-right:48px; min-height:44px; }
+}
+@media (max-width:520px) {
+  .map-coordinate-value { display:grid; gap:0; }
+  .map-readouts { max-width:52%; }
+  #speedLegend { grid-template-columns:1fr; }
+  .map-stage .leaflet-bottom.leaflet-left { width:calc(48% - 16px); }
+  .leaflet-bottom.leaflet-left .leaflet-control { max-width:calc(100% - 10px); }
+  #mapScale { flex-wrap:wrap; }
+  #mapScale .leaflet-control-scale-line { flex:none; }
+  #mapHistoryHUD > strong { min-width:0; align-self:center; overflow-wrap:anywhere; }
+  #mapHistoryHUD > div { grid-column:1 / -1; flex-wrap:wrap; gap:4px; }
+  #mapHistoryHUD > .collapse-button { grid-row:1; }
 }
 #footprintMap { background: #e9ece1; border-radius: 8px; margin-block: 6px; }
 #footprintStamps { max-height: 15rem; overflow: auto; }

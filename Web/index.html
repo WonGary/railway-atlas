@@ -323,13 +323,14 @@
 
     <section class="map-stage">
       <div id="map" role="application" aria-label="铁道漫游地图"></div>
-      <div id="basemapCreditLine" data-ui-surface="status" data-window-name="© 地图来源" hidden>
+      <div class="map-overlays">
+      <div id="basemapCreditLine" data-ui-surface="credits" data-window-name="© 地图来源" hidden>
         <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>
         <a id="basemapPartnerCredit" hidden></a>
         <a id="railStyleCredit" hidden href="https://creativecommons.org/licenses/by-sa/2.0/">CC BY-SA 2.0</a>
         <button class="collapse-button" data-fold type="button" aria-label="收起地图来源">−</button>
       </div>
-      <div id="lineFocusBar" class="line-focus-bar" data-ui-surface="info" data-window-name="高亮线路" hidden>
+      <div id="lineFocusBar" class="line-focus-bar" data-ui-surface="lineFocus" data-window-name="高亮线路" hidden>
         <span aria-live="polite"><strong id="lineFocusName"></strong> <small id="lineFocusNote"></small></span>
         <button id="clearLineFocus" type="button">恢复全图</button>
         <button id="minimizeLineFocus" class="collapse-button" data-fold type="button" aria-label="收起高亮线路">−</button>
@@ -358,25 +359,30 @@
           <p id="baseLayerWarning" role="status" hidden></p>
           <button class="collapse-button" data-fold type="button" aria-label="收起底图提示">−</button>
         </div>
-        <div id="mapDataErrorWindow" class="map-notice-window" data-ui-surface="notice" data-window-name="地图错误">
+        <div id="mapDataErrorWindow" class="map-notice-window" data-ui-surface="mapError" data-window-name="地图错误">
           <p id="mapDataError" role="alert" hidden></p>
           <button class="collapse-button" data-fold type="button" aria-label="收起地图错误">−</button>
         </div>
       </div>
-      <details id="mapLegend" class="map-legend" data-window-name="地图图例">
-        <summary data-ui-surface="legend">图例</summary>
-        <div class="legend-sheet" data-ui-surface="legend">
+      <div class="map-readouts">
+        <div id="mapLegend" class="map-legend" data-ui-surface="legend" data-window-name="地图图例">
+          <details id="mapLegendDetails">
+            <summary>图例</summary>
+            <div class="legend-sheet">
+              <div id="speedLegend" aria-label="铁路限速"></div>
+              <span><i class="legend-line metro-line"></i>城市轨道（按线路着色）</span>
+              <span><i class="legend-line railway-construction"></i>铁路在建或规划</span>
+              <span><i class="legend-line construction-line"></i>城轨在建或规划</span>
+            </div>
+          </details>
           <button class="collapse-button" data-fold type="button" aria-label="收起地图图例">−</button>
-          <div id="speedLegend" aria-label="铁路限速"></div>
-          <span><i class="legend-line metro-line"></i>城市轨道（按线路着色）</span>
-          <span><i class="legend-line railway-construction"></i>铁路在建或规划</span>
-          <span><i class="legend-line construction-line"></i>城轨在建或规划</span>
         </div>
         <div id="mapStatus" class="map-status" data-ui-surface="status" data-window-name="地图状态">
           <span id="dataStatus">正在打开铁路地图…</span><span id="zoomStatus"></span>
           <button class="collapse-button" data-fold type="button" aria-label="收起地图状态">−</button>
         </div>
-      </details>
+      </div>
+      </div>
     </section>
 
     <aside id="infoPanel" class="right-panel info-panel" data-ui-surface="inspector" data-window-name="要素信息" aria-label="要素信息" hidden>
@@ -394,7 +400,7 @@
       <div id="infoContent" class="panel-content">点地图上的线路或车站查看资料。</div>
     </aside>
 
-    <aside id="assistantPanel" class="right-panel assistant-panel" data-ui-surface="inspector" data-window-name="地图问答" aria-label="地图问答" hidden>
+    <aside id="assistantPanel" class="right-panel assistant-panel" data-ui-surface="assistant" data-window-name="地图问答" aria-label="地图问答" hidden>
       <div class="panel-header">
         <div>
           <span class="eyebrow">地图问答</span>
@@ -482,8 +488,11 @@
     </aside>
   </main>
 
-  <nav id="uiShelf" aria-label="已收起的浮窗"></nav>
-  <dialog id="assistantHistoryDialog" class="station-dialog" data-ui-surface="info" data-window-name="问答历史">
+  <nav id="uiShelf" data-ui-surface="shelf" aria-label="已收起的浮窗" hidden>
+    <button id="toggleShelf" class="collapse-button" type="button" aria-controls="uiShelfItems" aria-expanded="true" aria-label="收起恢复架">−</button>
+    <div id="uiShelfItems"></div>
+  </nav>
+  <dialog id="assistantHistoryDialog" class="station-dialog" data-ui-surface="chatHistory" data-window-name="问答历史">
     <div class="dialog-header">
       <div><span class="eyebrow">本机保存</span><h2>问答历史</h2></div>
       <div class="header-actions">
@@ -495,7 +504,7 @@
     <div id="assistantHistoryList" class="dialog-content"></div>
   </dialog>
 
-  <dialog id="stationDialog" class="station-dialog" data-ui-surface="info" data-window-name="经停表">
+  <dialog id="stationDialog" class="station-dialog" data-ui-surface="stationDialog" data-window-name="经停表">
     <div class="dialog-header">
       <div>
         <span class="eyebrow">车站与线路</span>
@@ -508,14 +517,14 @@
     </div>
     <div id="dialogContent" class="dialog-content"></div>
   </dialog>
-  <dialog id="favoriteEditor" class="station-dialog" data-ui-surface="info" data-window-name="编辑收藏">
+  <dialog id="favoriteEditor" class="station-dialog" data-ui-surface="favoriteEditor" data-window-name="编辑收藏">
     <div class="dialog-header"><h2>编辑收藏</h2><button class="collapse-button" data-fold type="button" aria-label="收起编辑收藏">−</button></div>
     <div class="dialog-content">
       <label>城市<input id="favoriteCity"></label><label>标签<input id="favoriteLabels" placeholder="换乘，想去"></label>
       <button id="saveFavoriteNote" class="primary-button">保存</button><button id="cancelFavoriteNote" class="text-button">取消</button>
     </div>
   </dialog>
-  <div id="appToastWindow" class="app-toast" data-ui-surface="notice" data-window-name="操作提示">
+  <div id="appToastWindow" class="app-toast" data-ui-surface="toast" data-window-name="操作提示">
     <div id="appToast" class="app-toast-message" role="status" aria-live="polite" hidden></div>
     <button class="collapse-button" data-fold type="button" aria-label="收起操作提示">−</button>
   </div>

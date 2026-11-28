@@ -132,7 +132,7 @@
       .atlas-history-panel .history-unknown input {width:auto}
       .atlas-history-panel output,.atlas-history-hud {font-variant-numeric:tabular-nums}
       .atlas-history-map .leaflet-map-pane > .leaflet-pane:not(.leaflet-atlasHistory-pane):not(.leaflet-vectorBasemap-pane):not(.leaflet-basemapShade-pane) {display:none !important}
-      .atlas-history-map ~ #lineFocusBar {display:none !important}
+      .atlas-history-map ~ .map-overlays #lineFocusBar {display:none !important}
       .atlas-history-hud {display:grid;gap:3px;padding:5px 8px;border-radius:5px;background:var(--panel,#172126);color:var(--ink,#eef3f5);line-height:1.4}
       .atlas-history-hud div {display:flex;align-items:center;gap:8px}
       .atlas-history-hud button {cursor:pointer;padding:2px 5px;font:inherit}
@@ -230,10 +230,12 @@
       const actions = document.createElement("div");
       actions.append(play, restoreMap, link("© OpenStreetMap", sourceURL));
       box.append(label, actions);
+      MapWindows.addFoldButton(box, "mapHistoryHUD", "时光机", "history");
       L.DomEvent.disableClickPropagation(box);
       L.DomEvent.disableScrollPropagation(box);
       return box;
     };
+    hud.onRemove = () => MapWindows.forget(hud.getContainer());
     session = {center: map.getCenter(), zoom: map.getZoom(), container, renderer, group, hud,
       label, play, lines: new Map(), context: null};
     container.classList.add("atlas-history-map");
