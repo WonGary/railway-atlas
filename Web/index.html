@@ -206,11 +206,16 @@
               <label>票面提示<input id="postcardNotice" type="text" placeholder="纪念样张 · 不可乘车或报销"></label>
               <label>补充说明<input id="postcardNotice2" type="text" placeholder="仅供收藏，未生成真实官方信息"></label>
               <label>水印文字<input id="postcardWatermark" type="text" placeholder="纪念图 / SAMPLE"></label>
+              <div class="two-fields">
+                <button id="randomTicketNumbers" class="text-button" type="button">随机上下票号</button>
+                <button id="randomTicketIdentity" class="text-button" type="button">随机乘车人和证件</button>
+              </div>
               <button id="postcardRandomize" class="text-button" type="button">填充空白样张字段</button>
             </details>
             <label>寄语<textarea id="postcardCaption" rows="3">山川迢迢，来日方长。</textarea></label>
             <label>样式
               <select id="postcardStyle">
+                <option value="stock-receipt" selected>历史纸质报销凭证 · 蓝票收藏版</option>
                 <option value="red">暖红</option>
                 <option value="blue">铁路蓝</option>
                 <option value="map">地图绿</option>
@@ -226,6 +231,7 @@
             </label>
             <canvas id="postcardPreview" class="postcard-preview" width="1280" height="720"></canvas>
             <p id="postcardStatus" role="status" class="panel-note"></p>
+            <p id="manualReceiptNote" class="panel-note" hidden>这张收藏票使用手填行程，路线图和区间分享码需要匹配铁路径路。</p>
             <button id="downloadPostcard" class="primary-button wide-button">导出 PNG 明信片</button>
             <details id="cardOutput">
               <summary>打印、壁纸和路线分享</summary>

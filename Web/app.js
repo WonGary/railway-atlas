@@ -1984,6 +1984,12 @@ function setupPanels() {
     globalThis.RailwayTicketFace?.randomizeFields?.({ onlyEmpty: true });
     drawPostcard();
   });
+  for (const [button, group] of [["randomTicketNumbers", "numbers"], ["randomTicketIdentity", "identity"]]) {
+    $(button).addEventListener("click", () => {
+      RailwayTicketFace.randomizeFields({onlyEmpty: false, group});
+      drawPostcard();
+    });
+  }
   $("postcardDate").value=todayLocal();
   ["postcardFrom", "postcardTo", "postcardTrain", "postcardDate"].forEach(id => {
     $(id).addEventListener("input", refreshPostcard);
@@ -2533,6 +2539,11 @@ function fillPostcard(journey,timetable) {
 function routeDescription(route) {
   return unique((route?.routing?.edges || []).map(edge => edge?.lineName)).join(" · ");
 }
+function canExportPostcard() {
+  if (cardRoute?.geometryAvailable) return true;
+  return $("postcardStyle").value === "stock-receipt" &&
+    ["postcardFrom","postcardTo","postcardTrain","postcardDate"].every(id => $(id).value.trim());
+}
 async function refreshPostcard() {
   if (postcardRouteSource==="auto") $("postcardRoute").value="";
   const serial=++cardRequest, from=$("postcardFrom").value.trim(), to=$("postcardTo").value.trim(),
@@ -2562,6 +2573,8 @@ function drawPostcard() {
   const canvas = $("postcardPreview");
   if (!canvas) return;
   const style = $("postcardStyle").value;
+  $("downloadPostcard").disabled = !canExportPostcard();
+  $("manualReceiptNote").hidden = Boolean(cardRoute?.geometryAvailable) || !canExportPostcard();
   const height = style.startsWith("stock-") ? 404 : 360;
   if (canvas.height !== height * 2) canvas.height = height * 2;
   const context = canvas.getContext("2d");
@@ -2585,7 +2598,7 @@ function cardMapCredit() {
 }
 
 function downloadPostcard() {
-  if (!cardRoute?.geometryAvailable) return;
+  if (!canExportPostcard()) return;
   drawPostcard();
   $("postcardPreview").toBlob(blob => {
     if (blob) downloadFile("铁道漫游-明信片.png", blob);

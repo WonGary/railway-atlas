@@ -30,9 +30,24 @@ async function check({browser,devices,url}, phone, folder) {
     await page.locator("#footprintKind").selectOption("simulated");
     assert.match(await page.locator("#footprintStats").textContent(),/0 条记录/);
     await page.locator("#passportList .postcard-from-record").click();
-    await page.waitForFunction(()=>!document.querySelector("#downloadPostcard").disabled);
-    await page.locator("#postcardStyle").selectOption("stock-blue");
+    await page.waitForFunction(()=>cardRoute?.geometryAvailable);
+    await page.locator("#postcardStyle").selectOption("stock-receipt");
+    const read = id => page.locator("#"+id).inputValue();
+    await page.locator("#postcardSeat").fill("03F");
+    await page.locator("#postcardPassenger").fill("保留旅客");
+    await page.locator("#randomTicketNumbers").click();
+    const serial = await read("postcardTicketNo");
+    assert.match(serial,/^R\d{6}$/);
+    assert.equal(await read("postcardPassenger"),"保留旅客");
+    await page.locator("#randomTicketIdentity").click();
+    assert.equal(await read("postcardTicketNo"),serial);
+    assert.equal(await read("postcardSeat"),"03F");
+    assert.deepEqual(await Promise.all(["postcardTrain","postcardFrom","postcardTo"].map(read)),["D174","陇南","广元"]);
     await page.locator("#postcardPassenger").fill("测试旅客");
+    for (const [id,value] of Object.entries({postcardIdNo:"RA99123456780027",postcardGate:"7、8",postcardMark:"学惠",
+      postcardIssuer:"陇南 · 收藏",postcardPrice:"68.50",postcardNotice:"陇南至广元",postcardNotice2:"留作旅途纪念"}))
+      await page.locator("#"+id).fill(value);
+    assert.equal(await page.evaluate(()=>RailwayTicketFace.readData(cardRoute).idNoDisplay),"RA99****0027");
     await page.locator("#cardOutput summary").click();
     await page.locator("#createRideShare").click();
     await page.locator("#rideShareLink").waitFor({state:"visible",timeout:8000}).catch(async e=>{
@@ -54,13 +69,20 @@ async function check({browser,devices,url}, phone, folder) {
         await (await download).saveAs(path.join(folder,name));
       }
       await save(page.locator("#saveRideShare"),"share.png");
-      await save(page.locator("#downloadPostcard"),"blue.png");
+      await save(page.locator("#downloadPostcard"),"receipt.png");
       for (const [format,name] of [["ticket","ticket.pdf"],["a4","sheet.pdf"],["svg","card.svg"],["wallpaper","wallpaper.png"]]) {
         await page.locator("#cardExportFormat").selectOption(format);
         await save(page.locator("#exportCardFormat"),name);
       }
+      await page.locator("#postcardStyle").selectOption("stock-blue");
+      await save(page.locator("#downloadPostcard"),"blue.png");
       await page.locator("#postcardStyle").selectOption("stock-red");
       await save(page.locator("#downloadPostcard"),"red.png");
+      await page.locator("#postcardTrain").fill("OLD123");
+      await page.waitForFunction(()=>!cardRoute && document.getElementById("downloadPostcard").disabled);
+      await page.locator("#postcardStyle").selectOption("stock-receipt");
+      await save(page.locator("#downloadPostcard"),"handwritten.png");
+      assert.ok(await page.locator("#rideShareResult").isHidden());
     }
     const recipient = await browser.newContext({serviceWorkers:"block"});
     try {

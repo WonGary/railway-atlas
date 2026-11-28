@@ -31,6 +31,7 @@
     "red-replica": "red-replica",
     "blue-replica": "blue-replica",
     "stock-blue": "blue-replica",
+    "stock-receipt": "blue-replica",
     "stock-red": "red-replica",
     map: "map",
     "route-map": "map",
@@ -175,12 +176,11 @@
   }
 
   function maskedIdentity(value) {
-    const raw = String(value || "").trim();
-    if (raw.length < 9 || raw.includes("*")) return raw;
-    const start = Math.min(6, Math.max(4, Math.ceil(raw.length * 0.28)));
-    const end = Math.min(4, Math.max(2, Math.floor(raw.length * 0.2)));
-    if (start + end >= raw.length) return raw;
-    return `${raw.slice(0, start)}****${raw.slice(-end)}`;
+    const raw = Array.from(String(value || "").trim().replace(/[\s-]/g, ""));
+    if (!raw.length) return "";
+    if (raw.length <= 4) return "*".repeat(raw.length);
+    const side = raw.length >= 12 ? [4,4] : [1,2];
+    return `${raw.slice(0,side[0]).join("")}****${raw.slice(-side[1]).join("")}`;
   }
 
   function routeName(journey, data) {
@@ -1246,7 +1246,7 @@
     text(ctx, data.bottomNo, 609, 330, 10, { family: MONO, align: "right", colour: palette.ink, maxWidth: 200 });
   }
 
-  function stockTicket(ctx, data, blue) {
+  function stockTicket(ctx, data, blue, receipt = false) {
     const paper = ctx.createLinearGradient(0,0,0,404);
     paper.addColorStop(0, blue ? "#d3e9ec" : "#f4d7d0");
     paper.addColorStop(.6, blue ? "#e6f0ec" : "#f8e1d4");
@@ -1264,7 +1264,21 @@
       row(latin,x,119,17,180,"center",SERIF);
     }
     paperTexture(ctx,{accent:tint});
-    row(data.ticketNo,25,37,24,230,"left",SERIF,600,"#aa3543");
+    if (receipt) {
+      // An original train silhouette in the paper tint, behind the printed fields.
+      ctx.save();
+      ctx.fillStyle = "#a6ced2"; ctx.globalAlpha = .37;
+      ctx.beginPath(); ctx.moveTo(166,235); ctx.quadraticCurveTo(197,202,266,201);
+      ctx.lineTo(640,194); ctx.lineTo(640,225); ctx.lineTo(179,241);
+      ctx.quadraticCurveTo(158,242,166,235); ctx.fill();
+      ctx.fillStyle = "#78afb6";
+      for (let x=276;x<640;x+=19) ctx.fillRect(x,205-(x-276)/65,12,6);
+      ctx.beginPath();ctx.moveTo(192,223);ctx.quadraticCurveTo(211,207,253,205);
+      ctx.lineTo(247,214);ctx.closePath();ctx.fill();ctx.restore();
+    }
+    const field = (id, fallback) => inputValue([id], fallback);
+    const topNumber = receipt ? field("postcardTicketNo", data.ticketNo.replace(/^SAMPLE-/, "RA")) : data.ticketNo;
+    row(topNumber,25,37,24,230,"left",SERIF,600,"#aa3543");
     row(/^检票[：:]/.test(data.gate)?data.gate:`检票：${data.gate}`,615,37,19,268,"right",SANS);
     station(data.fromTicket,data.fromLatin==="ORIGIN" ? "" : data.fromLatin,140);
     station(data.toTicket,data.toLatin==="DESTINATION" ? "" : data.toLatin,494);
@@ -1273,15 +1287,31 @@
     row(`${data.dateText} ${data.departure || "—"} 开`,26,156,23,365);
     row(`${data.car}车 ${data.seat.replace(/号$/,"")}号`,480,156,22,217,"center");
     row(`¥ ${data.price} 元`,26,192,24,190,"left",SERIF);
-    row(data.mark,320,192,19,103,"center");
+    if (receipt && /^[学惠儿折优]{1,3}$/.test(data.mark)) {
+      const marks = [...data.mark];
+      marks.forEach((mark, index) => {
+        const x = 320 + (index - (marks.length - 1) / 2) * 26;
+        ctx.save(); ctx.strokeStyle = ink; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(x,184,12,0,Math.PI*2); ctx.stroke(); ctx.restore();
+        row(mark,x,191,18,22,"center");
+      });
+    } else row(data.mark,320,192,19,103,"center");
     row(data.seatClass,480,192,23,190,"center");
-    row("铁路图鉴 · 纪念样张",320,230,22,350,"center",SANS,700,blue?"#81a9af":"#bd8c86");
-    row(data.notice,27,267,18,445,"left",SANS);
+    if (receipt) {
+      // Keep the collection mark on the paper, independent of the two editable lines.
+      roundedRect(ctx,24,235,257,34,1,null,"#a4474e",1.4);
+      row("收藏样张 · 不可乘车或报销",32,259,18,241,"left",SERIF,700);
+    } else {
+      row("铁路图鉴 · 纪念样张",320,230,22,350,"center",SANS,700,blue?"#81a9af":"#bd8c86");
+      row(data.notice,27,267,18,445,"left",SANS);
+    }
     row(`${data.idNoDisplay}　${data.passenger}`,27,293,19,448,"left",SANS);
     ctx.save();ctx.strokeStyle=tint;ctx.setLineDash([4,3]);ctx.strokeRect(32,307,420,53);ctx.restore();
     const defaultNotice="二维码、验证码及官方凭证编号未生成";
-    row(data.notice2===defaultNotice ? (element("printRideQR")?.checked ? "扫码查看这段铁路行程" : "铁路旅程收藏") : data.notice2,242,328,14,401,"center");
-    row("纪念样张 · 不可乘车或报销",242,351,17,400,"center");
+    const firstLine = receipt ? field("postcardNotice", "仅供个人旅程收藏") :
+      (data.notice2===defaultNotice ? (element("printRideQR")?.checked ? "扫码查看这段铁路行程" : "铁路旅程收藏") : data.notice2);
+    row(firstLine,242,328,15,401,"center");
+    row(receipt ? field("postcardNotice2","铁路图鉴祝您旅途愉快") : "纪念样张 · 不可乘车或报销",242,351,16,400,"center");
     const qr=element("rideShareQR");
     if (qr && element("printRideQR")?.checked && !element("rideShareResult")?.hidden) {
       ctx.save();ctx.imageSmoothingEnabled=false;ctx.drawImage(qr,492,245,111,111);ctx.restore();
@@ -1291,8 +1321,9 @@
       row("纪念",549,321,21,66,"center",SERIF,600,tint);
     }
     ctx.fillStyle=blue?"#8ac5cb":"#db9d98";ctx.fillRect(0,370,640,34);
-    row(data.bottomNo,27,394,17,318,"left",MONO);
-    row(data.issuer,614,394,15,243,"right");
+    row(receipt ? field("postcardBottomNo", data.bottomNo.replace(/^SAMPLE-/, "ATLAS-")) : data.bottomNo,27,394,17,318,"left",MONO);
+    if (receipt) row(field("postcardIssuer", `${data.from} · 收藏`),354,394,17,261);
+    else row(data.issuer,614,394,15,243,"right");
   }
 
   function drawTicketFace(ctx, style, palette, journey) {
@@ -1302,7 +1333,7 @@
     const data = resolveData(journey);
     ctx.save();
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
-    if (variant === "stock-red" || variant === "stock-blue") stockTicket(ctx,data,variant === "stock-blue");
+    if (variant === "stock-receipt" || variant === "stock-red" || variant === "stock-blue") stockTicket(ctx,data,variant !== "stock-red",variant === "stock-receipt");
     else if (key === "red-replica") drawRedReplica(ctx, data, colours, journey);
     else if (key === "blue-replica") drawBlueReplica(ctx, data, colours, journey);
     else if (key === "voucher-replica") drawVoucherReplica(ctx, data, colours, journey);
@@ -1324,15 +1355,15 @@
     styles: Object.keys(STYLE_ALIASES),
     palettes: PALETTES,
     readData: resolveData,
-    randomizeFields({ onlyEmpty = true } = {}) {
+    randomizeFields({ onlyEmpty = true, group = "all" } = {}) {
       const from = inputValue(["postcardFrom"], "出发");
       const to = inputValue(["postcardTo"], "到达");
       const seed = `${Date.now()}-${++randomizationSerial}-${from}-${to}`;
       const next = random(seed);
       const fields = {
-        postcardTicketNo: `SAMPLE-${randomDigits(next, 8)}`,
+        postcardTicketNo: `R${randomDigits(next, 6)}`,
         postcardPassenger: `旅客${String(Math.floor(next() * 90) + 10)}`,
-        postcardIdNo: `SAMPLE-ID-${randomDigits(next, 6)}`,
+        postcardIdNo: `RA${randomDigits(next, 2)}****${randomDigits(next, 4)}`,
         postcardPrice: String(Math.round(35 + next() * 665)),
         postcardCar: String(Math.floor(next() * 8) + 1).padStart(2, "0"),
         postcardSeat: `${String(Math.floor(next() * 16) + 1).padStart(2, "0")}${String.fromCharCode(65 + Math.floor(next() * 5))}`,
@@ -1344,11 +1375,13 @@
         postcardIssuer: "铁路图鉴 · 纪念样张",
         postcardNotice: MEMORIAL_NOTICE,
         postcardNotice2: "二维码、验证码及官方凭证编号未生成",
-        postcardBottomNo: `SAMPLE-${randomDigits(next, 10)}`,
+        postcardBottomNo: `ATLAS-${randomDigits(next, 10)}`,
         postcardWatermark: "纪念图 / SAMPLE"
       };
       const applied = {};
+      const groups = {numbers: ["postcardTicketNo","postcardBottomNo"], identity: ["postcardPassenger","postcardIdNo"]};
       for (const [id, value] of Object.entries(fields)) {
+        if (groups[group] && !groups[group].includes(id)) continue;
         const field = element(id);
         if (field && (!onlyEmpty || !String(field.value ?? field.textContent ?? "").trim())) {
           field.value = value;

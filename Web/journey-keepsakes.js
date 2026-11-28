@@ -254,7 +254,7 @@ const JourneyKeepsakes = (() => {
     return new Promise((resolve,reject) => canvas.toBlob(b => b ? resolve(b) : reject(Error("图片编码失败。")),type,.98));
   }
   async function exportFormat() {
-    if (!cardRoute?.geometryAvailable) return showToast("请先匹配实际乘车区间。");
+    if (!canExportPostcard()) return showToast("请填写行程。路线图样式还需要匹配实际乘车区间。");
     drawPostcard();
     const canvas = $("postcardPreview"), format = $("cardExportFormat").value;
     try {
