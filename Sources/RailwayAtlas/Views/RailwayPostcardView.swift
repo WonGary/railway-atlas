@@ -12,7 +12,9 @@ import UIKit
 enum PostcardStyle: String, CaseIterable, Identifiable {
     case red, blue, map, paper, magnetic, voucher, night, inkMap
     case redReplica, blueReplica, voucherReplica
-    case stockRed, stockBlue
+    case stockRed, stockBlue, stockReceipt
+
+    var usesTicketStock: Bool { self == .stockRed || self == .stockBlue || self == .stockReceipt }
 
     var id: String { rawValue }
 
@@ -31,6 +33,7 @@ enum PostcardStyle: String, CaseIterable, Identifiable {
         case .voucherReplica: "电子报销凭证复刻样张"
         case .stockRed: "红色纸票 · 参考票面"
         case .stockBlue: "蓝色磁介票 · 参考票面"
+        case .stockReceipt: "历史纸质报销凭证 · 蓝票收藏版"
         }
     }
 }
@@ -72,6 +75,18 @@ struct RailwayPostcardTicket: Equatable, Sendable {
     var ticketMark = "成人"
     var serialNumber = ""
     var notice = "仅供收藏使用"
+    var secondNotice = "铁路图鉴祝您旅途愉快"
+    var issuer = ""
+
+    mutating func randomizeNumbers() {
+        ticketNumber = "R\(String(format: "%06d", Int.random(in: 0...999_999)))"
+        serialNumber = "ATLAS-\(String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)))"
+    }
+
+    mutating func randomizePassenger() {
+        passengerName = ["林", "陈", "许", "李", "周"].randomElement()! + ["小舟", "青禾", "晓宁", "文远"].randomElement()!
+        identityNumber = "RA\(Int.random(in: 10...99))****\(String(format: "%04d", Int.random(in: 0...9_999)))"
+    }
 
     static func forJourney(_ journey: RailJourney) -> Self {
         var value = Self()
@@ -85,16 +100,14 @@ struct RailwayPostcardTicket: Equatable, Sendable {
 
     static func randomSample(for journey: RailJourney) -> Self {
         var value = forJourney(journey)
-        value.ticketNumber = "A\(String(format: "%06d", Int.random(in: 0...999_999)))"
-        value.passengerName = ["样张旅客", "张三", "李四", "王一"].randomElement() ?? "样张旅客"
-        value.identityNumber = "SAMPLE-ID-\(String(format: "%04d", Int.random(in: 0...9_999)))"
+        value.randomizeNumbers()
+        value.randomizePassenger()
         value.fare = String(format: "%.2f", Double.random(in: 12...699))
         value.seatClass = ["二等座", "一等座", "软卧", "硬卧"].randomElement() ?? "二等座"
         value.coachNumber = String(format: "%02d", Int.random(in: 1...16))
         value.seatNumber = "\(String(format: "%02d", Int.random(in: 1...20)))\(["A", "B", "C", "D", "F"].randomElement() ?? "A")号"
         value.checkNumber = "\(Int.random(in: 1...9))A\(Int.random(in: 1...9))"
         value.ticketMark = ["成人", "学惠", "学生"].randomElement() ?? "成人"
-        value.serialNumber = "ATLAS-\(String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(14)))"
         value.notice = "仅供收藏使用"
         return value
     }
@@ -177,18 +190,13 @@ enum TicketText {
         let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return placeholder }
 
-        let characters = Array(clean)
+        let characters = clean.filter { !$0.isWhitespace && $0 != "-" }
         guard characters.count > 4 else {
             return String(repeating: "*", count: characters.count)
         }
 
-        let leadingCount = min(3, max(1, characters.count / 3))
-        let trailingCount = min(4, max(1, characters.count - leadingCount - 1))
-        let maskedCount = max(2, characters.count - leadingCount - trailingCount)
-
-        return String(characters.prefix(leadingCount))
-            + String(repeating: "*", count: maskedCount)
-            + String(characters.suffix(trailingCount))
+        return String(characters.prefix(characters.count >= 12 ? 4 : 1)) + "****"
+            + String(characters.suffix(characters.count >= 12 ? 4 : 2))
     }
 }
 
@@ -205,6 +213,7 @@ struct RailwayPostcardView: View {
     @State private var shareURL: URL?
     @State private var shareCode: CGImage?
     @State private var shareKey = ""
+    @State private var printShareCode = false
     @State private var output = PostcardDocument(Data())
     @State private var error: String?
     @State private var route: RailTrackJourney?
@@ -224,6 +233,13 @@ struct RailwayPostcardView: View {
     private var currentRoute: RailTrackJourney? {
         loadedKey == routeKey ? route : nil
     }
+
+    private var canExport: Bool {
+        currentRoute != nil || (style == .stockReceipt && [journey.train, journey.date, journey.from, journey.to]
+            .allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    }
+
+    private var ticketCode: CGImage? { printShareCode && shareKey == routeKey ? shareCode : nil }
 
     var body: some View {
         ScrollView {
@@ -270,7 +286,7 @@ struct RailwayPostcardView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(currentRoute == nil)
+                    .disabled(!canExport)
                 }
 
                 GeometryReader { proxy in
@@ -281,7 +297,8 @@ struct RailwayPostcardView: View {
                         legs: currentRoute?.legs,
                         stations: currentRoute?.stations ?? [],
                         ticket: ticket,
-                        mapLayers: mapLayers
+                        mapLayers: mapLayers,
+                        shareCode: ticketCode
                     )
                     .frame(width: 760, height: 440)
                     .scaleEffect(min(proxy.size.width / 760, 1), anchor: .topLeading)
@@ -307,6 +324,9 @@ struct RailwayPostcardView: View {
                     if shareKey == routeKey, let shareURL, let shareCode {
                         Image(decorative:shareCode, scale:1).interpolation(.none).resizable().frame(width:120,height:120)
                         ShareLink("分享公开车次区间", item:shareURL)
+                        if style.usesTicketStock {
+                            Toggle("印在票面上", isOn: $printShareCode)
+                        }
                         Button("保存分享码") {
                             do { format = .png; output = PostcardDocument(try format.encode(shareCode)); exporting = true }
                             catch { self.error = error.localizedDescription }
@@ -371,6 +391,8 @@ struct RailwayPostcardView: View {
                     Text("实际乘车区间 \(journey.from) → \(journey.to) · \(Int(route.distance / 1000)) km 地图轨道 · \(route.stations.count) 个经停站")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } else if style == .stockReceipt && canExport {
+                    Text("可按手填行程导出收藏票。路线图和区间分享码需要匹配铁路径路。").font(.caption).foregroundStyle(.secondary)
                 }
 
                 Text("分享码打开所选乘车区间。姓名、票号、证件号和备注留在本机。纪念票不可乘车或报销。")
@@ -399,7 +421,11 @@ struct RailwayPostcardView: View {
             let key = routeKey
             let draft = journey
             if ticketSeedKey != key {
-                ticket = .forJourney(draft)
+                synchronizeTicket()
+                shareCode = nil
+                shareURL = nil
+                shareKey = ""
+                printShareCode = false
                 ticketSeedKey = key
             }
             route = nil
@@ -454,7 +480,7 @@ struct RailwayPostcardView: View {
     }
 
     private func export(_ selected: PostcardOutput) {
-        guard currentRoute != nil else {
+        guard canExport else {
             error = "请先完成实际乘车区间匹配"
             return
         }
@@ -467,7 +493,8 @@ struct RailwayPostcardView: View {
                 legs: currentRoute?.legs,
                 stations: currentRoute?.stations ?? [],
                 ticket: ticket,
-                mapLayers: mapLayers
+                mapLayers: mapLayers,
+                shareCode: ticketCode
             )
             .frame(width: 760, height: 440)
             .environment(\.colorScheme, .light)
@@ -480,7 +507,7 @@ struct RailwayPostcardView: View {
         }
 
         do {
-            let stock = style == .stockRed || style == .stockBlue
+            let stock = style.usesTicketStock
             let w = Int((Double(cgImage.height) * 85.6 / 54).rounded())
             let crop = CGRect(x:(cgImage.width-w)/2,y:0,width:w,height:cgImage.height)
             let image = stock ? (cgImage.cropping(to:crop) ?? cgImage) : cgImage
@@ -497,6 +524,10 @@ struct PostcardTicketEditor: View {
 
     var body: some View {
         DisclosureGroup("票面字段") {
+            HStack {
+                Button("随机上下票号") { ticket.randomizeNumbers() }
+                Button("随机乘车人和证件") { ticket.randomizePassenger() }
+            }.buttonStyle(.bordered)
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
                 GridRow {
                     Text("票号（样张）")
@@ -546,11 +577,17 @@ struct PostcardTicketEditor: View {
                     Text("提示文字")
                     TextField("仅供收藏使用", text: $ticket.notice)
                 }
+                GridRow {
+                    Text("第二行说明")
+                    TextField("铁路图鉴祝您旅途愉快", text: $ticket.secondNotice)
+                    Text("发售处")
+                    TextField("车站或收藏地", text: $ticket.issuer)
+                }
             }
             .textFieldStyle(.roundedBorder)
             .font(.subheadline)
 
-            Text("这些字段只保存在当前明信片编辑页的本地视图状态，当前不会写入 ExperienceStore。")
+            Text("票面字段仅用于本机制作。建议直接填写脱敏证件号。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.top, 8)
@@ -567,6 +604,7 @@ struct TicketPostcardArt: View {
     var stations: [String] = []
     let ticket: RailwayPostcardTicket
     let mapLayers: PostcardMapLayers
+    let shareCode: CGImage?
 
     init(
         style: PostcardStyle,
@@ -575,7 +613,8 @@ struct TicketPostcardArt: View {
         legs: [[Coordinate]]?,
         stations: [String] = [],
         ticket: RailwayPostcardTicket? = nil,
-        mapLayers: PostcardMapLayers = .standard
+        mapLayers: PostcardMapLayers = .standard,
+        shareCode: CGImage? = nil
     ) {
         self.style = style
         self.journey = journey
@@ -584,6 +623,7 @@ struct TicketPostcardArt: View {
         self.stations = stations
         self.ticket = ticket ?? .forJourney(journey)
         self.mapLayers = mapLayers
+        self.shareCode = shareCode
     }
 
     private func routeMap(
@@ -628,8 +668,9 @@ struct TicketPostcardArt: View {
     var body: some View {
         Group {
             switch style {
-            case .stockBlue, .stockRed:
-                ReferenceTicketFace(blue:style == .stockBlue, ticket:ticket, journey:journey)
+            case .stockBlue, .stockRed, .stockReceipt:
+                ReferenceTicketFace(blue:style != .stockRed, receipt:style == .stockReceipt,
+                                    ticket:ticket, journey:journey, shareCode:shareCode)
             case .redReplica:
                 replicaTicket(theme: .red)
             case .blueReplica:
@@ -647,7 +688,7 @@ struct TicketPostcardArt: View {
         .frame(width: 760, height: 440)
         .clipped()
         .overlay {
-            if style != .stockRed && style != .stockBlue {
+            if !style.usesTicketStock {
                 TicketSampleWatermark(dark: style == .night || style == .inkMap)
             }
         }

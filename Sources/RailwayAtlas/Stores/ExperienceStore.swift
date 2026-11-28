@@ -159,7 +159,7 @@ final class ExperienceStore: ObservableObject {
     @Published var timetables: [RailTimetable] = []
     @Published var history: [RailHistoryEvent] = []
     @Published var postcardDraft = RailJourney()
-    @Published var postcardStyle: PostcardStyle = .red
+    @Published var postcardStyle: PostcardStyle = .stockReceipt
     @Published var postcardCity = "上海"
     @Published var postcardCaption = "山川迢迢，来日方长。"
     @Published var pastedJourneyText = ""

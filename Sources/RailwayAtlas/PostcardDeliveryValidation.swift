@@ -22,12 +22,27 @@ enum PostcardDeliveryValidation {
               let route = try await core.journey(full,from:journey.from,to:journey.to),
               route.legs.count == 1 else { throw DataError.invalid("日期和区间不匹配") }
         let w = 1395, h = 880
-        for style in [PostcardStyle.stockRed, .stockBlue] {
+        var ticket = RailwayPostcardTicket.randomSample(for:journey)
+        ticket.ticketNumber = "R012345"; ticket.serialNumber = "ATLAS-0123456789"
+        ticket.passengerName = "样张旅客"; ticket.identityNumber = "RA99123456780027"
+        ticket.checkNumber = "7、8"; ticket.ticketMark = "学惠"; ticket.fare = "68.50"
+        ticket.notice = "陇南至广元"; ticket.secondNotice = "留作旅途纪念"; ticket.issuer = "陇南 · 收藏"
+        guard TicketText.maskedIdentityNumber(ticket.identityNumber, placeholder:"") == "RA99****0027"
+        else { throw DataError.invalid("票面证件号脱敏有误") }
+        for style in [PostcardStyle.stockRed, .stockBlue, .stockReceipt] {
             let renderer = ImageRenderer(content:TicketPostcardArt(style:style, journey:journey,
-                caption:"",legs:route.legs,stations:route.stations).environment(\.colorScheme,.light))
+                caption:"",legs:route.legs,stations:route.stations,ticket:ticket,
+                shareCode:style == .stockReceipt ? image : nil).environment(\.colorScheme,.light))
             renderer.scale = 2
             guard let source = renderer.cgImage, let crop = source.cropping(to:.init(x:(source.width-w)/2,y:0,width:w,height:h))
             else { throw DataError.invalid("参考票面渲染失败") }
+            if style == .stockReceipt {
+                let scan = VNDetectBarcodesRequest()
+                scan.symbologies = [.qr]
+                try VNImageRequestHandler(cgImage:crop).perform([scan])
+                guard scan.results?.first?.payloadStringValue == share.absoluteString
+                else { throw DataError.invalid("票面上的区间分享码未能读回") }
+            }
             for format in PostcardOutput.allCases {
                 let data = try format.encode(crop)
                 guard !data.isEmpty else { throw DataError.invalid("导出文件为空") }
