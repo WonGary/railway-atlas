@@ -75,6 +75,11 @@ struct ContentView: View {
         .task {
             #if targetEnvironment(simulator)
             let launch = CommandLine.arguments
+            if launch.contains(PostcardDeliveryValidation.simulatorFlag),
+               let index = launch.firstIndex(of:"--ui-smoke"), launch.indices.contains(index + 1) {
+                await PostcardDeliveryValidation.runWithReceipt(in:URL(fileURLWithPath:launch[index + 1]))
+                return
+            }
             if launch.contains("--ui-smoke"), launch.contains("--station-board-ui"),
                let station = NationalDirectoryPins.byName["广元"] {
                 store.mapMode = .offline

@@ -1,11 +1,25 @@
-#if os(macOS)
-import AppKit
+import Foundation
 import RailwayCore
 import SwiftUI
 import Vision
 
 @MainActor
 enum PostcardDeliveryValidation {
+    static let simulatorFlag = "--paper-ticket-check"
+
+    static func runWithReceipt(in directory: URL) async {
+        var report = ["status":"PASS", "bundle":Bundle.main.bundleURL.path]
+        do {
+            try await run(in:directory)
+        } catch {
+            report["status"] = "FAIL"
+            report["error"] = error.localizedDescription
+        }
+        if let json = try? JSONEncoder().encode(report) {
+            try? json.write(to:directory.appendingPathComponent("paper-ticket.json"),options:.atomic)
+        }
+    }
+
     static func run(in directory: URL) async throws {
         let journey = RailJourney(date:"2026-11-26",train:"D174",from:"陇南",to:"广元",departure:"13:22",
                                   status:.travelled,note:"仅作本机验收")
@@ -53,4 +67,3 @@ enum PostcardDeliveryValidation {
         try Data(("PASS\n"+share.absoluteString+"\n").utf8).write(to:directory.appendingPathComponent("postcard-delivery.txt"))
     }
 }
-#endif

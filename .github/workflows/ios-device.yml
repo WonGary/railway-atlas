@@ -84,7 +84,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/atlas-sim-build" -resultBundlePath "$RUNNER_TEMP/station-board.xcresult" \
             ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO -only-testing:StationBoardUITests test || failed=1
           export ATLAS_SIM_EVIDENCE="$RUNNER_TEMP/atlas-sim-receipts"
-          for suite in games passport inspector; do
+          for suite in games passport inspector ticket; do
             node Checks/check-rail-games-installed.cjs ios "$device" "$suite" || failed=1
           done
           exit "$failed"

@@ -13,9 +13,10 @@ async function main() {
   const suites = {
     games: {name:"rail-games", flags:["--rail-games-check"]},
     passport: {name:"passport-footprints", flags:["--experiences-check", "--passport-footprints-check"]},
+    ticket: {name:"paper-ticket", flags:["--paper-ticket-check"]},
     inspector: {name:"route-inspector", flags:["--route-inspector-check"]}
   };
-  assert.ok(Object.hasOwn(suites, suite), "choose games, passport or inspector");
+  assert.ok(Object.hasOwn(suites, suite) && (suite !== "ticket" || platform === "ios"), "choose games, passport, inspector or iOS ticket");
   const {name, flags} = suites[suite];
   const prefix = `${name}-installed-`;
   let app, folder, simulator;
@@ -57,12 +58,19 @@ async function main() {
       const report = JSON.parse(fs.readFileSync(receipt, "utf8"));
       if (process.env.ATLAS_SIM_EVIDENCE) {
         fs.mkdirSync(process.env.ATLAS_SIM_EVIDENCE, {recursive:true});
-        for (const name of [path.basename(receipt),"D174-D176.png","D174-D2236.png"]) {
+        for (const name of [path.basename(receipt),"D174-D176.png","D174-D2236.png",
+          "stockReceipt-png.png","stockReceipt-ticketPDF.pdf"]) {
           if (fs.existsSync(path.join(folder,name))) fs.copyFileSync(path.join(folder,name), path.join(process.env.ATLAS_SIM_EVIDENCE,name));
         }
       }
       assert.equal(fs.realpathSync(report.bundle), fs.realpathSync(app));
       assert.equal(report.status, "PASS", [report.stage, report.error].filter(Boolean).join(" / ") || "app check failed");
+      if (suite === "ticket") {
+        for (const filename of ["stockReceipt-png.png","stockReceipt-ticketPDF.pdf"])
+          assert.ok(fs.statSync(path.join(folder,filename)).size > 1000);
+        console.log("PASS iPhone 纸票 PNG、PDF，票面二维码读回 D174 陇南至广元");
+        return;
+      }
       if (suite === "inspector") {
         assert.deepEqual(report.pairs.map(p=>p.other), ["D176", "D2236"]);
         assert.deepEqual(report.pairs.map(p=>p.mapLayers), [["shared"], ["first", "second", "shared"]]);
