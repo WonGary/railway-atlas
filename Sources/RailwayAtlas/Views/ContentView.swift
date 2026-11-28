@@ -52,7 +52,10 @@ struct ContentView: View {
                         .presentationDragIndicator(.visible)
                 }
                 .onChange(of: store.selection?.id) { _, value in
-                    if value != nil { showPanel = true }
+                    if value != nil { showPanel = !store.isFramingLine }
+                }
+                .onChange(of: store.cameraRevision) { _, _ in
+                    if store.isFramingLine { showPanel = false }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .railGameDidOpenMap)) { _ in showPanel = false }
             #endif

@@ -5,6 +5,16 @@ import MapKit
 import RailwayCore
 import SwiftUI
 
+/// Window-event coordinates include the title bar. Resolve them from the actual map view.
+struct FramingEventSurface: NSViewRepresentable {
+    final class Marker: NSView {
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+    func makeNSView(context: Context) -> Marker { Marker() }
+    func updateNSView(_ view: Marker, context: Context) {}
+}
+
 /// Local QA only; no assistant request or credential access.
 ///
 /// Main-thread hooks (not applied by this file):
@@ -106,6 +116,10 @@ enum PanelLayoutValidation {
         try require(!assistant.busy, "QA must not interrupt an assistant request")
         guard let window, let view = window.contentView else {
             throw DataError.invalid("Panel layout QA needs the application's actual window")
+        }
+        if arguments.contains("--line-framing-check") {
+            try await checkLineClicks(store, window: window, view: view, directory: root)
+            return
         }
         // A unique evidence directory avoids mistaking images from a previous run
         // for this run. The fixed report is immediately marked RUNNING.
@@ -362,6 +376,153 @@ enum PanelLayoutValidation {
     private static let combinations: [(MapPanelLayout, MapPanelLayout)] = [
         (.floating, .floating), (.floating, .docked), (.docked, .floating), (.docked, .docked)
     ]
+
+    /// Send window events to the normal recognizers. Use the same short input way for both renderers.
+    private static func checkLineClicks(_ store: RailwayMapStore, window: NSWindow, view: NSView,
+                                        directory: URL) async throws {
+        guard var pack = store.dataset, let rail = pack.lines.first(where: { $0.id == "way/24943912" }),
+              let beijing = Bundle.main.url(forResource: "beijing", withExtension: "json", subdirectory: "metro") else {
+            throw DataError.invalid("Framing QA needs the Shanghai pack and Beijing directions")
+        }
+        let city = try JSONDecoder().decode(MetroDirectionCatalog.City.self, from: Data(contentsOf: beijing))
+        guard let direction = city.routes.first(where: { $0.id == "relation/20010805" }),
+              let part = direction.paths.first, part.count > 12 else { throw DataError.invalid("Missing Beijing 18") }
+        var metro = rail
+        metro.id = "way/2"; metro.name = direction.name; metro.coordinates = Array(part[2...12])
+        metro.tags = ["railway":"subway","name":direction.name]; metro.routes = [direction.route]
+        pack.lines = [rail,metro]; pack.stations = []
+
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        store.alignment = .wgs84; store.automaticAlignment = false
+        store.statusVisible = false; store.showsStations = false; store.automaticDetail = false
+        store.panelWidth = 320; store.inspectorWidth = 380
+        let output = directory.appendingPathComponent("line-framing.txt")
+        var notes = [String]()
+        func record(_ s: String) throws {
+            notes.append(s)
+            try Data((notes.joined(separator:"\n") + "\n").utf8).write(to: output, options:.atomic)
+        }
+        func measuredFrame(_ id: String) -> CGRect? {
+            PanelLayoutMeasurements.frames[id]?.values.filter { !$0.isEmpty }.max { $0.width < $1.width }
+        }
+        func marker(in parent: NSView) -> NSView? {
+            if parent is FramingEventSurface.Marker { return parent }
+            return parent.subviews.lazy.compactMap { marker(in:$0) }.first
+        }
+        func currentMap(_ mode: MapMode) throws -> CGRect {
+            guard let marker = marker(in:view) else { throw DataError.invalid("Missing map in \(window.title), windows=\(NSApp.windows.map(\.title))") }
+            let actual = marker.convert(marker.bounds,to:view)
+            let frame = CGRect(x:actual.minX,y:0,width:actual.width,height:actual.height)
+            if mode == .apple {
+                guard let map = nativeMaps(in:view).first, abs(map.bounds.width-frame.width)<1,
+                      abs(map.bounds.height-frame.height)<1 else { throw DataError.invalid("MapKit bounds / SwiftUI surface disagree") }
+            }
+            return frame
+        }
+        func projection(_ points: [Coordinate], _ frame: CGRect, _ mode: MapMode) -> [CGPoint] {
+            if mode == .apple, let map = nativeMaps(in:view).first {
+                return points.map { p in
+                    let v = map.convert(store.alignment.display(p).location, toPointTo:map)
+                    return CGPoint(x: frame.minX+v.x, y: frame.minY+(map.isFlipped ? v.y : map.bounds.height-v.y))
+                }
+            }
+            let camera = RailProjection(region:store.region,size:frame.size)
+            return points.map { p in let v=camera.screen(p); return CGPoint(x:frame.minX+v.x,y:frame.minY+v.y) }
+        }
+        func measure(_ label: String, _ points: [Coordinate], _ mode: MapMode) async throws {
+            var last = label
+            for _ in 0..<18 {
+                try await settle(view,milliseconds:120)
+                let map = try currentMap(mode)
+                // The dock slot clips its content. Only a floating panel can paint over the map.
+                let left = store.panelLayout == .docked ? map.minX : max(map.minX,measuredFrame("left-map-panel")?.maxX ?? map.minX)
+                let right = store.inspectorLayout == .docked ? map.maxX : min(map.maxX,measuredFrame("right-map-inspector")?.minX ?? map.maxX)
+                let clear = CGRect(x:left,y:map.minY,width:right-left,height:map.height)
+                let pp = projection(points,map,mode)
+                let xs=pp.map(\.x), ys=pp.map(\.y)
+                let span = max((xs.max()!-xs.min()!)/clear.width,(ys.max()!-ys.min()!)/clear.height)
+                let offset = max(abs((xs.max()!+xs.min()!)/2-clear.midX),abs((ys.max()!+ys.min()!)/2-clear.midY))
+                let outside = pp.filter { !clear.contains($0) }.count
+                last = "\(mode) \(label) points=\(pp.count) map=\(map.integral) clear=\(clear.integral) span=\(String(format:"%.4f",span)) outside=\(outside) offset=\(String(format:"%.1f",offset))"
+                if outside == 0 && abs(span-0.8)<0.012 && offset<max(3,min(clear.width,clear.height)*0.02) { try record(last); return }
+            }
+            let actual = nativeMaps(in:view).first?.visibleMapRect
+            throw DataError.invalid(last + " target=\(String(describing:store.fittedDisplayRect)) actual=\(String(describing:actual))")
+        }
+        func press(_ point: CGPoint, on surface: CGRect, mode: MapMode) async throws -> String {
+            guard let marker = marker(in:view) else { throw DataError.invalid("Map event surface not mounted") }
+            let p = marker.convert(CGPoint(x:point.x-surface.minX,y:point.y-surface.minY),to:nil)
+            let screen = window.convertPoint(toScreen:p)
+            let quartz = CGPoint(x:screen.x,y:CGDisplayBounds(CGMainDisplayID()).height-screen.y)
+            let topWindow = NSWindow.windowNumber(at:screen,belowWindowWithWindowNumber:0)
+            if !NSApp.isActive || topWindow != window.windowNumber {
+                let local = CGPoint(x:point.x-surface.minX,y:point.y-surface.minY)
+                if mode == .apple, let map = nativeMaps(in:view).first,
+                   let recognizer = map.gestureRecognizers.first(where: { $0.target is AppleRailwayMap.Coordinator }),
+                   let coordinator = recognizer.target as? AppleRailwayMap.Coordinator {
+                    coordinator.pickTrack(map.convert(p,from:nil),map:map)
+                } else if mode == .offline {
+                    OfflineRailwayMap.selectNearest(local,projection:RailProjection(region:store.region,size:surface.size),in:store)
+                } else { throw DataError.invalid("Missing live map recognizer") }
+                return "coordinate handler (background window)"
+            }
+            for type in [CGEventType.mouseMoved,.leftMouseDown,.leftMouseUp] {
+                guard let event = CGEvent(mouseEventSource:nil,mouseType:type,mouseCursorPosition:quartz,mouseButton:.left)
+                else { throw DataError.invalid("Missing mouse event") }
+                event.setIntegerValueField(.mouseEventClickState,value:1)
+                event.post(tap:.cgSessionEventTap)
+                try await Task.sleep(for:.milliseconds(65))
+            }
+            return "window mouse"
+        }
+        for mode in [MapMode.offline,.apple] {
+            store.selection = nil
+            store.changeMode(mode)
+            for line in [metro,rail] {
+                window.setContentSize(CGSize(width:1240,height:820)); store.uiScale = 1
+                store.panelVisible = false; store.inspectorVisible = false
+                store.selection = nil; store.dataset = pack
+                let p = line.coordinates[3]
+                store.region = MKCoordinateRegion(center:p.location,span:.init(latitudeDelta:0.018,longitudeDelta:0.024))
+                store.cameraRevision += 1
+                try await settle(view,milliseconds:800)
+                // Online mode uses the same source ways without depending on basemap / tile delivery.
+                if mode == .apple { store.onlineLines = pack.lines; store.onlineStations = [] }
+                store.rebuildIndex(); store.rebuildVisible()
+                try await settle(view,milliseconds:120)
+                try require(store.visibleLines.contains { $0.id == line.id }, "click fixture isn't rendered: \(line.name)")
+                let surface = try currentMap(mode)
+                let hit = projection([p],surface,mode)[0]
+                let entry = try await press(hit,on:surface,mode:mode)
+                for _ in 0..<35 {
+                    try await settle(view,milliseconds:100)
+                    if store.selection?.id == line.id && (line.id == rail.id || store.lineFocus?.directionID == direction.id) { break }
+                }
+                try require(store.selection?.id == line.id,"\(mode) \(entry) did not select \(line.name), got \(store.selection?.name ?? "nil")")
+                let expected: [Coordinate]
+                if line.id == metro.id {
+                    try require(store.lineFocus?.directionID == direction.id && store.lineFocus?.paths == direction.paths,"clicked metro direction differs from source")
+                    expected = direction.paths.flatMap { $0 } + direction.stops.compactMap(\.location)
+                } else {
+                    let paths = MapContextFiles.parts(rail.name)
+                    try require(paths.count>1 && store.lineFocus?.paths == paths,"missing full named rail backing")
+                    expected = paths.flatMap { $0 } + rail.coordinates
+                }
+                try await measure("\(line.name) \(entry)",expected,mode)
+                store.panelVisible = true
+                for (left,right) in combinations {
+                    store.panelLayout=left; store.inspectorLayout=right
+                    try await measure("\(line.name) \(left)/\(right)",expected,mode)
+                }
+                window.setContentSize(CGSize(width:960,height:700)); store.uiScale = 1.6
+                try await measure("\(line.name) narrow",expected,mode)
+            }
+        }
+        try record("PASS")
+    }
 
     private static func resolve(_ viewport: CGSize, scale: Double = 1,
                                 left: MapPanelLayout = .floating, right: MapPanelLayout = .floating,

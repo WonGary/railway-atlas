@@ -126,7 +126,7 @@ const StationPanel = (() => {
           if(!root.isConnected) return;
           if(box.open) {
             for(const other of section.querySelectorAll("details[open]")) if(other!==box) other.open=false;
-            options.locate?.(points,line.title,names,false);
+            options.locate?.(points,line.title,names,true);
           } else options.endLine?.(line.title);
         });
       }

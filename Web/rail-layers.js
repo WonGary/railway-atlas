@@ -34,7 +34,7 @@ const RailMapLayers = (() => {
 
   function inspect(name, tags, station = false, coordinate=null, focus=null) {
     if (station) LineFocus.station(name,null,coordinate,focus?.stopColors || (()=>[focusStyle(tags).color].filter(Boolean)));
-    else if (focus?.parts?.length || focus?.match) LineFocus.set(name,focus.parts || [],focus.stops || [],focus);
+    else if (focus?.parts?.length || focus?.match) LineFocus.set(name,focus.parts || [],focus.stops || [],{...focus,fittedLine:true});
     else LineFocus.clear();
     state.selectedMetroStation = state.selectedMetroRoute = null;
     state.selectedMapFeature={name,tags,station,coordinate:coordinate ? [coordinate.lat,coordinate.lng] : null};
@@ -59,6 +59,7 @@ const RailMapLayers = (() => {
     }
     $("infoPanel").hidden = false;
     if (window.matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
+    if (!station && focus) LineFocus.fitSelection();
   }
   function typeOf(tags) {
     return tags["construction:railway"] || tags["proposed:railway"] || (/^(construction|proposed)$/.test(tags.railway) ? tags.construction || tags.proposed : tags.railway) || tags.subclass || tags.feature;
@@ -158,11 +159,12 @@ const RailMapLayers = (() => {
         if (feature.coordinates) {
           if (!LineFocus.trackHitRadius(map.getZoom())) return;
           const ids=new Set((feature.routes || []).map(r=>r.id));
+          const oneDirection=facts.urban && ids.size===1;
           const member=f=>ids.size===1 && f.routes?.some(r=>ids.has(r.id));
-          const named=f=>tags.name && f.tags?.name===tags.name;
+          const named=f=>!oneDirection && trackName(tags) && trackName(f.tags)===trackName(tags);
           const lines=data.lines.filter(f=>f.id===feature.id || member(f) || named(f));
           focus={parts:lines.map(f=>f.coordinates.map(p=>[p.latitude,p.longitude])),styleForPart:i=>focusStyle(withRouteColour(lines[i])),
-            match:trackName(tags) ? {name:trackName(tags),regionAlreadyDrawn:true} : null,
+            match:!oneDirection && trackName(tags) ? {name:trackName(tags),regionAlreadyDrawn:true} : null,
             stops:data.stations.filter(member).map(s=>[s.name,[s.coordinate.latitude,s.coordinate.longitude],s.id,()=>stationColors(s)])};
         } else focus={stopColors:()=>stationColors(feature)};
         inspect(title,{...tags,membership:(feature.routes || []).map(route => route.name).filter(Boolean).join("、")},!feature.coordinates,e.latlng,focus);

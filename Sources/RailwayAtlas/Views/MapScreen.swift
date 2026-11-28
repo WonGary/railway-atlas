@@ -35,15 +35,24 @@ struct MapScreen: View {
         #if os(macOS)
         let lineViewport = LineFitViewport(size: geometry.size,
             leftFloat: desktopPanels?.leftFloatingFrame ?? .zero, rightFloat: desktopPanels?.rightFloatingFrame ?? .zero)
-        #else
-        let lineViewport = LineFitViewport(size: geometry.size)
         #endif
         ZStack {
             Group {
                 if store.mapMode == .apple { AppleRailwayMap(store: store) }
                 else { OfflineRailwayMap() }
             }
-            #if !os(macOS)
+            #if os(macOS)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .background { if CommandLine.arguments.contains("--line-framing-check") { FramingEventSurface() } }
+            #else
+            .background {
+                GeometryReader { surface in
+                    let frame = surface.frame(in: .named("railwayMapControls"))
+                    let viewport = LineFitViewport(size: frame.size, topInset: max(0, -frame.minY),
+                                                   bottomInset: max(0, frame.maxY - geometry.size.height))
+                    Color.clear.onChange(of: viewport, initial: true) { _, value in store.updateLineFitViewport(value) }
+                }
+            }
             .ignoresSafeArea(.container, edges: .top)
             #endif
 
@@ -280,8 +289,11 @@ struct MapScreen: View {
                 }
             }
         }
+        .frame(width: geometry.size.width, height: geometry.size.height)
         .coordinateSpace(name: "railwayMapControls")
+        #if os(macOS)
         .onChange(of: lineViewport, initial: true) { _, value in store.updateLineFitViewport(value) }
+        #endif
         .onPreferenceChange(MapControlFrames.self) { if controlFrames != $0 { controlFrames = $0 } }
         .onPreferenceChange(StatusContentHeight.self) {
             // Keep a point-size baseline so increasing UI scale cannot hide

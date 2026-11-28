@@ -803,7 +803,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             pickTrack(gesture.location(in: map), map: map)
         }
         #endif
-        private func pickTrack(_ point: CGPoint, map: MKMapView) {
+        func pickTrack(_ point: CGPoint, map: MKMapView) {
             guard !store.historyMapActive else { return }
             // Annotation selection has its own delegate callback. A pick on a
             // station must not immediately select the track beneath that station.

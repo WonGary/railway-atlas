@@ -38,7 +38,12 @@ final class RailwayMapStore: ObservableObject {
                                               width: abs(b.x - a.x), height: abs(b.y - a.y)))
     }
 
-    func releaseLineFit() { fittedLine = nil }
+    var isFramingLine: Bool { fittedLine?.camera == cameraRevision }
+
+    func releaseLineFit() {
+        fittedLine = nil
+        pendingDirection?.canFit = false
+    }
 
     func updateLineFitViewport(_ viewport: LineFitViewport) {
         guard viewport.size.width > 0, viewport.size.height > 0, viewport != lineFitViewport else { return }
@@ -71,7 +76,7 @@ final class RailwayMapStore: ObservableObject {
     private var directionTask: Task<Void,Never>?
     private var requestedCity: String?
     private var retryCityAfter = Date.distantPast
-    private var pendingDirection: String?
+    private var pendingDirection: (id: String, canFit: Bool, camera: Int)?
     private var manualRequest = false
 
     func chooseDirectionCity(_ city: MetroCitySpec, centerMap: Bool) {
@@ -99,8 +104,9 @@ final class RailwayMapStore: ObservableObject {
                 directions.accept(result)
                 directionCity=result
                 directionStatus=result.routes.isEmpty ? "\(city.name) · 此范围暂未收录城轨线路" : "\(city.name) · \(result.routes.count) 条方向记录 · \(result.sourceDate)"
-                if let id=pendingDirection, let entry=directions.entries[id] {
-                    pendingDirection=nil;showMetroDirection(entry,fit:false)
+                if let request = pendingDirection, let entry = directions.entries[request.id] {
+                    let fit = request.canFit && (isFramingLine || request.camera == cameraRevision)
+                    showMetroDirection(entry, fit: fit, recordBrowse: false)
                 }
             } catch {
                 guard !Task.isCancelled else {return}
@@ -125,24 +131,35 @@ final class RailwayMapStore: ObservableObject {
     }
 
     func focusRelation(_ route: RailRoute) {
+        focusRelation(route, near: Coordinate(region.center.latitude, region.center.longitude), selectedLine: nil)
+    }
+
+    private func focusRelation(_ route: RailRoute, near location: Coordinate, selectedLine: RailLine?) {
         if let entry = directions.entries[route.id] {
-            showMetroDirection(entry, fit: true)
+            showMetroDirection(entry, fit: true, recordBrowse: selectedLine == nil)
             return
         }
-        passportActivity.browseLine(route.id, name: route.name)
+        if selectedLine == nil { passportActivity.browseLine(route.id, name: route.name) }
         clearLineFocus()
-        pendingDirection=route.id
-        let paths = nationalMetroSnapshot?.lines.filter { $0.routes?.contains(where: { $0.id == route.id }) == true }.map(\.coordinates) ?? []
-        lineFocus = MapLineFocus(title: urbanRouteTitles[route.visibilityKey] ?? route.name, routeKey: route.visibilityKey,
-                                 paths: paths, pathColor: (route.tags["colour"] ?? route.tags["color"]).flatMap(RailColor.init))
+        let overview = nationalMetroSnapshot?.lines ?? []
+        var seen = Set<String>()
+        let paths = (activeLines + overview).compactMap { line -> [Coordinate]? in
+            guard line.routes?.contains(where: { $0.id == route.id }) == true, seen.insert(line.id).inserted else { return nil }
+            return line.coordinates
+        }
+        lineFocus = MapLineFocus(title: route.name, featureID: selectedLine?.id, routeKey: route.visibilityKey,
+                                 relationID: route.id, paths: paths,
+                                 pathColor: (route.tags["colour"] ?? route.tags["color"]).flatMap(RailColor.init))
         fitLine(paths.flatMap { $0 })
-        loadDirections(MetroCitySpec.at(Coordinate(region.center.latitude,region.center.longitude)))
+        pendingDirection = (route.id, true, cameraRevision)
+        loadDirections(MetroCitySpec.at(location))
         labelRevision += 1
     }
 
-    func showMetroDirection(_ entry: MetroDirectionCatalog.Entry, fit: Bool) {
+    func showMetroDirection(_ entry: MetroDirectionCatalog.Entry, fit: Bool, recordBrowse: Bool = true) {
+        pendingDirection = nil
         let direction = entry.direction, paths = direction.paths
-        if fit { passportActivity.browseLine(direction.id, name: direction.name) }
+        if fit && recordBrowse { passportActivity.browseLine(direction.id, name: direction.name) }
         var ids = Set<String>()
         let pins = direction.stops.compactMap { stop -> RailStation? in
             guard let location = stop.location, ids.insert(stop.id).inserted else { return nil }
@@ -486,14 +503,17 @@ final class RailwayMapStore: ObservableObject {
             if let item = selection, let line = line(withID: item.id) {
                 clearLineFocus()
                 let routes = line.routes ?? []
-                let keys = Set(routes.map(\.visibilityKey))
-                let name = line.tags["name:zh"] ?? line.tags["name"]
-                lineFocus = MapLineFocus(title: item.name, featureID: line.id,
-                    routeKey: keys.count == 1 ? keys.first : nil,
-                    trackName: name, paths: name.map { MapContextFiles.parts($0) } ?? [])
-                if let route = routes.first, Set(routes.map(\.id)).count == 1 {
-                    if let entry = directions.entries[route.id] { showMetroDirection(entry, fit: false) }
-                    else { pendingDirection=route.id;loadDirections(MetroCitySpec.at(item.coordinate)) }
+                if line.isUrbanTransit, let route = routes.first, routes.allSatisfy({ $0.id == route.id }) {
+                    focusRelation(route, near: item.coordinate, selectedLine: line)
+                } else {
+                    let keys = Set(routes.map(\.visibilityKey))
+                    let name = line.tags["name:zh-Hans"] ?? line.tags["name:zh"] ?? line.tags["name"]
+                    let focus = MapLineFocus(title: item.name, featureID: line.id,
+                        routeKey: keys.count == 1 ? keys.first : nil,
+                        trackName: name, paths: name.map { MapContextFiles.parts($0) } ?? [])
+                    lineFocus = focus
+                    let members = activeLines.filter(focus.includes)
+                    fitLine(focus.paths.flatMap { $0 } + members.flatMap(\.coordinates))
                 }
                 labelRevision += 1
             } else if let id = selection?.id, let station = station(withID: id) {
@@ -1009,7 +1029,6 @@ final class RailwayMapStore: ObservableObject {
     func select(_ item: RailwaySelection) {
         selection = item
         if let line = activeLines.first(where: { $0.id == item.id }) {
-            fitLine(line.coordinates)
             categories.insert(line.category)
             networks.insert(RailNetwork.classify(line.tags))
         } else {

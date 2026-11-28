@@ -551,7 +551,7 @@ function fitRoute() {
     return;
   }
   if (state.playbackTimer) $("followJourney").checked = false;
-  state.map.fitBounds(bounds.pad(0.08), { animate: false });
+  LineFocus.fitFullLine(bounds);
   state.journeyPreviewZoom = state.map.getZoom();
 }
 
@@ -943,7 +943,7 @@ function drawMetro() {
         if (!city) return;
         const detail=await loadMetroCity(city,{retry:true});
         const direction=detail?.routes.find(r=>r.id===route.id);
-        if (direction && LineFocus.active===focus) selectMetroRoute(city,direction,{fit:true});
+        if (direction && LineFocus.active===focus) selectMetroRoute(city,direction,{fit:!focus.cameraReleased});
       });
       const facts=AtlasPrefs.classify({...route.tags,...(construction?{state:"construction"}:{})},true);
       state.metroPolylines.push({line,construction,record,parts:validParts,displayed:validParts,
@@ -1153,7 +1153,6 @@ function selectMetroStation(city, station, { pan = true } = {}) {
 
 function selectMetroRoute(city, route, {fit = false} = {}) {
   $("infoPanel").hidden = false;
-  LineFocus.metro(city,route,{fit});
   state.selectedMapFeature=null;
   state.selectedMetroRoute = { city, route };
   state.selectedMetroStation = null;
@@ -1175,6 +1174,8 @@ function selectMetroRoute(city, route, {fit = false} = {}) {
     const station = state.metroDetails.get(city.id)?.stations.find(item => item.id === button.dataset.metroStop);
     if (station) selectMetroStation(city, station);
   }));
+  if (fit && matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
+  LineFocus.metro(city,route,{fit});
   refreshMetroDetailVisibility();
 }
 

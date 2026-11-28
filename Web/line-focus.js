@@ -2,6 +2,7 @@
 // tile arrivals, zooms and preference changes retain their normal paint styles.
 const LineFocus = (() => {
   let map, ink, current, rimRenderer, trackRenderer, renderer;
+  let frame, fitting = false, layoutTick = 0;
   const loaded = new Map();
   function read(file) {
     if (!loaded.has(file)) loaded.set(file,loadJSON("./station-directory/lines/"+file)
@@ -22,8 +23,29 @@ const LineFocus = (() => {
     map.on("click",e=>{
       if (e.sourceTarget===map && !e.originalEvent?.atlasFeatureHit) clear();
     });
+    // Keep a full-line camera through layout changes, until the user moves the map.
+    map.on("movestart", () => {
+      if (!fitting) {
+        frame = null;
+        if (current) current.cameraReleased = true;
+      }
+    });
+    const schedule = () => {
+      if (frame && !layoutTick) layoutTick = requestAnimationFrame(() => {
+        layoutTick = 0;
+        if (frame) applyFrame(frame);
+      });
+    };
+    const panels = document.querySelectorAll(".app-shell > .left-rail,.app-shell > .right-panel,#mapTopbar,#playbackBar");
+    const sizes = new ResizeObserver(schedule);
+    for (const el of [map.getContainer(), ...panels]) sizes.observe(el);
+    const visibility = new MutationObserver(schedule);
+    for (const el of [document.querySelector(".app-shell"), ...panels])
+      visibility.observe(el,{attributes:true,attributeFilter:["class","hidden","data-ui-folded","data-left-layout","data-right-layout"]});
+    for (const el of panels) el.addEventListener("transitionend",schedule);
   }
   function clear() {
+    frame = null;
     if (!current) return;
     current=null; ink.clearLayers();
     map.getContainer().classList.remove("line-focused","full-line-view");
@@ -134,6 +156,7 @@ const LineFocus = (() => {
   }
   function set(title,parts,stops=[],opts={}) {
     if (!map) return;
+    frame = null;
     current={title,parts,stops,extra:new Map(),...opts};
     map.getContainer().classList.toggle("full-line-view",Boolean(opts.fittedLine));
     paint();
@@ -150,6 +173,7 @@ const LineFocus = (() => {
       // Directory geometry is the continuous backing; local speed colours stay on top.
       const paths=entries.map(([, ,path])=>RailPaths.decode(path));
       drawBacking(paths);
+      if (selection.fittedLine && !selection.cameraReleased && paths.length) fitSelection();
     } catch { /* The selected source geometry remains available. */ }
   }
   function drawBacking(paths) {
@@ -170,17 +194,22 @@ const LineFocus = (() => {
   }
   function fitFullLine(bounds, maxZoom) {
     if (!bounds.isValid()) return;
-    // Opening a docked inspector can change the canvas width before Leaflet sees a resize.
+    frame = {bounds, maxZoom};
+    applyFrame(frame);
+  }
+  function applyFrame(target) {
     map.invalidateSize({pan:false});
     const size = map.getSize();
     if (!size.x || !size.y) return;
     const viewport = map.getContainer().getBoundingClientRect();
-    let left = 0, right = 0, bottom = 0;
-    for (const panel of document.querySelectorAll(".app-shell.workspace-open > .left-rail,.app-shell > .right-panel")) {
+    let left = 0, right = 0, top = 0, bottom = 0;
+    for (const panel of document.querySelectorAll(".app-shell.workspace-open > .left-rail,.app-shell > .right-panel,#mapTopbar,#playbackBar")) {
       if (panel.hidden || panel.hasAttribute("data-ui-folded") || getComputedStyle(panel).visibility === "hidden") continue;
       const rect = panel.getBoundingClientRect();
       if (rect.right <= viewport.left || rect.left >= viewport.right || rect.bottom <= viewport.top || rect.top >= viewport.bottom) continue;
-      if (rect.width > size.x * .7 && rect.top > viewport.top + size.y * .2) {
+      if (panel.id === "mapTopbar") {
+        top = Math.max(top, rect.bottom - viewport.top);
+      } else if (panel.id === "playbackBar" || (panel.matches(".info-panel") && matchMedia("(max-width: 900px)").matches && rect.top > viewport.top + size.y * .2)) {
         bottom = Math.max(bottom, viewport.bottom - rect.top);
       } else if (panel.matches(".left-rail")) {
         left = Math.max(left, rect.right - viewport.left);
@@ -191,12 +220,29 @@ const LineFocus = (() => {
     // When a phone drawer covers almost the entire map, fit for the map revealed on dismissal.
     if (size.x - left - right < 96) { left = 0; right = 0; }
     const insetX = (size.x - left - right) * .10;
-    const insetY = (size.y - bottom) * .10;
-    map.fitBounds(bounds, {
-      paddingTopLeft: [Math.ceil(left + insetX), Math.ceil(insetY)],
-      paddingBottomRight: [Math.ceil(right + insetX), Math.ceil(bottom + insetY)],
-      maxZoom, animate: false
-    });
+    const insetY = (size.y - top - bottom) * .10;
+    if (insetY <= 0) return;
+    const layout = [size.x,size.y,left,right,top,bottom].join();
+    if (target.layout === layout) return;
+    target.layout = layout;
+    // Quarter-step snapping can shrink a second time. Only this synchronous fit uses a continuous zoom.
+    const snap = map.options.zoomSnap;
+    fitting = true;
+    try {
+      map.options.zoomSnap = 0;
+      map.fitBounds(target.bounds, {paddingTopLeft:[left + insetX,top + insetY],
+        paddingBottomRight:[right + insetX,bottom + insetY],maxZoom:target.maxZoom,animate:false});
+    } finally { map.options.zoomSnap = snap; fitting = false; }
+  }
+  function fitSelection(maxZoom = 15) {
+    if (!current?.fittedLine || current.cameraReleased) return;
+    const bounds = L.latLngBounds(current.parts);
+    for (const [,location] of current.stops) bounds.extend(location);
+    if (current.backing) bounds.extend(L.latLngBounds(current.backing));
+    for (const {samples} of current.extra.values()) {
+      for (const {path} of samples) bounds.extend(L.latLngBounds(path));
+    }
+    fitFullLine(bounds,maxZoom);
   }
   function trackHitRadius(zoom) {
     if (zoom < 8) return 0;
@@ -205,22 +251,18 @@ const LineFocus = (() => {
     return 8;
   }
   function metro(city,route,{fit = false} = {}) {
-    const key=AtlasPrefs.routeKey(city.name,route);
     const detail=state.metroCityLayers.get(city.id);
-    const members=(detail?.routeLines || []).filter(e=>AtlasPrefs.routeKey(city.name,e.route)===key);
-    const ids=new Set(members.map(e=>e.route.id));
+    const members=(detail?.routeLines || []).filter(e=>e.route.id===route.id);
     const parts=members.flatMap(e=>e.line.getLatLngs());
-    const stops=(detail?.detail.stations || []).filter(s=>s.routes?.some(r=>ids.has(r.id)))
+    const stations = new Map((detail?.detail.stations || []).filter(s=>s.routes?.some(r=>r.id===route.id)).map(s=>[s.id,s]));
+    for (const s of route.stops || []) if (s.coordinate && !stations.has(s.id)) stations.set(s.id,s);
+    const stops=[...stations.values()]
       .map(s=>[s.name,pointToLatLng(s.coordinate),s.id,()=>metroStopColors(detail,s)]).filter(([,p])=>p);
     const styles=members.flatMap(e=>e.line.getLatLngs().map(()=>()=>({color:e.construction ? "#d5dce0" :
       AtlasPrefs.value.showsMetroColors && e.route.color, dashArray:e.line.options.dashArray})));
     set(metroRouteLabel(route),parts,stops,{fittedLine:fit,styleForPart:i=>styles[i](),
       selectStop:(_name,id)=>{const s=detail.detail.stations.find(s=>s.id===id);if(s) selectMetroStation(city,s,{pan:false});}});
-    if (fit) {
-      const bounds=L.latLngBounds(stops.map(([,location])=>location));
-      for (const member of members) bounds.extend(member.line.getBounds());
-      fitFullLine(bounds,15);
-    }
+    if (fit) fitSelection();
   }
   function closestPart(parts,at) {
     const target=map.project(at);
@@ -236,7 +278,6 @@ const LineFocus = (() => {
     if (!selection) return;
     const stationBounds=L.latLngBounds(rows.map(r=>r[1]));
     if (fit) fitFullLine(stationBounds,13);
-    const initialCenter=map.getCenter(), initialZoom=map.getZoom();
     try {
       const index=await read("index.json");
       const entries=index[title] ? (await read(index[title]))[title] : [];
@@ -251,7 +292,7 @@ const LineFocus = (() => {
     } catch { if (current!==selection) return; selection.note="轨迹未载入，仅显示站点"; }
     drawBacking(selection.parts);
     $("lineFocusNote").textContent=selection.note;
-    if (fit && selection.parts.length && map.getCenter().equals(initialCenter) && map.getZoom()===initialZoom) {
+    if (fit && selection.parts.length && !selection.cameraReleased) {
       // A bend between stations may extend beyond the preliminary station envelope.
       const bounds=L.latLngBounds(selection.parts);
       if (!stationBounds.isValid() || !stationBounds.contains(bounds)) {
@@ -261,7 +302,7 @@ const LineFocus = (() => {
     }
   }
   function endDirectory(title) { if(current?.directory && (!title || title===current.title)) clear(); }
-  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,trackHitRadius,fitFullLine,
+  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,trackHitRadius,fitFullLine,fitSelection,
     get active(){return current;},refresh:()=>{
       if (!current) return;
       paint();

@@ -7,6 +7,8 @@ struct LineFitViewport: Equatable {
     var size: CGSize
     var leftFloat: CGRect = .zero
     var rightFloat: CGRect = .zero
+    var topInset: CGFloat = 0
+    var bottomInset: CGFloat = 0
 
     var clearArea: CGRect {
         let viewport = CGRect(origin: .zero, size: size)
@@ -14,7 +16,7 @@ struct LineFitViewport: Equatable {
         let start = left.isEmpty ? 0 : left.maxX
         let end = right.isEmpty ? size.width : right.minX
         guard end > start else { return viewport }
-        return CGRect(x: start, y: 0, width: end - start, height: size.height)
+        return CGRect(x: start, y: topInset, width: end - start, height: max(0, size.height - topInset - bottomInset))
     }
 
     func mapRect(for bounds: MKMapRect) -> MKMapRect? {
@@ -52,6 +54,7 @@ struct MapLineFocus {
     var featureID: String?
     var stationID: String?
     var routeKey: String?
+    var relationID: String?
     var trackName: String?
     var stopNames = Set<String>()
     var paths: [[Coordinate]] = []
@@ -66,13 +69,15 @@ struct MapLineFocus {
 
     func includes(_ line: RailLine) -> Bool {
         if line.id == featureID { return true }
+        if let relationID { return line.routes?.contains { $0.id == relationID } == true }
         if let routeKey, line.routes?.contains(where: { $0.visibilityKey == routeKey }) == true { return true }
         guard let trackName else { return false }
-        return (line.tags["name:zh"] ?? line.tags["name"]) == trackName
+        return (line.tags["name:zh-Hans"] ?? line.tags["name:zh"] ?? line.tags["name"]) == trackName
     }
 
     func includes(_ station: RailStation) -> Bool {
         if directionID != nil { return directionStops.contains(station.id) || directionStops.contains(station.tags["atlas:osm"] ?? "") }
+        if let relationID { return station.routes?.contains { $0.id == relationID } == true }
         if let stationID { return station.id == stationID }
         if stopNames.contains(station.name) || stopNames.contains(String(station.name.dropLast(station.name.hasSuffix("站") ? 1 : 0))) { return true }
         guard let routeKey else { return false }
