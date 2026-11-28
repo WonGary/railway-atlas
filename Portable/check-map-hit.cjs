@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {chromium} = require("playwright-core");
+const {withBrowser} = require("./check-history-network.cjs");
 
 async function run(browser, url, touch) {
   const context = await browser.newContext({viewport:{width:1100,height:800},hasTouch:touch,serviceWorkers:"block"});
@@ -52,8 +52,9 @@ async function run(browser, url, touch) {
       assert.deepEqual(log, expected ? [expected] : [], `${touch?"touch":"mouse"} ${description}: ${log}`);
     }
     for (const z of [7,10,12,15,18]) {
-      await view(z,lat,lng+.55);
       for (const offset of [0,3,4,5,6,8,10,13]) {
+        // A successful line pick fits its full extent. Restore the test zoom before measuring the next pixel offset.
+        await view(z,lat,lng+.55);
         const [x,y]=await xy(lat,lng+.55,0,offset);
         await tap(x,y);
         const tolerance=z<11 ? -1 : (z<14 ? 3.5 : 4.5)+(touch?2:0);
@@ -121,8 +122,6 @@ async function run(browser, url, touch) {
     console.log(`${touch?"touch":"mouse"} PASS: 40 line offsets, stations/labels, gestures, single dispatch, filled platform/hole`);
   } finally { await context.close(); }
 }
-(async () => {
-  const browser=await chromium.launch({executablePath:process.env.RAILWAY_BROWSER,args:["--no-proxy-server"]});
-  try { await Promise.all([false,true].map(touch => run(browser,process.argv[2],touch))); }
-  finally { await browser.close(); }
-})().catch(e=>{ console.error(e);process.exitCode=1; });
+withBrowser(async ({browser,url}) => {
+  for (const touch of [false,true]) await run(browser,url,touch);
+}).catch(e=>{ console.error(e);process.exitCode=1; });
