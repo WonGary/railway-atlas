@@ -412,6 +412,12 @@ enum PanelLayoutValidation {
             if parent is FramingEventSurface.Marker { return parent }
             return parent.subviews.lazy.compactMap { marker(in:$0) }.first
         }
+        func canvasTap(in parent: NSView) -> (NSView, CanvasTapSurface.Coordinator)? {
+            if let handler = parent.gestureRecognizers.compactMap({ $0.target as? CanvasTapSurface.Coordinator }).first {
+                return (parent, handler)
+            }
+            return parent.subviews.lazy.compactMap { canvasTap(in:$0) }.first
+        }
         func currentMap(_ mode: MapMode) throws -> CGRect {
             guard let marker = marker(in:view) else { throw DataError.invalid("Missing map in \(window.title), windows=\(NSApp.windows.map(\.title))") }
             let actual = marker.convert(marker.bounds,to:view)
@@ -459,13 +465,12 @@ enum PanelLayoutValidation {
             let quartz = CGPoint(x:screen.x,y:CGDisplayBounds(CGMainDisplayID()).height-screen.y)
             let topWindow = NSWindow.windowNumber(at:screen,belowWindowWithWindowNumber:0)
             if !NSApp.isActive || topWindow != window.windowNumber {
-                let local = CGPoint(x:point.x-surface.minX,y:point.y-surface.minY)
                 if mode == .apple, let map = nativeMaps(in:view).first,
                    let recognizer = map.gestureRecognizers.first(where: { $0.target is AppleRailwayMap.Coordinator }),
                    let coordinator = recognizer.target as? AppleRailwayMap.Coordinator {
                     coordinator.pickFeature(map.convert(p,from:nil),map:map,touch:false)
-                } else if mode == .offline {
-                    OfflineRailwayMap.selectNearest(local,projection:RailProjection(region:store.region,size:surface.size),in:store)
+                } else if mode == .offline, let (canvas, handler) = canvasTap(in:view) {
+                    handler.select(canvas.convert(p,from:nil),false)
                 } else { throw DataError.invalid("Missing live map recognizer") }
                 return "coordinate handler (background window)"
             }
