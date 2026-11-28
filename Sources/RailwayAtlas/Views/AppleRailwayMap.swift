@@ -526,6 +526,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         }
 
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            if !cameraUpdatePending, mapView.hasLineFramingGesture { store.releaseLineFit() }
             if store.journeyPlayer.mode == .train, store.journeyPlayer.follow,
                !cameraUpdatePending, mapView.rideHasPanInput { store.journeyPlayer.userPanned() }
             updateViewport(mapView, final: false)

@@ -214,7 +214,6 @@ const JourneyKeepsakes = (() => {
     if (!line) return showToast("本版资料尚未收录这条线路。");
     const names = line.map(row=>row[0]), points = names.map(n=>[n,StationMapBoard.coordinate(n)]).filter(([,p])=>p);
     if (state.playbackVisible) closeJourney();
-    void LineFocus.directory(name,points,names,true);
     $("infoPanel").hidden=false; $("infoTitle").textContent=name;
     const list = document.createElement("ol"); list.className="rail-sequence";
     for (const [station,km] of line) {
@@ -225,6 +224,7 @@ const JourneyKeepsakes = (() => {
     }
     $("infoContent").replaceChildren(list);
     if (matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
+    void LineFocus.directory(name,points,names,true);
   }
   function copyPlace(type,name) {
     const exists = type === "line" ? publicLine(name) : StationPanel.national.stations.has(name);

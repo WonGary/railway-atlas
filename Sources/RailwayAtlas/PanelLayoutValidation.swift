@@ -301,7 +301,15 @@ enum PanelLayoutValidation {
             store.panelVisible = true
             try await observe("narrow-left-again", priority: .left)
             assistant.focus(map: store, scope: .feature)
-            try await observe("gpt-keeps-feature-right")
+            assistant.show(map: store)
+            try await observe("gpt-window-keeps-panel-priority", priority: .left)
+            try require(store.inspectorPane == .feature && store.selection?.id == selection.id,
+                        "a separate assistant window must preserve the inspected feature")
+            assistant.setPresentation(.floating, map: store)
+            try await observe("gpt-floating-opens-right")
+            try require(store.inspectorPane == .assistant && store.selection?.id == selection.id,
+                        "the floating assistant must open on the right and retain the selection")
+            assistant.setPresentation(.window, map: store)
             try require(store.panelVisible && store.inspectorVisible && store.panelWidth == 320
                         && store.inspectorWidth == 380 && store.panelSize == .medium,
                         "narrow UI must preserve requested map panel visibility, widths and size")

@@ -75,6 +75,13 @@ jobs:
           wait "$boot"
           app="$RUNNER_TEMP/atlas-sim-build/Build/Products/Release-iphonesimulator/RailwayAtlas-iOS.app"
           xcrun simctl install "$device" "$app"
+          export ATLAS_SIM_EVIDENCE="$RUNNER_TEMP/atlas-sim-receipts"
           for suite in games passport inspector; do
             node Checks/check-rail-games-installed.cjs ios "$device" "$suite"
           done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-simulator-receipts
+          path: ${{ runner.temp }}/atlas-sim-receipts
+          if-no-files-found: ignore

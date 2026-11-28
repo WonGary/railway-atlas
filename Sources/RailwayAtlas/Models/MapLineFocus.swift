@@ -1,5 +1,41 @@
 import Foundation
+import MapKit
 import RailwayCore
+
+/// Map-local dimensions. A docked pane is already outside this viewport.
+struct LineFitViewport: Equatable {
+    var size: CGSize
+    var leftFloat: CGRect = .zero
+    var rightFloat: CGRect = .zero
+
+    var clearArea: CGRect {
+        let viewport = CGRect(origin: .zero, size: size)
+        let left = viewport.intersection(leftFloat), right = viewport.intersection(rightFloat)
+        let start = left.isEmpty ? 0 : left.maxX
+        let end = right.isEmpty ? size.width : right.minX
+        guard end > start else { return viewport }
+        return CGRect(x: start, y: 0, width: end - start, height: size.height)
+    }
+
+    func region(for bounds: MKMapRect) -> MKCoordinateRegion? {
+        let clear = clearArea
+        guard clear.width > 0, clear.height > 0, !bounds.isNull else { return nil }
+        // Fill 80% of the limiting dimension. Fractional margins also fit narrow screens.
+        let world = MKMapSize.world.width
+        let units = max(bounds.width / (clear.width * 0.8), bounds.height / (clear.height * 0.8),
+                        world / 360 * 0.008 / size.width)
+        let center = MKMapPoint(x: bounds.midX + (size.width / 2 - clear.midX) * units,
+                                y: bounds.midY + (size.height / 2 - clear.midY) * units)
+        let north = MKMapPoint(x: center.x, y: max(0, center.y - size.height * units / 2)).coordinate.latitude
+        let south = MKMapPoint(x: center.x, y: min(world, center.y + size.height * units / 2)).coordinate.latitude
+        let location = center.coordinate
+        // Pass the inscribed latitude span. MapKit and Canvas then use the same
+        // projected scale, including when the northern and southern spans differ.
+        return MKCoordinateRegion(center: location, span: MKCoordinateSpan(
+            latitudeDelta: min(170, max(0.0001, 2 * min(north - location.latitude, location.latitude - south))),
+            longitudeDelta: min(359, size.width * units * 360 / world)))
+    }
+}
 
 /// The focused route outlives the individual station being inspected.
 struct MapLineFocus {

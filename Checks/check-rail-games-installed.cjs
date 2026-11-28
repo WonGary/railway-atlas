@@ -18,7 +18,7 @@ async function main() {
   assert.ok(Object.hasOwn(suites, suite), "choose games, passport or inspector");
   const {name, flags} = suites[suite];
   const prefix = `${name}-installed-`;
-  let app, folder;
+  let app, folder, simulator;
   if (platform === "mac" && target) {
     app = fs.realpathSync(target);
     assert.ok(fs.statSync(path.join(app, "Contents/MacOS/RailwayAtlas")).isFile(), "choose the installed Railway Atlas.app");
@@ -34,16 +34,33 @@ async function main() {
     run("/usr/bin/open", ["-n", app, "--args", "--ui-smoke", folder, ...flags]);
   } else if (platform === "ios") {
     const device = target || "booted", bundleID = "app.railwayatlas.ios";
+    simulator = device;
     app = run("xcrun", ["simctl", "get_app_container", device, bundleID, "app"]);
     const data = run("xcrun", ["simctl", "get_app_container", device, bundleID, "data"]);
     folder = fs.mkdtempSync(path.join(data, "tmp", prefix));
-    run("xcrun", ["simctl", "launch", "--terminate-running-process", device, bundleID, "--ui-smoke", folder, ...flags]);
+    run("xcrun", ["simctl", "launch", "--terminate-running-process", device, bundleID, "--ui-smoke", folder, ...flags,
+      ...(suite === "inspector" ? ["--simulator-display-capture"] : [])]);
   } else throw Error('Usage: node check-rail-games-installed.cjs mac "/path/to/Railway Atlas.app" [games|passport|inspector] | ios booted [games|passport|inspector]');
   const receipt = path.join(folder, name + ".json");
   console.log(`验收报告 ${receipt}`);
   for (let i = 0; i < 1500; i++) {
+    if (simulator && suite === "inspector") {
+      for (const train of ["D176","D2236"]) {
+        const base = path.join(folder, `D174-${train}`);
+        if (fs.existsSync(base + ".request") && !fs.existsSync(base + ".png")) {
+          run("xcrun", ["simctl", "io", simulator, "screenshot", base + ".tmp.png"]);
+          fs.renameSync(base + ".tmp.png", base + ".png");
+        }
+      }
+    }
     if (fs.existsSync(receipt)) {
       const report = JSON.parse(fs.readFileSync(receipt, "utf8"));
+      if (process.env.ATLAS_SIM_EVIDENCE) {
+        fs.mkdirSync(process.env.ATLAS_SIM_EVIDENCE, {recursive:true});
+        for (const name of [path.basename(receipt),"D174-D176.png","D174-D2236.png"]) {
+          if (fs.existsSync(path.join(folder,name))) fs.copyFileSync(path.join(folder,name), path.join(process.env.ATLAS_SIM_EVIDENCE,name));
+        }
+      }
       assert.equal(fs.realpathSync(report.bundle), fs.realpathSync(app));
       assert.equal(report.status, "PASS", [report.stage, report.error].filter(Boolean).join(" / ") || "app check failed");
       if (suite === "inspector") {

@@ -32,6 +32,12 @@ struct MapScreen: View {
     @State private var startupCredit = true
     var body: some View {
       GeometryReader { geometry in
+        #if os(macOS)
+        let lineViewport = LineFitViewport(size: geometry.size,
+            leftFloat: desktopPanels?.leftFloatingFrame ?? .zero, rightFloat: desktopPanels?.rightFloatingFrame ?? .zero)
+        #else
+        let lineViewport = LineFitViewport(size: geometry.size)
+        #endif
         ZStack {
             Group {
                 if store.mapMode == .apple { AppleRailwayMap(store: store) }
@@ -275,6 +281,7 @@ struct MapScreen: View {
             }
         }
         .coordinateSpace(name: "railwayMapControls")
+        .onChange(of: lineViewport, initial: true) { _, value in store.updateLineFitViewport(value) }
         .onPreferenceChange(MapControlFrames.self) { if controlFrames != $0 { controlFrames = $0 } }
         .onPreferenceChange(StatusContentHeight.self) {
             // Keep a point-size baseline so increasing UI scale cannot hide
@@ -582,6 +589,7 @@ struct OfflineRailwayMap: View {
                 DragGesture(minimumDistance: 3)
                     .updating($drag) { value, state, _ in state = value.translation }
                     .onChanged { value in
+                        store.releaseLineFit()
                         store.journeyPlayer.userPanned()
                         let next = RailProjection(region: store.region, size: geometry.size, drag: value.translation)
                         store.rebuildVisible(in: next.visibleBounds)
@@ -598,6 +606,7 @@ struct OfflineRailwayMap: View {
                     }
                     .onChanged { value in
                         guard !store.journeyPlayer.holdsZoom else { return }
+                        store.releaseLineFit()
                         let next = RailProjection(region: store.region, size: geometry.size, magnification: value.magnification)
                         store.rebuildVisible(in: next.visibleBounds)
                     }

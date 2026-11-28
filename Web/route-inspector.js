@@ -283,7 +283,7 @@
       fillOpacity:1,weight:2,interactive:false}).addTo(overlay);
     if (overlay.getBounds().isValid()) {
       if (state.playbackTimer) byID("followJourney").checked=false;
-      map.fitBounds(overlay.getBounds().pad(.15),{maxZoom:15,animate:false});
+      LineFocus.fitFullLine(overlay.getBounds(),15);
     }
   }
   function station(name) {
@@ -296,7 +296,6 @@
     const names=line.stops.map(s=>s[0]);
     const rows=names.map(n=>[n,StationMapBoard.coordinate(n)]).filter(([,p])=>validPoint(p));
     focusedDirectory=line.title;
-    void LineFocus.directory(line.title,rows,names,true);
     byID("infoPanel").hidden=false;
     byID("favoriteStation").hidden=true;
     byID("infoTitle").textContent=line.title;
@@ -312,6 +311,7 @@
       button(`返回 ${train.train} 乘车区间`,()=>{clearMap(); selectRoute(context.full.id,{from:context.offset,to:context.offset+train.stops.length-1});}),
       list);
     if (matchMedia("(max-width: 900px)").matches) setWorkspaceOpen(false);
+    void LineFocus.directory(line.title,rows,names,true);
   }
   const storageKey = "railway-atlas-confirmed-route-legs-v1";
   function identity(full,index) {

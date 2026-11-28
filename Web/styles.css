@@ -453,6 +453,9 @@ tr:last-child td { border-bottom: 0; }
     border: 0; border-radius: 0; background: rgba(5,10,12,.48); cursor: default;
   }
   .right-panel { top: 10px; right: 10px; bottom: 10px; width: min(410px, calc(100% - 20px)); }
+  .app-shell:has(#map.full-line-view) > .info-panel {
+    top: auto; bottom: 10px; max-height: 39%; height: auto;
+  }
   .app-shell:has(#playbackBar:not([hidden],[data-ui-folded])) > .right-panel:not(.floating) { bottom: var(--playback-clearance,82px); }
   .map-stage:has(#playbackBar:not([hidden],[data-ui-folded])) .map-legend { bottom: var(--playback-clearance,82px); }
   .map-stage:has(#playbackBar:not([hidden],[data-ui-folded])) .leaflet-bottom.leaflet-left { bottom: var(--playback-clearance,82px); }

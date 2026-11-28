@@ -26,7 +26,7 @@ const LineFocus = (() => {
   function clear() {
     if (!current) return;
     current=null; ink.clearLayers();
-    map.getContainer().classList.remove("line-focused");
+    map.getContainer().classList.remove("line-focused","full-line-view");
     $("lineFocusBar").hidden=true;
     StationLabels.schedule();
   }
@@ -135,6 +135,7 @@ const LineFocus = (() => {
   function set(title,parts,stops=[],opts={}) {
     if (!map) return;
     current={title,parts,stops,extra:new Map(),...opts};
+    map.getContainer().classList.toggle("full-line-view",Boolean(opts.fittedLine));
     paint();
     if (current.match) RailMapLayers.collectFocus(current.match);
     if (current.match?.name && !current.directory) void addDirectoryTrack(current,current.match.name);
@@ -173,8 +174,27 @@ const LineFocus = (() => {
     map.invalidateSize({pan:false});
     const size = map.getSize();
     if (!size.x || !size.y) return;
+    const viewport = map.getContainer().getBoundingClientRect();
+    let left = 0, right = 0, bottom = 0;
+    for (const panel of document.querySelectorAll(".app-shell.workspace-open > .left-rail,.app-shell > .right-panel")) {
+      if (panel.hidden || panel.hasAttribute("data-ui-folded") || getComputedStyle(panel).visibility === "hidden") continue;
+      const rect = panel.getBoundingClientRect();
+      if (rect.right <= viewport.left || rect.left >= viewport.right || rect.bottom <= viewport.top || rect.top >= viewport.bottom) continue;
+      if (rect.width > size.x * .7 && rect.top > viewport.top + size.y * .2) {
+        bottom = Math.max(bottom, viewport.bottom - rect.top);
+      } else if (panel.matches(".left-rail")) {
+        left = Math.max(left, rect.right - viewport.left);
+      } else {
+        right = Math.max(right, viewport.right - rect.left);
+      }
+    }
+    // When a phone drawer covers almost the entire map, fit for the map revealed on dismissal.
+    if (size.x - left - right < 96) { left = 0; right = 0; }
+    const insetX = (size.x - left - right) * .10;
+    const insetY = (size.y - bottom) * .10;
     map.fitBounds(bounds, {
-      padding: [Math.round(size.x * .10), Math.round(size.y * .10)],
+      paddingTopLeft: [Math.ceil(left + insetX), Math.ceil(insetY)],
+      paddingBottomRight: [Math.ceil(right + insetX), Math.ceil(bottom + insetY)],
       maxZoom, animate: false
     });
   }
@@ -194,7 +214,7 @@ const LineFocus = (() => {
       .map(s=>[s.name,pointToLatLng(s.coordinate),s.id,()=>metroStopColors(detail,s)]).filter(([,p])=>p);
     const styles=members.flatMap(e=>e.line.getLatLngs().map(()=>()=>({color:e.construction ? "#d5dce0" :
       AtlasPrefs.value.showsMetroColors && e.route.color, dashArray:e.line.options.dashArray})));
-    set(metroRouteLabel(route),parts,stops,{styleForPart:i=>styles[i](),
+    set(metroRouteLabel(route),parts,stops,{fittedLine:fit,styleForPart:i=>styles[i](),
       selectStop:(_name,id)=>{const s=detail.detail.stations.find(s=>s.id===id);if(s) selectMetroStation(city,s,{pan:false});}});
     if (fit) {
       const bounds=L.latLngBounds(stops.map(([,location])=>location));
@@ -212,7 +232,7 @@ const LineFocus = (() => {
     return best;
   }
   async function directory(title,rows,names,fit=false) {
-    const selection=set(title,[],rows,{directory:true,match:{name:title},note:"读取轨迹…",selectStop:n=>selectStation(n,{pan:false})});
+    const selection=set(title,[],rows,{directory:true,fittedLine:fit,match:{name:title},note:"读取轨迹…",selectStop:n=>selectStation(n,{pan:false})});
     if (!selection) return;
     const stationBounds=L.latLngBounds(rows.map(r=>r[1]));
     if (fit) fitFullLine(stationBounds,13);
@@ -241,7 +261,7 @@ const LineFocus = (() => {
     }
   }
   function endDirectory(title) { if(current?.directory && (!title || title===current.title)) clear(); }
-  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,trackHitRadius,
+  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,trackHitRadius,fitFullLine,
     get active(){return current;},refresh:()=>{
       if (!current) return;
       paint();

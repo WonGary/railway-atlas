@@ -111,6 +111,9 @@ enum JourneyInspectionValidation {
                 try await until("主地图打开 \(number)") { mainFront && map.lineFocus?.title == "D174 / \(number)" }
                 #else
                 map.showInspectionLayers(comparison.layers, title: "D174 / \(number)", owner: table.id)
+                // A station tap presents the detail sheet. The comparison button normally
+                // returns to the main map before the user sees the new layers.
+                NotificationCenter.default.post(name: .railGameDidOpenMap, object: nil)
                 #endif
                 guard map.lineFocus?.inspectionLayers.map(\.ink.rawValue) == keys else { throw DataError.invalid("主图未采用比较结果") }
                 try mapKitInk(map, expected: keys)
@@ -163,14 +166,25 @@ enum JourneyInspectionValidation {
         guard let image = NSBitmapImageRep(data: try Data(contentsOf: directory.appendingPathComponent(filename + ".png")))?.cgImage
         else { throw DataError.invalid("地图截图编码失败") }
         #else
-        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
-            .flatMap(\.windows).first(where: \.isKeyWindow) else { throw DataError.invalid("没有主地图窗口") }
-        window.layoutIfNeeded()
-        let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        let file = directory.appendingPathComponent("D174-\(number).png")
+        if CommandLine.arguments.contains("--simulator-display-capture") {
+            try await Task.sleep(for: .milliseconds(700))
+            try Data().write(to: directory.appendingPathComponent("D174-\(number).request"), options: .atomic)
+            for _ in 0..<300 {
+                if FileManager.default.fileExists(atPath: file.path) { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        } else {
+            guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow) else { throw DataError.invalid("没有主地图窗口") }
+            window.layoutIfNeeded()
+            let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            guard let png = screenshot.pngData() else { throw DataError.invalid("地图截图编码失败") }
+            try png.write(to: file, options: .atomic)
         }
-        guard let image = screenshot.cgImage, let png = screenshot.pngData() else { throw DataError.invalid("地图截图编码失败") }
-        try png.write(to: directory.appendingPathComponent("D174-\(number).png"))
+        guard let image = UIImage(contentsOfFile: file.path)?.cgImage else { throw DataError.invalid("没有取得主地图截图") }
         #endif
         let width = image.width, height = image.height
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
