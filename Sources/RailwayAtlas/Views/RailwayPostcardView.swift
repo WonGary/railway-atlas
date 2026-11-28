@@ -172,13 +172,12 @@ enum TicketText {
         if let value = known[clean] {
             return value
         }
-        let transliterated = clean
-            .applyingTransform(.toLatin, reverse: false)?
-            .folding(options: .diacriticInsensitive, locale: .current)
-            .split(whereSeparator: \.isWhitespace)
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
-        return transliterated?.isEmpty == false ? transliterated! : "Station"
+        let latin = clean.applyingTransform(.mandarinToLatin, reverse: false)?
+            .folding(options: .diacriticInsensitive, locale: Locale(identifier:"en_US_POSIX"))
+        guard let latin, !latin.isEmpty else { return "" }
+        guard clean.unicodeScalars.contains(where:{ (0x3400...0x9fff).contains($0.value) }) else { return clean }
+        let joined = latin.split(whereSeparator:\.isWhitespace).joined().lowercased()
+        return joined.prefix(1).uppercased() + joined.dropFirst()
     }
 
     static func displayed(_ value: String, placeholder: String) -> String {
@@ -223,6 +222,16 @@ struct RailwayPostcardView: View {
     @State private var ticket = RailwayPostcardTicket()
     @State private var ticketSeedKey = ""
     @State private var mapLayers = PostcardMapLayers.standard
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
+    private var actionLayout: AnyLayout {
+        #if os(iOS)
+        if horizontalSizeClass == .compact { return AnyLayout(VStackLayout(alignment:.leading, spacing:8)) }
+        #endif
+        return AnyLayout(HStackLayout(alignment:.center, spacing:12))
+    }
 
     private var routeKey: String {
         journey.duplicateKey
@@ -248,7 +257,7 @@ struct RailwayPostcardView: View {
                     model.postcardDraft = $0.draftJourney
                 }
 
-                HStack(alignment: .center, spacing: 12) {
+                actionLayout {
                     Picker("样式", selection: $model.postcardStyle) {
                         ForEach(PostcardStyle.allCases) { item in
                             Text(item.title).tag(item)
@@ -307,7 +316,7 @@ struct RailwayPostcardView: View {
                 .aspectRatio(760.0 / 440, contentMode: .fit)
                 .accessibilityIdentifier("postcard-preview")
 
-                HStack {
+                actionLayout {
                     Button("生成区间分享码", systemImage:"qrcode") {
                         let key = routeKey, draft = journey
                         Task {
@@ -334,7 +343,7 @@ struct RailwayPostcardView: View {
                     }
                 }
 
-                HStack {
+                actionLayout {
                     Menu("使用护照中的旅程") {
                         ForEach(passport.journeys.prefix(100)) { item in
                             Button("\(item.date) \(item.from) → \(item.to)") {
