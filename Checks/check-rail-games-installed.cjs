@@ -59,7 +59,7 @@ async function main() {
       if (process.env.ATLAS_SIM_EVIDENCE) {
         fs.mkdirSync(process.env.ATLAS_SIM_EVIDENCE, {recursive:true});
         for (const name of [path.basename(receipt),"D174-D176.png","D174-D2236.png",
-          "stockReceipt-png.png","stockReceipt-ticketPDF.pdf"]) {
+          "share-code.png","postcard-delivery.txt","stockReceipt-png.png","stockReceipt-ticketPDF.pdf"]) {
           if (fs.existsSync(path.join(folder,name))) fs.copyFileSync(path.join(folder,name), path.join(process.env.ATLAS_SIM_EVIDENCE,name));
         }
       }
@@ -68,6 +68,8 @@ async function main() {
       if (suite === "ticket") {
         for (const filename of ["stockReceipt-png.png","stockReceipt-ticketPDF.pdf"])
           assert.ok(fs.statSync(path.join(folder,filename)).size > 1000);
+        const verify = path.resolve(__dirname,"../Portable/verify-ticket-export.swift");
+        console.log(run("swift",[verify,folder,"share-code.png","stockReceipt-png.png","stockReceipt-ticketPDF.pdf"]));
         console.log("PASS iPhone 纸票 PNG、PDF，票面二维码读回 D174 陇南至广元");
         return;
       }

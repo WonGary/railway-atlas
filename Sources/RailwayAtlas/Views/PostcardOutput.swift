@@ -127,6 +127,8 @@ enum PostcardRouteShare {
         let quiet = code.extent.insetBy(dx:-4,dy:-4)
         let white = CIImage(color:CIColor(red:1,green:1,blue:1)).cropped(to:quiet)
         let image = code.composited(over:white).transformed(by:CGAffineTransform(scaleX:6,y:6))
-        return CIContext().createCGImage(image,from:image.extent)
+        // A small, one-off bitmap also has to render on a headless simulator.
+        let context = CIContext(options:[.useSoftwareRenderer:true])
+        return context.createCGImage(image, from:image.extent, format:.RGBA8, colorSpace:CGColorSpaceCreateDeviceRGB())
     }
 }
