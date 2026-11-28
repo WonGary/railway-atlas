@@ -228,12 +228,8 @@ struct LayerControlsContent: View {
             note("开启时优先显示都市交通；关闭后恢复各分类设置。")
         }
         .atlasPadding(10)
-        .background(Color.railwayAccent.opacity(store.prioritizesUrbanTransit ? 0.16 : 0.08),
-                    in: RoundedRectangle(cornerRadius: 9 * uiScale))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9 * uiScale)
-                .stroke(Color.railwayAccent.opacity(0.3), lineWidth: 1)
-        }
+        .atlasPanelDecoration(Color.railwayAccent.opacity(store.prioritizesUrbanTransit ? 0.16 : 0.08),
+                              in: RoundedRectangle(cornerRadius: 9 * uiScale), border: Color.railwayAccent.opacity(0.3))
     }
 
     private func categoryToggle(_ category: RailCategory) -> some View {

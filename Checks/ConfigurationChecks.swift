@@ -23,6 +23,34 @@ enum ConfigurationChecks {
                   && value.interface.inspectorWidth == 380 && value.interface.inspectorTab == "feature",
                   "pre-panel config migrates to floating medium panel and closed feature inspector")
         let restored = try AtlasConfiguration.decode(value.encoded())
+        let migrated = try AtlasConfiguration.decode(Data("""
+        {"interface":{"mapControlsOpacity":0.27,"topControlsOpacity":0.42,"cornerControlsOpacity":0.63,
+                      "bottomCounterOpacity":0.84,"zoomOpacity":0,"mapControlsVisible":false}}
+        """.utf8)).interface
+        try check(migrated.lineFocusOpacity == 0.42 && migrated.scaleOpacity == 0.63 && migrated.fitOpacity == 0.63
+                  && migrated.offlineNoticeOpacity == 0.63 && migrated.zoomOpacity == 0
+                  && migrated.footerHandleOpacity == 0.84 && migrated.mobileLauncherOpacity == 0.84
+                  && migrated.playbackOpacity == 0.27 && !migrated.topControlsVisible && !migrated.bottomControlsVisible,
+                  "old toolbar, corner and counter opacity migrate to their controls and preserve explicit zero")
+        let legacy = try AtlasConfiguration.decode(Data(#"{"interface":{"mapControlsOpacity":0.25}}"#.utf8)).interface
+        try check(legacy.scaleOpacity == 0.25 && legacy.lineFocusOpacity == 0.25 && legacy.mobileLauncherOpacity == 0.25
+                  && legacy.offlineLegendOpacity == 0 && legacy.attributionOpacity == 1,
+                  "original single opacity migrates through both generations")
+        var distinct = AtlasConfiguration()
+        let controls = AtlasConfiguration.MapControl.allCases
+        for (index, control) in controls.enumerated() {
+            distinct.interface[keyPath: control.opacity] = Double(index) / Double(controls.count)
+        }
+        let roundTrip = try AtlasConfiguration.decode(distinct.encoded())
+        for (index, control) in controls.enumerated() {
+            try check(roundTrip.interface[keyPath: control.opacity] == Double(index) / Double(controls.count),
+                      control.rawValue + " has its own persisted value")
+            var invalid = distinct
+            invalid.interface[keyPath: control.opacity] = 1.1
+            do { try invalid.validate() }
+            catch { continue }
+            throw DataError.invalid("accepted an out-of-range value for " + control.rawValue)
+        }
         let profiles = try AtlasConfiguration.decode(Data("""
         {"assistant":{"provider":"deepseek","compatible":{"deepseek":{"model":"saved-model","maxOutputTokens":4096}}}}
         """.utf8))

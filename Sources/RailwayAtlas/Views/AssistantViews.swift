@@ -70,10 +70,8 @@ struct AtlasSettingsView: View {
                     PanelSettingsView()
                     #else
                     InterfaceSurfaceSettingsView()
-                    HStack {
-                        Text("侧栏宽度 \(Int(map.panelWidth))")
-                        Slider(value: $map.panelWidth, in: 250...560)
-                    }
+                    MapOpacitySlider(title: "探索与要素面板背景透明度", opacity: $map.panelBackgroundOpacity)
+                    MapOpacitySlider(title: "地图助手面板背景透明度", opacity: $map.inspectorBackgroundOpacity)
                     #endif
                     Toggle("显示地图状态卡", isOn: $map.statusVisible)
                     Button("重置状态卡位置") { map.statusOffset = .zero; map.statusVisible = true }
@@ -453,8 +451,8 @@ struct AtlasAssistantView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(8 * uiScale)
                     .frame(minHeight: (embedded ? 76 : 108) * uiScale, alignment: .topLeading)
-                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8 * uiScale))
-                    .overlay(RoundedRectangle(cornerRadius: 8 * uiScale).stroke(.secondary.opacity(0.3)))
+                    .atlasPanelDecoration(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8 * uiScale),
+                                          border: .secondary.opacity(0.3))
                     .accessibilityIdentifier("gpt-question")
                     .help("回答期间可以继续编辑下一条草稿；完成后再发送。")
                 HStack(spacing: 6 * uiScale) {
@@ -640,7 +638,7 @@ struct AtlasAssistantView: View {
                                             .atlasFont(.caption2).foregroundStyle(.secondary)
                                     }
                                 }
-                            }.atlasPadding(12).background(.quaternary.opacity(turn.role == "user" ? 0.7 : 0.25),
+                            }.atlasPadding(12).atlasPanelDecoration(.quaternary.opacity(turn.role == "user" ? 0.7 : 0.25),
                                                        in: RoundedRectangle(cornerRadius: 12 * uiScale))
                                 .id(turn.id)
                         }

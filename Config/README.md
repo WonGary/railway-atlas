@@ -81,18 +81,23 @@ Claude 在对话页及设置中有独立的“联网搜索”和“读取网页�
 | `interface.panelVisible` / `panelWidth` | 左侧面板可见性 / 基准宽度 250–560 点；浮窗、分屏均可拖动右缘调宽 |
 | `interface.panelLayout` | 左侧布局：`floating` 浮窗（默认）、`docked` 贴边分屏 |
 | `interface.panelSize` | 左侧浮窗 `small`、`medium`、`large`；大小菜单或 ⌥⌘1 / 2 / 3；仅影响浮窗高度，分屏时保留所选档位 |
-| `interface.panelBackgroundOpacity` | 左侧浮窗玻璃背景不透明度，0–1，默认 1；0 完全透明。设置中的“透明度” = 1 − 此值 |
+| `interface.panelBackgroundOpacity` | Mac 左栏（浮动或贴边）和 iOS 探索与要素面板的背景不透明度。设置显示的透明度 = 1 − 此值 |
 | `interface.inspectorVisible` / `inspectorWidth` | 右侧面板可见性 / 基准宽度 200–560 点；浮窗、分屏均可拖动左缘调宽 |
 | `interface.inspectorLayout` | 右侧布局：`floating` 浮窗、`docked` 贴边分屏（默认） |
-| `interface.inspectorBackgroundOpacity` | 右侧浮窗玻璃背景不透明度，0–1，默认 1；独立于左侧。分屏时保留此值但使用实色背景 |
-| `interface.surfaceMode` | 面板表面：`glass` 玻璃、`translucent` 半透明、`textOnly` 仅文字。macOS 26 使用 `glassEffect`，其他版本和平台使用系统材质或透明背景 |
+| `interface.inspectorBackgroundOpacity` | Mac 右栏（浮动或贴边）和 iOS 地图助手面板的背景不透明度 |
+| `interface.surfaceMode` | `glass` 在 iOS 和 macOS 26 及以上使用系统玻璃，旧版使用普通材质。`translucent` 使用轻薄材质。`textOnly` 去掉面板背景、外框和内容卡片底色 |
 | `interface.mapControlsOpacity` | 旧版地图控件统一背景不透明度，0–1，继续作为缺少细分字段的旧配置兼容值 |
 | `interface.topControlsOpacity` | 顶部地图工具栏背景不透明度，0–1，默认继承 `mapControlsOpacity` |
-| `interface.cornerControlsOpacity` | 右上角地图模式、缩放和全图按钮背景不透明度，0–1，默认继承 `mapControlsOpacity` |
-| `interface.bottomCounterOpacity` | 底部区段、车站计数和恢复按钮背景不透明度，0–1，默认继承 `mapControlsOpacity` |
+| `interface.cornerControlsOpacity` | 右上角底图切换。旧配置中其他角落控件继承此值 |
+| `interface.scaleOpacity` / `zoomOpacity` / `fitOpacity` / `offlineNoticeOpacity` | 比例尺、缩放、全图、底图离线提示各用一个值。缺省时继承 `cornerControlsOpacity` |
+| `interface.lineFocusOpacity` | 全线站序卡，缺省时继承 `topControlsOpacity` |
+| `interface.bottomCounterOpacity` | 底部区段与车站计数。旧配置缺省时继承 `mapControlsOpacity` |
+| `interface.footerHandleOpacity` / `mobileLauncherOpacity` | 底部收起与恢复按钮、iOS 探索入口。缺省时继承 `bottomCounterOpacity` |
+| `interface.offlineLegendOpacity` / `attributionOpacity` | 离线图例默认无底色（0），底图来源默认 1。透明度只影响来源文字下方的背景 |
 | `interface.playbackOpacity` | 沿线旅行和铁路时光机播放栏背景不透明度，0–1，默认继承 `mapControlsOpacity` |
+| `interface.placesOpacity` / `relayOpacity` / `stationBoardOpacity` | 沿线地点、同站接力和 iOS 本站车次弹页。各自默认 1 |
 | `interface.statusBackgroundOpacity` | 地图状态卡背景不透明度，0–1，默认 1 |
-| `interface.topControlsVisible` / `bottomControlsVisible` / `experienceControlsVisible` | 顶部地图控件、底部地图控件和沿线旅行播放栏的可收起状态，默认显示；收起后保留恢复入口，播放任务继续运行 |
+| `interface.topControlsVisible` / `bottomControlsVisible` / `experienceControlsVisible` | 顶部、底部和播放栏的启动偏好。地图上的收起与恢复仅作用于当前窗口，播放任务继续运行 |
 | `interface.inspectorTab` | 右侧页签 `feature` 要素 / `assistant` GPT；点选线路或车站自动打开要素页 |
 | `interface.statusVisible` / `statusX` / `statusY` | 状态卡可见性 / 拖动偏移 |
 | `assistant` | API 端点、协议、模型、输出上限、联网搜索 |

@@ -112,8 +112,20 @@ public struct AtlasConfiguration: Codable, Sendable {
         public var mapControlsOpacity = 1.0
         public var topControlsOpacity = 1.0
         public var cornerControlsOpacity = 1.0
+        public var lineFocusOpacity = 1.0
+        public var scaleOpacity = 1.0
+        public var offlineNoticeOpacity = 1.0
+        public var zoomOpacity = 1.0
+        public var fitOpacity = 1.0
         public var bottomCounterOpacity = 1.0
+        public var footerHandleOpacity = 1.0
+        public var offlineLegendOpacity = 0.0
+        public var attributionOpacity = 1.0
+        public var mobileLauncherOpacity = 1.0
         public var playbackOpacity = 1.0
+        public var placesOpacity = 1.0
+        public var relayOpacity = 1.0
+        public var stationBoardOpacity = 1.0
         public var statusBackgroundOpacity = 1.0
         public var mapControlsVisible = true
         public var topControlsVisible = true
@@ -122,6 +134,71 @@ public struct AtlasConfiguration: Codable, Sendable {
         public var statusVisible = true
         public var statusX = 0.0
         public var statusY = 0.0
+    }
+
+    /// Settings rows, validation and migration use the same set of map surfaces.
+    public enum MapControl: String, CaseIterable, Identifiable, Sendable {
+        case toolbar = "topControlsOpacity", focus = "lineFocusOpacity", scale = "scaleOpacity"
+        case mode = "cornerControlsOpacity", zoom = "zoomOpacity", fit = "fitOpacity"
+        case notice = "offlineNoticeOpacity", status = "statusBackgroundOpacity"
+        case counter = "bottomCounterOpacity", footer = "footerHandleOpacity", legend = "offlineLegendOpacity"
+        case playback = "playbackOpacity", credit = "attributionOpacity", launcher = "mobileLauncherOpacity"
+        case places = "placesOpacity", relay = "relayOpacity", stationBoard = "stationBoardOpacity"
+        public var id: Self { self }
+
+        public var title: String {
+            switch self {
+            case .toolbar: "顶部工具栏"
+            case .focus: "全线站序卡"
+            case .scale: "比例尺"
+            case .mode: "底图切换"
+            case .zoom: "缩放按钮"
+            case .fit: "全图按钮"
+            case .notice: "底图离线提示"
+            case .status: "状态卡"
+            case .counter: "底部计数"
+            case .footer: "底部收起与恢复按钮"
+            case .legend: "离线图例"
+            case .playback: "播放栏"
+            case .credit: "底图来源"
+            case .launcher: "探索入口"
+            case .places: "沿线地点面板"
+            case .relay: "同站接力面板"
+            case .stationBoard: "本站线路与车次弹页"
+            }
+        }
+
+        public var opacity: WritableKeyPath<InterfaceSettings, Double> {
+            switch self {
+            case .toolbar: \.topControlsOpacity
+            case .focus: \.lineFocusOpacity
+            case .scale: \.scaleOpacity
+            case .mode: \.cornerControlsOpacity
+            case .zoom: \.zoomOpacity
+            case .fit: \.fitOpacity
+            case .notice: \.offlineNoticeOpacity
+            case .status: \.statusBackgroundOpacity
+            case .counter: \.bottomCounterOpacity
+            case .footer: \.footerHandleOpacity
+            case .legend: \.offlineLegendOpacity
+            case .playback: \.playbackOpacity
+            case .credit: \.attributionOpacity
+            case .launcher: \.mobileLauncherOpacity
+            case .places: \.placesOpacity
+            case .relay: \.relayOpacity
+            case .stationBoard: \.stationBoardOpacity
+            }
+        }
+
+        fileprivate var previousOpacityKey: String? {
+            switch self {
+            case .toolbar, .mode, .counter, .playback: "mapControlsOpacity"
+            case .focus: MapControl.toolbar.rawValue
+            case .scale, .notice, .zoom, .fit: MapControl.mode.rawValue
+            case .footer, .launcher: MapControl.counter.rawValue
+            case .status, .credit, .legend, .places, .relay, .stationBoard: nil
+            }
+        }
     }
 
     public func encoded() throws -> Data {
@@ -165,22 +242,18 @@ public struct AtlasConfiguration: Codable, Sendable {
             }
             return result
         }
-        let merged = try JSONSerialization.data(withJSONObject: merge(incoming, defaults, path: ""))
+        var input = incoming
+        if var fields = input["interface"] as? [String: Any] {
+            for control in MapControl.allCases where fields[control.rawValue] == nil {
+                if let parent = control.previousOpacityKey {
+                    fields[control.rawValue] = fields[parent] ?? fields["mapControlsOpacity"]
+                }
+            }
+            input["interface"] = fields
+        }
+        let merged = try JSONSerialization.data(withJSONObject: merge(input, defaults, path: ""))
         var value = try JSONDecoder().decode(Self.self, from: merged)
         if let originalInterface = incoming["interface"] as? [String: Any] {
-            let legacyOpacity = (originalInterface["mapControlsOpacity"] as? NSNumber)?.doubleValue ?? 1
-            if originalInterface["topControlsOpacity"] == nil {
-                value.interface.topControlsOpacity = legacyOpacity
-            }
-            if originalInterface["cornerControlsOpacity"] == nil {
-                value.interface.cornerControlsOpacity = legacyOpacity
-            }
-            if originalInterface["bottomCounterOpacity"] == nil {
-                value.interface.bottomCounterOpacity = legacyOpacity
-            }
-            if originalInterface["playbackOpacity"] == nil {
-                value.interface.playbackOpacity = legacyOpacity
-            }
             if (originalInterface["topControlsVisible"] == nil
                 || originalInterface["bottomControlsVisible"] == nil),
                let legacyVisible = originalInterface["mapControlsVisible"] as? Bool {
@@ -231,11 +304,9 @@ public struct AtlasConfiguration: Codable, Sendable {
         try number(interface.panelBackgroundOpacity, 0...1, "左侧浮窗背景不透明度")
         try number(interface.inspectorBackgroundOpacity, 0...1, "右侧浮窗背景不透明度")
         try number(interface.mapControlsOpacity, 0...1, "地图控件背景不透明度")
-        try number(interface.topControlsOpacity, 0...1, "顶部地图控件背景不透明度")
-        try number(interface.cornerControlsOpacity, 0...1, "角落地图控件背景不透明度")
-        try number(interface.bottomCounterOpacity, 0...1, "底部计数背景不透明度")
-        try number(interface.playbackOpacity, 0...1, "播放栏背景不透明度")
-        try number(interface.statusBackgroundOpacity, 0...1, "状态条背景不透明度")
+        for control in MapControl.allCases {
+            try number(interface[keyPath: control.opacity], 0...1, control.title + "背景不透明度")
+        }
         try number(interface.statusX, -2000...2000, "状态卡横向位置")
         try number(interface.statusY, -2000...2000, "状态卡纵向位置")
         func tileTemplate(_ value: String, _ name: String, required: Bool) throws {

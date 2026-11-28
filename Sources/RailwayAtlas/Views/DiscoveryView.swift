@@ -41,7 +41,7 @@ struct DiscoveryView: View {
                     Image(systemName: "arrow.up.right").atlasFont(.caption)
                 }
                 .atlasPadding(12)
-                .background(Color.railwayAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12 * uiScale))
+                .atlasPanelDecoration(Color.railwayAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12 * uiScale))
             }.buttonStyle(.plain).foregroundStyle(Color.railwayAccent)
                 .accessibilityIdentifier("open-railway-experiences")
             #if os(iOS)
@@ -90,7 +90,7 @@ struct DiscoveryView: View {
             }
         }
         .atlasPadding(12)
-        .background(Color.railwayAccent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12 * uiScale))
+        .atlasPanelDecoration(Color.railwayAccent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12 * uiScale))
         .accessibilityIdentifier("discovery-overview")
     }
 
@@ -233,7 +233,7 @@ struct DiscoveryView: View {
             .accessibilityIdentifier("favorite-remove-\(entry.id)")
         }
         .atlasPadding(.horizontal, 4)
-        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8 * uiScale))
+        .atlasPanelDecoration(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8 * uiScale))
         .contextMenu {
             Button("编辑城市与标签", systemImage: "pencil") { editingFavorite = entry }
             if entry.snapshot != nil {
