@@ -582,8 +582,8 @@ function drawSelectedRoute() {
     const marker = L.circleMarker(coordinate, {
       radius: 5, color: AtlasPrefs.value.focusColor, weight: 2, fillColor: "#fff", fillOpacity: 1, bubblingMouseEvents: false
     }).addTo(state.routeLayer);
-    marker.on("click", () => selectStation(stop.name));
     StationLabels.bind(marker, stop.name, {
+      open: () => selectStation(stop.name),
       important: index === 0 || index === route.stops.length - 1,
       selected: () => state.selectedStation === stop.name
     });
@@ -755,9 +755,7 @@ function buildMetroCityLayers(city, detail) {
       lineJoin: "round",
       className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
     }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${city.name} · ${metroRouteLabel(route)}`}), { sticky: true });
-    line.on("click", () => {
-      if (LineFocus.trackHitRadius(state.map.getZoom())) selectMetroRoute(city, route,{fit:true});
-    });
+    MapHit.bind(line, () => selectMetroRoute(city, route,{fit:true}));
     line.addTo(routesLayer);
     const facts=AtlasPrefs.classify({...route.tags,route:route.type,...(construction?{state:"construction"}:{})},true);
     routeLines.push({line,route,construction,parts,identity:MetroHandoff.identity(facts,[route.id])});
@@ -793,10 +791,10 @@ function buildMetroCityLayers(city, detail) {
     stationRoutes.set(station.id, routesAtStop);
     marker.options.atlasColors=[...new Set(routesAtStop.map(r=>r.color).filter(Boolean))].sort();
     StationLabels.bind(marker, station.name, {
+      open: () => selectMetroStation(city, station),
       id: station.id, minZoom: 13, important: StationLabels.prominent({}, routesAtStop),
       selected: () => state.selectedMetroStation?.city.id === city.id && state.selectedMetroStation.station.id === station.id
     });
-    marker.on("click", () => selectMetroStation(city, station));
     marker.addTo(stationsLayer);
     stationMarkers.set(station.id, marker);
   }
@@ -935,8 +933,7 @@ function drawMetro() {
         lineCap: "round",
         className: construction ? "planned-metro" : "metro-track", bubblingMouseEvents:false
       }).bindTooltip(Object.assign(document.createElement("span"),{textContent:`${record.city || ""} · ${route.name || "城市轨道"}`}), { sticky: true });
-      line.on("click",async e=>{
-        if (!LineFocus.trackHitRadius(state.map.getZoom())) return;
+      MapHit.bind(line,async e=>{
         RailMapLayers.inspect(route.name,route.tags,false,e.latlng,{parts:validParts,overview:true,
           styleForPart:()=>({color:construction || AtlasPrefs.value.showsMetroColors && (route.tags?.["atlas:bundledColour"] || route.tags?.colour) ? line.options.color : null,dashArray:line.options.dashArray})});
         const focus=LineFocus.active,city=state.metroCities.find(c=>c.name===record.city);
@@ -2770,6 +2767,7 @@ function initializeMap() {
   state.map.on("zoomend", updateZoom);
   state.map.on("moveend", refreshMetroDetailVisibility);
   state.map.on("moveend",()=>{if(!state.playbackVisible){const c=state.map.getCenter();writeStored("railway-atlas-map-camera",{lat:c.lat,lng:c.lng,z:state.map.getZoom()});}});
+  MapHit.setup(state.map);
   StationLabels.setup(state.map, RailMapLayers.eachVisibleStation);
   systemDarkMap.addEventListener("change", updateBasemapAppearance);
   RailMapLayers.setup(state.map);

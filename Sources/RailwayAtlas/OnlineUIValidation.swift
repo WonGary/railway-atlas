@@ -546,8 +546,9 @@ enum OnlineUIValidation {
                 if let map = child(root,MKMapView.self),
                    let pin = map.annotations.compactMap({ $0 as? StationAnnotation }).first(where: {
                        $0.station.name == name && map.view(for: $0) != nil
-                   }) {
-                    map.selectAnnotation(pin, animated:false); picked = true; break
+                   }), let picker = map.delegate as? AppleRailwayMap.Coordinator {
+                    picker.pickFeature(map.convert(pin.coordinate, toPointTo: map), map: map, touch: false)
+                    if store.selection?.name == name { picked = true; break }
                 }
             }
             guard picked else { throw DataError.invalid("地图上未找到 \(name) 的可选标记") }

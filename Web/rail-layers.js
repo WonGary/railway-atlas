@@ -151,13 +151,10 @@ const RailMapLayers = (() => {
       if (feature.coordinates) {
         const tooltip = document.createElement("span"); tooltip.textContent = title;
         item.bindTooltip(tooltip);
-      } else {
-        StationLabels.bind(item, title, {id:feature.id, minZoom:13, important:StationLabels.prominent(tags, feature.routes)});
       }
-      item.on("click", e => {
+      const open = () => {
         let focus;
         if (feature.coordinates) {
-          if (!LineFocus.trackHitRadius(map.getZoom())) return;
           const ids=new Set((feature.routes || []).map(r=>r.id));
           const oneDirection=facts.urban && ids.size===1;
           const member=f=>ids.size===1 && f.routes?.some(r=>ids.has(r.id));
@@ -167,8 +164,13 @@ const RailMapLayers = (() => {
             match:!oneDirection && trackName(tags) ? {name:trackName(tags),regionAlreadyDrawn:true} : null,
             stops:data.stations.filter(member).map(s=>[s.name,[s.coordinate.latitude,s.coordinate.longitude],s.id,()=>stationColors(s)])};
         } else focus={stopColors:()=>stationColors(feature)};
-        inspect(title,{...tags,membership:(feature.routes || []).map(route => route.name).filter(Boolean).join("、")},!feature.coordinates,e.latlng,focus);
-      }).addTo(region);
+        return focus;
+      };
+      const select = at => inspect(title,{...tags,membership:(feature.routes || []).map(route => route.name).filter(Boolean).join("、")},!feature.coordinates,at,open());
+      if (feature.coordinates) MapHit.bind(item, e => select(e.latlng));
+      else StationLabels.bind(item, title, {id:feature.id, minZoom:13, important:StationLabels.prominent(tags, feature.routes),
+        open: () => select(item.getLatLng())});
+      item.addTo(region);
     }
     if (fit && bounds.isValid()) map.fitBounds(bounds,{maxZoom:13,animate:false});
     $("regionStatus").textContent = `${data.name || "区域地图"} · ${data.lines.length} 段轨道，${data.stations.length} 个车站要素`;
@@ -245,24 +247,6 @@ const RailMapLayers = (() => {
       if (live?._tiles?.[`${coords.x}:${coords.y}:${coords.z}`]?.el.detailReady) canvas.style.visibility="hidden";
       return canvas;
     };
-    map.on("click",e=>{
-      if (e.sourceTarget!==map || e.originalEvent?.atlasFeatureHit || !map.hasLayer(grid)) return;
-      const radius=LineFocus.trackHitRadius(map.getZoom());
-      if (!radius) return;
-      const z=grid._tileZoom;if(z==null)return;
-      const p=map.project(e.latlng,z),x=Math.floor(p.x/256),y=Math.floor(p.y/256);
-      const tile=grid._tiles[`${x}:${y}:${z}`]?.el;
-      if (!tile || tile.style.visibility==="hidden") return;
-      const ctx=tile.getContext("2d");ctx.save();ctx.resetTransform();
-      ctx.lineWidth=2*radius*map.getZoomScale(z,map.getZoom());
-      const hit=tile.tracks.find(t=>ctx.isPointInStroke(t.path,p.x-x*256,p.y-y*256));ctx.restore();
-      if (!hit) return;
-      if(e.originalEvent)e.originalEvent.atlasFeatureHit=true;
-      const s=hit.source,parts=hit.parts.map(part=>part.map(([a,b])=>map.unproject([(s.x+a)*256,(s.y+b)*256],s.z)));
-      const part=LineFocus.closestPart(parts,e.latlng);
-      inspect("铁路概览 · "+AtlasPrefs.categories[AtlasPrefs.classify(hit.tags).category][0],hit.tags,false,e.latlng,
-        part && {parts:[part],styleForPart:()=>focusStyle(hit.tags),note:"概览轨道区段"});
-    });
     return grid;
   }
   async function timedResponse(url, parentSignal, timeout=6500) {
@@ -430,14 +414,16 @@ const RailMapLayers = (() => {
                   const radius = 2.4 * AtlasPrefs.value.stationRadiusMultiplier;
                   ctx.arc(px,py,radius,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill();
                   const name=tags["name:zh"] || tags.name;
+                  const latlng = map.unproject([x*size+px,y*size+py],z);
+                  const open = () => inspect(name || tags.ref || "车站",tags,true,latlng);
+                  const important = StationLabels.prominent(tags);
                   if (name && z >= 12 && px >= 0 && py >= 0 && px < size && py < size) {
                     canvas.stationNames.push({
                       name, id:feature.id ?? name, minZoom:12, tileZoom:z, radius,
-                      important:StationLabels.prominent(tags),
-                      latlng:map.unproject([x * size + px, y * size + py], z)
+                      important, latlng, open
                     });
                   }
-                  canvas.hits.push({x:px,y:py,tags,station:true});
+                  canvas.hits.push({x:px,y:py,tags,station:true,important,open,radius:radius+visual.weight/2});
                 } else {
                   const points=path.map(p=>[p.x*factor-dx,p.y*factor-dy]);
                   let strokes=backupRail && covered ? PackedRail.outside(points,covered) : [points];
@@ -515,41 +501,40 @@ const RailMapLayers = (() => {
     grid.on("tileload tileunload",event=>{if (event.tile.metroTracks?.bounds) invalidateMetro();});
     grid.on("tileload tileunload add remove", StationLabels.schedule);
     grid.on("load",()=>toggle());
-    map.on("click",event => {
-      if (event.originalEvent?.atlasFeatureHit || !map.hasLayer(grid) || event.sourceTarget!==map) return;
+    MapHit.addProvider(({latlng, zoom, detail, focused, radius, padding, offer}) => {
+      if (!map.hasLayer(grid)) return;
       const z = grid._tileZoom;
       if (z==null) return;
-      const p = map.project(event.latlng,z), x = Math.floor(p.x/256), y = Math.floor(p.y/256);
-      const tile = grid._tiles[`${x}:${y}:${z}`]?.el;
-      const px=p.x-x*256,py=p.y-y*256, zoom=map.getZoom();
+      const p = map.project(latlng,z), x = Math.floor(p.x/256), y = Math.floor(p.y/256);
+      const cell = grid._tiles[`${x}:${y}:${z}`];
+      if (!cell?.current || !cell.loaded) return;
+      const tile = cell.el;
+      const px=p.x-x*256,py=p.y-y*256;
       const tileScale=map.getZoomScale(z,zoom);
-      const trackRadius=LineFocus.trackHitRadius(zoom)*tileScale;
-      const stationRadius=(zoom<8 ? 4 : zoom<11 ? 5 : 8)*tileScale;
-      let nearest=trackRadius, nearestStation=Infinity, stationHit, hit;
+      const trackRadius=radius*tileScale;
+      let nearest=Infinity, hit;
       for(const h of tile?.hits || []){
         if(h.station){
           const d=Math.hypot(h.x-px,h.y-py);
-          if(d<=stationRadius && d<nearestStation){nearestStation=d;stationHit=h;}
+          if ((detail || (!focused && h.important && h.radius >= 3*tileScale)) && d<=h.radius+padding*tileScale)
+            offer(1,d/tileScale,h.open);
           continue;
         }
         if(!trackRadius) continue;
         for(let i=1;i<h.points.length;i++){
           const [ax,ay]=h.points[i-1],[bx,by]=h.points[i],dx=bx-ax,dy=by-ay;
           const u=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy || 1)));
-          const d=Math.hypot(px-ax-u*dx,py-ay-u*dy);if(d<nearest){nearest=d;hit=h;}
+          const d=Math.hypot(px-ax-u*dx,py-ay-u*dy);if(d<=trackRadius && d<nearest){nearest=d;hit=h;}
         }
       }
-      hit=stationHit || hit;
-      if (hit) {
-        if (event.originalEvent) event.originalEvent.atlasFeatureHit=true;
+      if (hit) offer(3,nearest/tileScale,() => {
         const railName=trackName(hit.tags);
         const match={name:railName,id:hit.id,source:hit.source};
         const anonymous=!railName && hit.id==null;
-        const at=hit.station ? map.unproject([x*256+hit.x,y*256+hit.y],z) : event.latlng;
-        inspect(railName || hit.tags.ref || (hit.station?"车站":"轨道"),hit.tags,!!hit.station,at,
-          hit.station ? null : anonymous ? {parts:[hit.points.map(([a,b])=>map.unproject([x*256+a,y*256+b],z))],styleForPart:()=>focusStyle(hit.tags)}
+        inspect(railName || hit.tags.ref || "轨道",hit.tags,false,latlng,
+          anonymous ? {parts:[hit.points.map(([a,b])=>map.unproject([x*256+a,y*256+b],z))],styleForPart:()=>focusStyle(hit.tags)}
             : {match,note:"沿线轨迹随地图补充"});
-      }
+      });
     });
     return grid;
   }
@@ -574,7 +559,7 @@ const RailMapLayers = (() => {
     map = target;
     for (const [pane,z] of [["worldRail",375],["railOverview",380],["railDetail",390]]) map.createPane(pane).style.zIndex = z;
     region = L.layerGroup().addTo(map); overview = regionalOverview();
-    world = WorldRail.create(map,regionalTiles,style,inspect);
+    world = WorldRail.create(map,regionalTiles,style);
     world.on("tileload", event => {
       const {x,y,z} = event.coords;
       world.showDetail(event.coords,!!live?._tiles?.[`${x}:${y}:${z}`]?.el.detailReady);

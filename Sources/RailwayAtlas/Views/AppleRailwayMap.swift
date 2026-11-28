@@ -56,12 +56,13 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         map.showsCompass = false
         map.showsScale = false
         map.pointOfInterestFilter = .excludingAll
+        let click = MapFeatureTap(target: context.coordinator, action: #selector(Coordinator.selectFeature(_:)))
         #if os(macOS)
-        let click = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.selectTrack(_:)))
+        click.delaysPrimaryMouseButtonEvents = false
         #else
-        let click = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.selectTrack(_:)))
         click.cancelsTouchesInView = false
         #endif
+        context.coordinator.featureTap = click
         map.addGestureRecognizer(click)
         return map
     }
@@ -532,7 +533,9 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             }
         }
 
+        weak var featureTap: MapFeatureTap?
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            if mapView.hasLineFramingGesture { featureTap?.cancelTracking() }
             if !cameraUpdatePending, mapView.hasLineFramingGesture { store.releaseLineFit() }
             if store.journeyPlayer.mode == .train, store.journeyPlayer.follow,
                !cameraUpdatePending, mapView.rideHasPanInput { store.journeyPlayer.userPanned() }
@@ -685,11 +688,8 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         private func configure(_ view: MKAnnotationView, station: RailStation, label: Bool, appearance: StationAppearance? = nil) {
             setFocusOpacity(view, member: store.lineFocus?.includes(station) ?? true)
             let appearance = appearance ?? stationAppearance(station)
-            let zoom = store.displayZoom
-            view.isEnabled = label
-                || [.major, .connection, .interchange].contains(appearance.kind)
-                || zoom >= 14
-                || RailDisplayPolicy.labelVisible(appearance.kind, zoom: zoom)
+            // MapKit's default pick rectangle includes the full transparent symbol image.
+            // The map recognizer owns pointer selection; accessibility has an explicit action.
             #if os(macOS)
             let density = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
             #else
@@ -698,6 +698,12 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             let configuration = StationAnnotationView.SymbolConfiguration(appearance: appearance,
                 title: label ? station.name : nil, uiScale: store.uiScale, density: density, lightText: lightStationLabels)
             if let view = view as? StationAnnotationView {
+                view.activateStation = { [weak self] in
+                    guard let self else { return false }
+                    self.store.select(RailwayMapStore.item(station))
+                    self.onMapAction?(.featureSelected)
+                    return true
+                }
                 guard view.symbolConfiguration != configuration else { return }
                 view.symbolConfiguration = configuration
             }
@@ -792,98 +798,64 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 if let view = map.view(for: annotation) { setFocusOpacity(view, member: store.lineFocus == nil) }
             }
         }
-        #if os(macOS)
-        @objc func selectTrack(_ gesture: NSClickGestureRecognizer) {
+        @objc func selectFeature(_ gesture: MapFeatureTap) {
             guard let map = gesture.view as? MKMapView else { return }
-            pickTrack(gesture.location(in: map), map: map)
+            pickFeature(gesture.pickPoint, map: map, touch: gesture.usesTouch)
         }
-        #else
-        @objc func selectTrack(_ gesture: UITapGestureRecognizer) {
-            guard let map = gesture.view as? MKMapView else { return }
-            pickTrack(gesture.location(in: map), map: map)
-        }
-        #endif
-        func pickTrack(_ point: CGPoint, map: MKMapView) {
-            guard !store.historyMapActive else { return }
-            // Annotation selection has its own delegate callback. A pick on a
-            // station must not immediately select the track beneath that station.
+        func pickFeature(_ point: CGPoint, map: MKMapView, touch: Bool) {
+            guard !store.historyMapActive, map.bounds.contains(point) else { return }
+            // Let MapKit handle its other annotations and their callouts.
             #if os(macOS)
             var hit = map.hitTest(point)
             #else
             var hit = map.hitTest(point, with: nil)
             #endif
             while let view = hit {
-                if let annotationView = view as? MKAnnotationView {
-                    // An annotation view still owns the click area even when
-                    // its station label is hidden. Respect that ownership
-                    // while applying the same conservative visibility rule
-                    // as the nearby-annotation check below.
-                    guard isSelectableAnnotation(annotationView.annotation, view: annotationView, map: map) else { return }
-                    return
-                }
+                if let annotation = view as? MKAnnotationView, !(annotation is StationAnnotationView), annotation.isEnabled { return }
                 hit = view.superview
             }
-            if annotationIsNear(point, map: map) { return }
-            let display = map.convert(point, toCoordinateFrom: map)
-            let location = MKMapPoint(display)
             let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
-            let tolerance = map.visibleMapRect.width / max(1, map.bounds.width) * RailDisplayPolicy.trackHitTolerance(zoom: zoom)
-            var nearest: (RailLine, Double)?
+            var pick = MapFeatureHit(point, zoom: zoom, touch: touch)
+            for annotation in stations.values {
+                guard let view = map.view(for: annotation) as? StationAnnotationView, !view.isHidden, view.window != nil,
+                      let symbol = view.symbolConfiguration else { continue }
+                let center = map.convert(annotation.coordinate, toPointTo: map)
+                let label = view.titleBounds?.offsetBy(dx: center.x, dy: center.y)
+                let focused = store.lineFocus?.includes(annotation.station) == true
+                pick.station(annotation.station, at: center, style: symbol.appearance, label: label,
+                             focused: focused, dimmed: store.lineFocus != nil && !focused)
+            }
+            if case .station(let station) = pick.feature {
+                store.select(RailwayMapStore.item(station))
+                onMapAction?(.featureSelected)
+                return
+            }
+            guard pick.detail else { return }
+            let units = map.visibleMapRect.width / max(1, map.bounds.width)
+            let location = MKMapPoint(map.convert(point, toCoordinateFrom: map))
+            let mapPoint = CGPoint(x: location.x, y: location.y)
+            let tolerance = units * pick.reach
+            for (layout, overlay) in layouts.values {
+                let radius = (overlay as? MKCircle).map { $0.boundingMapRect.width/(2*units) } ?? 0
+                pick.layout(layout, pointRadius: radius) { map.convert(store.alignment.display($0).location, toPointTo: map) }
+            }
             for line in store.visibleLines {
-                for part in geometry[line.id]?.2 ?? [] {
+                for part in geometry[line.id]?.2 ?? [] where part.pointCount > 1
+                    && part.boundingMapRect.insetBy(dx: -tolerance, dy: -tolerance).contains(location) {
                     let points = part.points()
                     for index in 1..<part.pointCount {
-                        let a = points[index - 1], b = points[index]
-                        let dx = b.x - a.x, dy = b.y - a.y
-                        let length = dx * dx + dy * dy
-                        let t = length > 0 ? max(0, min(1, ((location.x - a.x) * dx + (location.y - a.y) * dy) / length)) : 0
-                        let distance = hypot(location.x - a.x - t * dx, location.y - a.y - t * dy)
-                        if distance < tolerance && distance < (nearest?.1 ?? .infinity) { nearest = (line, distance) }
+                        let a = points[index-1], b = points[index]
+                        let distance = MapFeatureHit.distance(mapPoint, CGPoint(x: a.x,y: a.y), CGPoint(x: b.x,y: b.y))
+                        pick.line(line, distance: distance/units)
                     }
                 }
             }
-            guard let nearest else { return }
-            store.selection = RailwayMapStore.item(nearest.0)
+            switch pick.feature {
+            case .line(let line): store.selection = RailwayMapStore.item(line)
+            case .layout(let layout): store.selection = layout.selection
+            default: return
+            }
             onMapAction?(.featureSelected)
-        }
-        private func isSelectableAnnotation(_ annotation: MKAnnotation?, view: MKAnnotationView, map: MKMapView) -> Bool {
-            guard let annotation else { return false }
-            if annotation is PlatformNumberAnnotation { return true }
-            guard let station = annotation as? StationAnnotation else { return false }
-            let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
-            let appearance = stationAppearance(station.station)
-            let titleVisible = view is StationAnnotationView
-                && (view as? StationAnnotationView)?.symbolConfiguration?.title != nil
-            return titleVisible
-                || [.major, .connection, .interchange].contains(appearance.kind)
-                || zoom >= 14
-                || RailDisplayPolicy.labelVisible(appearance.kind, zoom: zoom)
-        }
-        private func annotationIsNear(_ point: CGPoint, map: MKMapView) -> Bool {
-            let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
-            let radius = RailDisplayPolicy.stationHitPadding(zoom: zoom)
-            for annotation in map.annotations {
-                guard annotation is StationAnnotation
-                    || annotation is PlatformNumberAnnotation
-                    || annotation is ExperienceTrainAnnotation else { continue }
-                guard let view = map.view(for: annotation) else { continue }
-                let frame = view.convert(view.bounds, to: map).insetBy(dx: -radius, dy: -radius)
-                if frame.contains(point) { return true }
-            }
-            return false
-        }
-        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            guard let annotation = view.annotation as? StationAnnotation else { return }
-            if store.selection?.id == annotation.station.id { return }
-            guard isSelectableAnnotation(annotation, view: view, map: mapView) else {
-                mapView.deselectAnnotation(annotation, animated: false)
-                return
-            }
-            Task { @MainActor [weak self] in
-                guard self?.store.selection?.id != annotation.station.id else { return }
-                self?.store.select(RailwayMapStore.item(annotation.station))
-                self?.onMapAction?(.featureSelected)
-            }
         }
     }
 }
@@ -938,6 +910,12 @@ final class PlatformNumberAnnotation: MKPointAnnotation {
 }
 
 private final class StationAnnotationView: MKAnnotationView {
+    // Let the map's single recognizer arbitrate the dot, its label and nearby rail.
+    #if os(macOS)
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    #else
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool { false }
+    #endif
     struct SymbolConfiguration: Equatable {
         let appearance: StationAppearance
         let title: String?
@@ -945,7 +923,20 @@ private final class StationAnnotationView: MKAnnotationView {
         let density: Double
         let lightText: Bool
     }
-    var symbolConfiguration: SymbolConfiguration?
+    var titleBounds: CGRect?
+    var symbolConfiguration: SymbolConfiguration? {
+        didSet {
+            titleBounds = symbolConfiguration.flatMap { symbol in
+                symbol.title.map { StationSymbol.titleBounds($0, style: symbol.appearance, scale: symbol.uiScale) }
+            }
+        }
+    }
+    var activateStation: (() -> Bool)?
+    #if os(macOS)
+    override func accessibilityPerformPress() -> Bool { activateStation?() ?? false }
+    #else
+    override func accessibilityActivate() -> Bool { activateStation?() ?? false }
+    #endif
 }
 
 final class StationAnnotation: NSObject, MKAnnotation {

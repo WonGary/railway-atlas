@@ -463,7 +463,7 @@ enum PanelLayoutValidation {
                 if mode == .apple, let map = nativeMaps(in:view).first,
                    let recognizer = map.gestureRecognizers.first(where: { $0.target is AppleRailwayMap.Coordinator }),
                    let coordinator = recognizer.target as? AppleRailwayMap.Coordinator {
-                    coordinator.pickTrack(map.convert(p,from:nil),map:map)
+                    coordinator.pickFeature(map.convert(p,from:nil),map:map,touch:false)
                 } else if mode == .offline {
                     OfflineRailwayMap.selectNearest(local,projection:RailProjection(region:store.region,size:surface.size),in:store)
                 } else { throw DataError.invalid("Missing live map recognizer") }

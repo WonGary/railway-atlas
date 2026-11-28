@@ -1,5 +1,5 @@
 const VERSION = "0.8.17";
-const SHELL = `railway-atlas-web-${VERSION}-r13`;
+const SHELL = `railway-atlas-web-${VERSION}-r14`;
 // Retain immutable track, station and timetable chunks. City projections are versioned below.
 const DETAILS = "railway-atlas-detail-0.7.0";
 const base = self.registration.scope;
@@ -8,7 +8,7 @@ const coreFiles = [
   "index.html","styles.css","ticket-typography.css","app.js","library.js","vendor/leaflet.js","vendor/leaflet.css","vendor/vector.js",
   "ticket-face.js","data/station-transliterations.js","vendor/qrcode-generator.js","journey-keepsakes.js","line-focus.js","metro-handoff.js","metro-updates.js","metro-source.js","metro-loader.js","card-map.js",
   "station-directory/national.js","data/journey-aliases.js","station-directory/cnrail.js","station-directory/catalog.js","station-directory/panel.js","station-directory/panel.css","station-directory/paths.js","station-directory/paths/manifest.js",
-  "map-preferences.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js",
+  "map-preferences.js","map-hit.js","station-labels.js","rail-layers.js","vector-basemap.js","station-board.js","cache-client.js",
   "world-rail.js","packed-rail.js","station-layout-layer.js","data/station-layouts.js",
   "rail-games.js","games/outlines.json","history-network.js","run-info.js","route-inspector.js","data/history-network/index.json",
   "journey-guide.js","station-directory/journey-guide-core.js","station-directory/journey-places.json",

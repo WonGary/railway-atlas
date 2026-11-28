@@ -527,9 +527,9 @@
       const item=button(`${row.from} → ${row.to}　${row.problem || row.source}`,action);
       item.dataset.leg=row.index; ui.rows.append(item);
       const line=state.routePolylines[row.index];
-      if (line) {line.on("click",action);handlers.push([line,action]);}
+      if (line) handlers.push(MapHit.bind(line,action));
     }
-    detachMapHandlers=()=>{for(const [line,action] of handlers)line.off("click",action);};
+    detachMapHandlers=()=>{for(const remove of handlers) remove();};
   }
   function mount() {
     if (ui) return;

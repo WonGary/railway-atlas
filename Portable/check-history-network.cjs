@@ -143,7 +143,26 @@ async function exercise({browser, devices, url, testHooks}, phone) {
     assert.equal(await way(4181592).count(), 0);
     await day("1998-07-06");
     assert.equal(await way(4181592).getAttribute("data-phase"), "opened");
-    await way(4181592).dispatchEvent("click");
+    // Click the painted segment at street scale, outside the side panel.
+    if (phone) await press("#closeWorkspace");
+    const targetLL = await page.evaluate(() => {
+      const map=state.map;
+      let target;
+      map.eachLayer(layer=>{if(layer.getElement?.()?.dataset?.way === "4181592") target=layer;});
+      const path=target.getLatLngs(), i=Math.floor(path.length/2);
+      const ll=L.latLng((path[i].lat+path[i-1].lat)/2,(path[i].lng+path[i-1].lng)/2);
+      map.setView(ll,17,{animate:false});
+      return [ll.lat,ll.lng];
+    });
+    await page.waitForFunction(()=>!state.map._animatingZoom);
+    await page.waitForTimeout(550);
+    const spot = await page.evaluate(ll => {
+      const map=state.map, p=map.latLngToContainerPoint(ll), box=map.getContainer().getBoundingClientRect();
+      return [p.x+box.left,p.y+box.top];
+    }, targetLL);
+    if (phone) await page.touchscreen.tap(...spot); else await page.mouse.click(...spot);
+    await page.waitForFunction(()=>!!document.querySelector('[data-h="evidence"] a'),null,{timeout:5000});
+    if (phone) await press("#toggleWorkspace");
     assert.equal(await field("evidence").locator("a").first().getAttribute("href"), "https://www.openstreetmap.org/way/4181592");
     const opened = await tracks.count();
     await field("unknown").check();

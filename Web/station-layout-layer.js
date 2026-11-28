@@ -126,7 +126,8 @@ const StationLayoutLayer = (() => {
             title:feature.accessTitle || "",alt:feature.accessTitle || text}).addTo(map);
           if (badge) {
             const title=document.createElement("span");title.textContent=feature.accessTitle || text;
-            marker.bindTooltip(title,{direction:"top"}).on("click",()=>marker.openTooltip());
+            marker.bindTooltip(title,{direction:"top"});
+            MapHit.bind(marker,()=>marker.openTooltip());
           }
           const el=marker.getElement();
           el.dataset.osmId=feature.id;
@@ -204,6 +205,9 @@ const StationLayoutLayer = (() => {
       const layer=feature.area ? L.polygon(paths,options) :
         paths[0].length === 1 ?
           L.circleMarker(paths[0][0],{...options,radius:feature.kind==="entrance"?3:4}) : L.polyline(paths[0],options);
+      const kind = {outline:"车站轮廓",concourse:"站厅",platform:"站台",passage:"通道",entrance:"出入口"}[feature.kind];
+      MapHit.bind(layer, e => RailMapLayers.inspect(feature.accessTitle || feature.name || [feature.platformLabel,kind].filter(Boolean).join(" "),
+        {feature:kind,network:feature.network,id:feature.id},false,e.latlng));
       layer.addTo(map);
       const path=layer.getElement();
       if(path) path.dataset.osmId=id;

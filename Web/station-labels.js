@@ -1,6 +1,6 @@
 // Station names share one screen-space layout across markers and vector tiles.
 const StationLabels = (() => {
-  const markers = new Set(), shown = new Map();
+  const markers = new Set(), byMarker = new WeakMap(), shown = new Map();
   const measure = document.createElement("canvas").getContext("2d");
   let map, tileCandidates, hovered, frame;
 
@@ -16,9 +16,11 @@ const StationLabels = (() => {
     if (map && !frame) frame = requestAnimationFrame(layout);
   }
 
-  function bind(marker, name, {id = name, important = false, minZoom = Infinity, selected, focused=false} = {}) {
+  function bind(marker, name, {id = name, important = false, minZoom = Infinity, selected, focused=false, open} = {}) {
     if (!name) return marker;
-    const station = {marker, name: String(name), id, important, minZoom, selected, focused};
+    const station = {marker, name: String(name), id, important, minZoom, selected, focused, open};
+    byMarker.set(marker, station);
+    if (open) MapHit.bind(marker, open, {important, focused});
     const add = () => { markers.add(station); schedule(); };
     marker.on({
       add,
@@ -38,11 +40,11 @@ const StationLabels = (() => {
     const offset = direction === "right" ? gap : -gap;
     const className = `station-label station-label-${kind}`;
     let tip = shown.get(station);
-    if (tip && tip.options.direction === direction && tip.options.offset.x === offset && tip.options.className === className) return;
+    if (tip && map.hasLayer(tip) && tip.options.direction === direction && tip.options.offset.x === offset && tip.options.className === className) return;
     tip?.remove();
     const text = document.createElement("span");
     text.textContent = station.name;
-    tip = L.tooltip({direction, offset: L.point(offset, 0), className, opacity: 1, interactive: false})
+    tip = L.tooltip({direction, offset: L.point(offset, 0), className, opacity: 1, interactive: false, permanent: true})
       .setContent(text).setLatLng(latlng).addTo(map);
     shown.set(station, tip);
   }
@@ -99,5 +101,19 @@ const StationLabels = (() => {
     tileCandidates = eachTileStation;
     map.on("moveend zoomend resize", schedule);
   }
-  return {setup, bind, prominent, schedule};
+  function pickLabel(point, focusedOnly, offer) {
+    const bounds = map.getContainer().getBoundingClientRect();
+    const x = point.x + bounds.left, y = point.y + bounds.top;
+    for (const [station, tip] of shown) {
+      if (!station.open || !map.hasLayer(tip) || (focusedOnly && !station.focused) || (station.marker && !markers.has(station))) continue;
+      const rect = tip.getContent().getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) offer(0, 0, station.open);
+    }
+  }
+  function hasSteadyLabel(marker) {
+    const station = byMarker.get(marker);
+    const tip = shown.get(station);
+    return !!tip && map.hasLayer(tip) && AtlasPrefs.value.showsLabels && map.getZoom() >= station.minZoom;
+  }
+  return {setup, bind, prominent, schedule, pickLabel, hasSteadyLabel};
 })();

@@ -216,8 +216,6 @@
     if (session) return;
     map.stop();
     const container = map.getContainer();
-    const modernHit = event => { event.atlasFeatureHit = true; };
-    container.addEventListener("click", modernHit, true);
     const pane = map.getPane(paneName) || map.createPane(paneName);
     pane.style.zIndex = "625";
     const renderer = L.svg({pane: paneName, padding: 0.3});
@@ -236,7 +234,7 @@
       L.DomEvent.disableScrollPropagation(box);
       return box;
     };
-    session = {center: map.getCenter(), zoom: map.getZoom(), container, modernHit, renderer, group, hud,
+    session = {center: map.getCenter(), zoom: map.getZoom(), container, renderer, group, hud,
       label, play, lines: new Map(), context: null};
     container.classList.add("atlas-history-map");
     // Raster street/rail tiles burn contemporary tracks into their pixels.
@@ -257,7 +255,6 @@
     if (!session) return;
     const old = session;
     session = null;
-    old.container.removeEventListener("click", old.modernHit, true);
     old.group.clearLayers().remove();
     old.renderer.remove();
     old.hud.remove();
@@ -418,7 +415,8 @@
         : phase === "started" ? {color: "#de9946", weight: 3.4, dashArray: "8 5"}
         : {color: "#819096", weight: 2, dashArray: "3 6", opacity: 0.75};
       const line = L.polyline(segment.points, {renderer: session.renderer, pane: paneName, bubblingMouseEvents: false, ...style});
-      line.on("click", () => evidence(segment)).addTo(session.group);
+      MapHit.bind(line, () => evidence(segment), {history:true});
+      line.addTo(session.group);
       const path = line.getElement();
       if (path) { path.dataset.way = segment.way; path.dataset.phase = phase; }
       if (phase === "unknown") line.bringToBack();

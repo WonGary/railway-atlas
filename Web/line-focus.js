@@ -20,9 +20,6 @@ const LineFocus = (() => {
     document.addEventListener("keydown",e=>{
       if (e.key==="Escape" && current && !e.target.closest?.("input,textarea,dialog,select")) clear();
     });
-    map.on("click",e=>{
-      if (e.sourceTarget===map && !e.originalEvent?.atlasFeatureHit) clear();
-    });
     // Keep a full-line camera through layout changes, until the user moves the map.
     map.on("movestart", () => {
       if (!fitting) {
@@ -139,8 +136,7 @@ const LineFocus = (() => {
         radius,weight:2.5,color:colors[0],fillColor:"#fff",fillOpacity:1});
       if (drawn.some(s=>s[0]===name && marker.getLatLng().distanceTo(s[1])<250)) continue;
       drawn.push([name,p]);
-      StationLabels.bind(marker,name,{id:id||name,minZoom:0,focused:true});
-      if (selectStop) marker.on("click",()=>selectStop(name,id));
+      StationLabels.bind(marker,name,{id:id||name,minZoom:0,focused:true,open: selectStop && (()=>selectStop(name,id))});
       marker.addTo(ink);
       if (colors.length>1) {
         const step=2*Math.PI*radius/colors.length;
@@ -244,12 +240,6 @@ const LineFocus = (() => {
     }
     fitFullLine(bounds,maxZoom);
   }
-  function trackHitRadius(zoom) {
-    if (zoom < 8) return 0;
-    if (zoom < 11) return 3;
-    if (zoom < 14) return 5;
-    return 8;
-  }
   function metro(city,route,{fit = false} = {}) {
     const detail=state.metroCityLayers.get(city.id);
     const members=(detail?.routeLines || []).filter(e=>e.route.id===route.id);
@@ -302,7 +292,11 @@ const LineFocus = (() => {
     }
   }
   function endDirectory(title) { if(current?.directory && (!title || title===current.title)) clear(); }
+<<<<<<< HEAD
   return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,trackHitRadius,fitFullLine,fitSelection,
+=======
+  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,fitFullLine,
+>>>>>>> 51dcbc3 (Select only visible railway targets within deliberate map taps)
     get active(){return current;},refresh:()=>{
       if (!current) return;
       paint();

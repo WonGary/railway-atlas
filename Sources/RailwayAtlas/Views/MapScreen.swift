@@ -437,6 +437,21 @@ struct OfflineRailwayMap: View {
     @Environment(\.colorScheme) private var scheme
     @GestureState private var drag = CGSize.zero
     @GestureState private var magnification = 1.0
+    @State private var painted = PaintedFeatures()
+
+    private final class PaintedFeatures {
+        struct Dot {
+            let station: RailStation
+            let center: CGPoint
+            let style: StationAppearance
+            let member, dimmed: Bool
+            var label: CGRect?
+        }
+        var dots: [Dot] = []
+        var layouts: [StationLayout] = []
+        var projection: RailProjection?
+        var revision = -1
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -535,6 +550,7 @@ struct OfflineRailwayMap: View {
                     context.draw(context.resolve(glyph.foregroundStyle(ink)), at: number.point)
                 }
                 var labels = numbers.map(\.frame)
+                var dots: [PaintedFeatures.Dot] = []
                 let stations = (store.historyMapActive ? [] : store.visibleStations).sorted {
                     if let focus, focus.includes($0) != focus.includes($1) { return focus.includes($0) }
                     return ($0.id == store.selection?.id ? 0 : 1) < ($1.id == store.selection?.id ? 0 : 1)
@@ -548,6 +564,7 @@ struct OfflineRailwayMap: View {
                     let selected = station.id == store.selection?.id
                     let style = store.stationAppearance(station)
                     let radius = style.radius
+                    dots.append(.init(station: station, center: point, style: style, member: member, dimmed: focus != nil && !member))
                     let dot = Path(ellipseIn: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
                     context.fill(dot, with: .color(style.filled ? style.colors[0].tint : background))
                     for (index, color) in style.colors.enumerated() {
@@ -571,8 +588,14 @@ struct OfflineRailwayMap: View {
                                       width: textSize.width + 8 * uiScale, height: 22 * uiScale)
                     guard !labels.contains(where: { $0.intersects(rect.insetBy(dx: -5, dy: -4)) }) else { continue }
                     labels.append(rect)
+                    dots[dots.count-1].label = CGRect(x: rect.minX + 4*uiScale, y: rect.midY-textSize.height/2,
+                                                     width: textSize.width, height: textSize.height)
                     context.draw(text, at: CGPoint(x: rect.minX + 4 * uiScale, y: rect.midY), anchor: .leading)
                 }
+                painted.dots = dots
+                painted.layouts = details
+                painted.projection = projection
+                painted.revision = store.renderRevision
                 for line in store.experienceLines {
                     var context = context
                     if focus != nil { context.opacity = 0.25 }
@@ -596,6 +619,7 @@ struct OfflineRailwayMap: View {
                     context.draw(Text(Image(systemName: "tram.fill")).font(.system(size: 18)).foregroundColor(.white), at: p)
                 }
             }
+            .overlay { CanvasTapSurface { point, touch in selectNearest(point, projection: projection, touch: touch) } }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 3)
@@ -623,9 +647,6 @@ struct OfflineRailwayMap: View {
                         store.rebuildVisible(in: next.visibleBounds)
                     }
                     .onEnded { value in store.zoom(1 / value.magnification) }
-            )
-            .simultaneousGesture(
-                SpatialTapGesture().onEnded { value in Self.selectNearest(value.location, projection: projection, in: store) }
             )
             .accessibilityLabel("离线铁路地图。可以拖动、捏合缩放，也可使用放大缩小按钮。")
             .task(id: geometry.size) {
@@ -664,45 +685,38 @@ struct OfflineRailwayMap: View {
         context.stroke(grid, with: .color(.secondary.opacity(0.07)), lineWidth: 0.6)
     }
 
-    static func selectNearest(_ point: CGPoint, projection: RailProjection, in store: RailwayMapStore) {
-        guard !store.historyMapActive else { return }
+    private func selectNearest(_ point: CGPoint, projection: RailProjection, touch: Bool) {
+        guard !store.historyMapActive, painted.revision == store.renderRevision, let frame = painted.projection,
+              frame.size == projection.size, frame.units == projection.units,
+              frame.center.x == projection.center.x, frame.center.y == projection.center.y else { return }
         let zoom = RailDisplayPolicy.zoom(longitudeSpan: projection.visibleRegion.span.longitudeDelta,
                                           width: projection.size.width)
-        let padding = RailDisplayPolicy.stationHitPadding(zoom: zoom)
-        var stationHit: (RailStation, CGFloat)?
-        for station in store.visibleStations {
-            let separation = distance(projection.screen(station.coordinate), point)
-            if separation < (stationHit?.1 ?? .infinity),
-               separation < store.stationAppearance(station).radius + padding {
-                stationHit = (station, separation)
+        var hit = MapFeatureHit(point, zoom: zoom, touch: touch)
+        for dot in painted.dots {
+            hit.station(dot.station, at: dot.center, style: dot.style, label: dot.label, focused: dot.member, dimmed: dot.dimmed)
+        }
+        if case .station(let station) = hit.feature { store.select(RailwayMapStore.item(station)); return }
+        if hit.detail {
+            for layout in painted.layouts {
+                hit.layout(layout, pointRadius: layout.kind == .entrance ? 3 : 5, project: projection.screen)
+            }
+            for line in store.visibleLines {
+                for segment in store.clippedGeometry[line.id] ?? [] {
+                    guard let first = segment.first else { continue }
+                    var previous = projection.screen(first)
+                    for coordinate in segment.dropFirst() {
+                        let next = projection.screen(coordinate)
+                        hit.line(line, distance: MapFeatureHit.distance(point, previous, next))
+                        previous = next
+                    }
+                }
             }
         }
-        if let stationHit { store.select(RailwayMapStore.item(stationHit.0)); return }
-        let tolerance = RailDisplayPolicy.trackHitTolerance(zoom: zoom)
-        var nearest: (RailLine, CGFloat)?
-        for line in store.visibleLines {
-          for segment in store.clippedGeometry[line.id] ?? [] {
-            guard let first = segment.first else { continue }
-            var previous = projection.screen(first)
-            for coordinate in segment.dropFirst() {
-                let next = projection.screen(coordinate)
-                let value = segmentDistance(point, previous, next)
-                if value < tolerance && value < (nearest?.1 ?? .infinity) { nearest = (line, value) }
-                previous = next
-            }
-          }
+        switch hit.feature {
+        case .line(let line): store.select(RailwayMapStore.item(line))
+        case .layout(let layout): store.selection = layout.selection
+        default: store.clearLineFocus()
         }
-        if let nearest { store.select(RailwayMapStore.item(nearest.0)) }
-        else { store.clearLineFocus() }
-    }
-
-    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
-    private static func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
-        let dx = b.x - a.x, dy = b.y - a.y
-        let denominator = dx * dx + dy * dy
-        guard denominator > 0 else { return distance(p, a) }
-        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / denominator))
-        return distance(p, CGPoint(x: a.x + t * dx, y: a.y + t * dy))
     }
 }
 

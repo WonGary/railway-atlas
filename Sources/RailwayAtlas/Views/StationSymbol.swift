@@ -60,6 +60,16 @@ enum StationSymbol {
         return image
     }
 
+    @MainActor private static func titleFont(_ style: StationAppearance, scale: Double) -> PlatformFont {
+        PlatformFont.systemFont(ofSize: StationLabelStyle.size(style.kind) * scale,
+                                weight: StationLabelStyle.emphasized(style.kind) ? .semibold : .medium)
+    }
+    /// Relative to the station coordinate, excluding the transparent tail of the image.
+    @MainActor static func titleBounds(_ title: String, style: StationAppearance, scale: Double) -> CGRect {
+        let size = (title as NSString).size(withAttributes: [.font: titleFont(style, scale: scale)])
+        return CGRect(x: style.radius + 4*scale, y: -ceil(size.height)/2,
+                      width: min(140*scale, ceil(size.width)), height: ceil(size.height))
+    }
     @MainActor private static func draw(_ style: StationAppearance, title: String?, context: CGContext,
                                        scale: Double, side: Double, lightText: Bool) {
         let center = CGPoint(x: side / 2, y: side / 2), radius = style.radius
@@ -86,8 +96,7 @@ enum StationSymbol {
             context.strokeEllipse(in: rect.insetBy(dx: radius * 0.55, dy: radius * 0.55))
         }
         if let title {
-            let font = PlatformFont.systemFont(ofSize: StationLabelStyle.size(style.kind) * scale,
-                                              weight: StationLabelStyle.emphasized(style.kind) ? .semibold : .medium)
+            let font = titleFont(style, scale: scale)
             let paragraph = NSMutableParagraphStyle()
             paragraph.lineBreakMode = .byTruncatingTail
             let shadow = NSShadow()

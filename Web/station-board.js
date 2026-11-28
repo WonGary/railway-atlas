@@ -19,7 +19,9 @@ const StationMapBoard = (() => {
   function railPoint(name,p,group) {
     const marker=L.circleMarker(p,{radius:4.5,weight:2,color:"#764322",fillColor:"#ffe1a4",fillOpacity:1,bubblingMouseEvents:false});
     const title=document.createElement("span");title.textContent=name;
-    marker.bindTooltip(title); marker.on("click",()=>selectStation(name,{pan:false})); marker.addTo(group);
+    marker.bindTooltip(title);
+    MapHit.bind(marker,()=>selectStation(name,{pan:false}));
+    marker.addTo(group);
   }
   function setup(map) {
     points=L.layerGroup().addTo(map); overlay=L.layerGroup().addTo(map);
