@@ -300,7 +300,10 @@ enum PanelLayoutValidation {
             try await observe("same-selection-reopens-right")
             store.panelVisible = true
             try await observe("narrow-left-again", priority: .left)
-            assistant.focus(map: store, scope: .feature)
+            // The toolbar reuses an existing reference when reopening the assistant.
+            try require(!context.isEmpty && assistant.context == context
+                        && assistant.reference?.featureIDs.contains(selection.id) == true,
+                        "the feature reference must survive the preceding layout changes")
             assistant.show(map: store)
             try await observe("gpt-window-keeps-panel-priority", priority: .left)
             try require(store.inspectorPane == .feature && store.selection?.id == selection.id,
@@ -332,6 +335,17 @@ enum PanelLayoutValidation {
             notes += try await validateOpacityInk(store: store, assistant: assistant, directory: evidence)
             // The supplementary fixture must not affect the application's map.
             try await observe("identity-after-opacity-fixture")
+            let sections = MapContextFiles.sections("陇海线")
+            let stops = Set(sections.flatMap { [$0.from, $0.to] })
+            store.focusDirectoryLine("陇海线", names: stops.sorted(), fit: true)
+            let coordinates = (store.lineFocus?.paths ?? []).flatMap { $0 }.map { store.alignment.display($0).location }
+            try require(coordinates.count > 100, "Longhai full-line fixture missing")
+            for (left, right) in combinations {
+                store.panelLayout = left
+                store.inspectorLayout = right
+                try await observe("longhai-\(left.rawValue)-\(right.rawValue)")
+                notes.append(try await checkLonghaiFraming(coordinates, map: originalMap, view: view))
+            }
             notes.append("PASS local assistant only: no send(), credential lookup or paid API request.")
             notes.append("REVIEW: inspect the four layout PNGs, narrow/expanded PNGs and zero-opacity PNGs for visual clipping/contrast. Basemap completeness is not tested.")
             notes[0] = "PASS " + flag
@@ -382,6 +396,31 @@ enum PanelLayoutValidation {
     }
 
     private static func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) <= tolerance }
+
+    /// Measure the live MapKit camera and the actual panel edges after each dock transition.
+    private static func checkLonghaiFraming(_ coordinates: [CLLocationCoordinate2D], map: MKMapView,
+                                            view: NSView) async throws -> String {
+        var result = ""
+        for _ in 0..<15 {
+            try await settle(view, milliseconds: 120)
+            let nodes = accessibilityNodes(in: view)
+            guard let left = panelFrame("left-map-panel", nodes: nodes, view: view),
+                  let right = panelFrame("right-map-inspector", nodes: nodes, view: view) else { continue }
+            let mapFrame = map.convert(map.bounds, to: view)
+            let west = max(left.maxX, mapFrame.minX), east = min(right.minX, mapFrame.maxX)
+            let points = coordinates.map { map.convert($0, toPointTo: view) }
+            let xs = points.map(\.x)
+            guard let minX = xs.min(), let maxX = xs.max() else { continue }
+            let leftMargin = minX - west, rightMargin = east - maxX, width = east - west
+            let outside = points.filter { !mapFrame.contains($0) || $0.x < west || $0.x > east }.count
+            result = "陇海线 \(points.count) vertices, \(outside) outside clear map, margins \(Int(leftMargin.rounded())) / \(Int(rightMargin.rounded())) of \(Int(width.rounded())) pt"
+            let target = 0.1 * width, slack = max(2, 0.012 * width)
+            if outside == 0 && abs(leftMargin - target) <= slack && abs(rightMargin - target) <= slack {
+                return "PASS " + result
+            }
+        }
+        throw DataError.invalid("Live full-line framing: " + result)
+    }
 
     private static func settle(_ view: NSView, milliseconds: Int = 350) async throws {
         try await Task.sleep(for: .milliseconds(milliseconds))

@@ -67,6 +67,9 @@ enum RailGamesAcceptance {
                 #if os(macOS)
                 try await openMenu(f.game)
                 #else
+                let _: Bool = try await wait("主地图前台窗口") {
+                    windows.contains { $0.isKeyWindow && $0.rootViewController?.viewIfLoaded?.window != nil } ? true : nil
+                }
                 showDiscovery()
                 try await openShortcut(f.game)
                 #endif
@@ -127,7 +130,7 @@ enum RailGamesAcceptance {
 
     private static func failure(_ text: String) -> DataError { .invalid(text) }
     private static func wait<T>(_ label: String, poll: () async throws -> T?) async throws -> T {
-        let until = ProcessInfo.processInfo.systemUptime + 14
+        let until = ProcessInfo.processInfo.systemUptime + 28
         repeat {
             if let result = try await poll() { return result }
             try await Task.sleep(for: .milliseconds(120))
@@ -156,11 +159,13 @@ enum RailGamesAcceptance {
     }
     #else
     private static var windows: [UIWindow] {
-        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).filter(\.isKeyWindow)
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+            .flatMap(\.windows).filter { !$0.isHidden && $0.windowLevel == .normal && $0.rootViewController != nil }
     }
     private static var roots: [UIView] { windows.map { $0 as UIView } }
     private static var mainMapVisible: Bool {
-        windows.contains { $0.rootViewController != nil && $0.rootViewController?.presentedViewController == nil }
+        windows.contains { $0.isKeyWindow && $0.rootViewController?.presentedViewController == nil }
     }
     private static func openShortcut(_ game: ExperienceTab) async throws {
         let _: Bool = try await wait(game.title) {

@@ -25,6 +25,19 @@ final class RailwayMapStore: ObservableObject {
     private var lineFitViewport: LineFitViewport?
     private var fittedLine: (bounds: MKMapRect, camera: Int)?
 
+    var fittedDisplayRect: MKMapRect? {
+        guard let fittedLine, fittedLine.camera == cameraRevision, let viewport = lineFitViewport else { return nil }
+        let bounds = fittedLine.bounds
+        guard alignment != .wgs84 else { return viewport.mapRect(for: bounds) }
+        // Fit the displayed bounds when the Apple basemap uses a shifted datum.
+        let nw = MKMapPoint(x: bounds.minX, y: bounds.minY).coordinate
+        let se = MKMapPoint(x: bounds.maxX, y: bounds.maxY).coordinate
+        let a = alignment.display(Coordinate(nw.latitude, nw.longitude)).mapPoint
+        let b = alignment.display(Coordinate(se.latitude, se.longitude)).mapPoint
+        return viewport.mapRect(for: MKMapRect(x: min(a.x, b.x), y: min(a.y, b.y),
+                                              width: abs(b.x - a.x), height: abs(b.y - a.y)))
+    }
+
     func releaseLineFit() { fittedLine = nil }
 
     func updateLineFitViewport(_ viewport: LineFitViewport) {

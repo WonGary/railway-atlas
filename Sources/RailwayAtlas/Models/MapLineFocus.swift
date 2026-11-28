@@ -17,7 +17,7 @@ struct LineFitViewport: Equatable {
         return CGRect(x: start, y: 0, width: end - start, height: size.height)
     }
 
-    func region(for bounds: MKMapRect) -> MKCoordinateRegion? {
+    func mapRect(for bounds: MKMapRect) -> MKMapRect? {
         let clear = clearArea
         guard clear.width > 0, clear.height > 0, !bounds.isNull else { return nil }
         // Fill 80% of the limiting dimension. Fractional margins also fit narrow screens.
@@ -26,14 +26,22 @@ struct LineFitViewport: Equatable {
                         world / 360 * 0.008 / size.width)
         let center = MKMapPoint(x: bounds.midX + (size.width / 2 - clear.midX) * units,
                                 y: bounds.midY + (size.height / 2 - clear.midY) * units)
-        let north = MKMapPoint(x: center.x, y: max(0, center.y - size.height * units / 2)).coordinate.latitude
-        let south = MKMapPoint(x: center.x, y: min(world, center.y + size.height * units / 2)).coordinate.latitude
+        return MKMapRect(x: center.x - size.width * units / 2, y: center.y - size.height * units / 2,
+                         width: size.width * units, height: size.height * units)
+    }
+
+    func region(for bounds: MKMapRect) -> MKCoordinateRegion? {
+        guard let rect = mapRect(for: bounds) else { return nil }
+        let center = MKMapPoint(x: rect.midX, y: rect.midY)
+        let world = MKMapSize.world.width
+        let north = MKMapPoint(x: center.x, y: max(0, rect.minY)).coordinate.latitude
+        let south = MKMapPoint(x: center.x, y: min(world, rect.maxY)).coordinate.latitude
         let location = center.coordinate
-        // Pass the inscribed latitude span. MapKit and Canvas then use the same
-        // projected scale, including when the northern and southern spans differ.
+        // The Canvas fits a symmetric latitude span. Inscribe that span in the
+        // projected rectangle so latitude cannot force a second zoom-out.
         return MKCoordinateRegion(center: location, span: MKCoordinateSpan(
             latitudeDelta: min(170, max(0.0001, 2 * min(north - location.latitude, location.latitude - south))),
-            longitudeDelta: min(359, size.width * units * 360 / world)))
+            longitudeDelta: min(359, rect.width * 360 / world)))
     }
 }
 

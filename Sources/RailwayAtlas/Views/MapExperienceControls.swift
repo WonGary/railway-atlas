@@ -11,6 +11,8 @@ struct MapExperienceControls: View {
                 HStack {
                     Label(mode == .train ? (player.timetable?.train ?? "沿线旅行") : (player.region?.title ?? "线路时光机"),
                           systemImage: mode == .train ? "tram.fill" : "clock.arrow.circlepath").font(.headline)
+                        .accessibilityIdentifier("map-playback-title")
+                        .accessibilityValue(player.timetable.map { "\($0.serviceDate) \($0.stops.first?.station ?? "") → \($0.stops.last?.station ?? "")" } ?? "")
                     Text(mode == .train ? RailTimetable.clock(player.seconds) : player.date)
                         .font(.system(.title3, design: .monospaced).weight(.medium))
                     Spacer()

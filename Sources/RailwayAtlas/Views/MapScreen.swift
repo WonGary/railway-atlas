@@ -613,7 +613,7 @@ struct OfflineRailwayMap: View {
                     .onEnded { value in store.zoom(1 / value.magnification) }
             )
             .simultaneousGesture(
-                SpatialTapGesture().onEnded { value in selectNearest(value.location, projection: projection) }
+                SpatialTapGesture().onEnded { value in Self.selectNearest(value.location, projection: projection, in: store) }
             )
             .accessibilityLabel("离线铁路地图。可以拖动、捏合缩放，也可使用放大缩小按钮。")
             .task(id: geometry.size) {
@@ -652,20 +652,31 @@ struct OfflineRailwayMap: View {
         context.stroke(grid, with: .color(.secondary.opacity(0.07)), lineWidth: 0.6)
     }
 
-    private func selectNearest(_ point: CGPoint, projection: RailProjection) {
+    static func selectNearest(_ point: CGPoint, projection: RailProjection, in store: RailwayMapStore) {
         guard !store.historyMapActive else { return }
-        if let station = store.visibleStations.min(by: {
-            distance(projection.screen($0.coordinate), point) < distance(projection.screen($1.coordinate), point)
-        }), distance(projection.screen(station.coordinate), point) < 22 {
-            store.select(RailwayMapStore.item(station))
-            return
+        let zoom = RailDisplayPolicy.zoom(longitudeSpan: projection.visibleRegion.span.longitudeDelta,
+                                          width: projection.size.width)
+        let padding = RailDisplayPolicy.stationHitPadding(zoom: zoom)
+        var stationHit: (RailStation, CGFloat)?
+        for station in store.visibleStations {
+            let separation = distance(projection.screen(station.coordinate), point)
+            if separation < (stationHit?.1 ?? .infinity),
+               separation < store.stationAppearance(station).radius + padding {
+                stationHit = (station, separation)
+            }
         }
+        if let stationHit { store.select(RailwayMapStore.item(stationHit.0)); return }
+        let tolerance = RailDisplayPolicy.trackHitTolerance(zoom: zoom)
         var nearest: (RailLine, CGFloat)?
         for line in store.visibleLines {
           for segment in store.clippedGeometry[line.id] ?? [] {
-            for pair in zip(segment, segment.dropFirst()) {
-                let value = segmentDistance(point, projection.screen(pair.0), projection.screen(pair.1))
-                if value < 9 && value < (nearest?.1 ?? .infinity) { nearest = (line, value) }
+            guard let first = segment.first else { continue }
+            var previous = projection.screen(first)
+            for coordinate in segment.dropFirst() {
+                let next = projection.screen(coordinate)
+                let value = segmentDistance(point, previous, next)
+                if value < tolerance && value < (nearest?.1 ?? .infinity) { nearest = (line, value) }
+                previous = next
             }
           }
         }
@@ -673,8 +684,8 @@ struct OfflineRailwayMap: View {
         else { store.clearLineFocus() }
     }
 
-    private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
-    private func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
+    private static func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
         let dx = b.x - a.x, dy = b.y - a.y
         let denominator = dx * dx + dy * dy
         guard denominator > 0 else { return distance(p, a) }

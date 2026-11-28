@@ -71,14 +71,29 @@ jobs:
           boot=$!
           xcodebuild -project RailwayAtlas.xcodeproj -scheme RailwayAtlas-iOS \
             -configuration Release -destination "id=$device" \
-            -derivedDataPath "$RUNNER_TEMP/atlas-sim-build" CODE_SIGNING_ALLOWED=NO build
+            -derivedDataPath "$RUNNER_TEMP/atlas-sim-build" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
           wait "$boot"
           app="$RUNNER_TEMP/atlas-sim-build/Build/Products/Release-iphonesimulator/RailwayAtlas-iOS.app"
           xcrun simctl install "$device" "$app"
+          data=$(xcrun simctl get_app_container "$device" app.railwayatlas.ios data)
+          mkdir -p "$data/tmp/station-ui"
+          export TEST_RUNNER_ATLAS_STATION_TEST_DIR="$data/tmp/station-ui"
+          failed=0
+          xcodebuild -project RailwayAtlas.xcodeproj -scheme RailwayAtlas-iOS \
+            -configuration Release -destination "id=$device" -parallel-testing-enabled NO \
+            -derivedDataPath "$RUNNER_TEMP/atlas-sim-build" -resultBundlePath "$RUNNER_TEMP/station-board.xcresult" \
+            ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO -only-testing:StationBoardUITests test || failed=1
           export ATLAS_SIM_EVIDENCE="$RUNNER_TEMP/atlas-sim-receipts"
           for suite in games passport inspector; do
-            node Checks/check-rail-games-installed.cjs ios "$device" "$suite"
+            node Checks/check-rail-games-installed.cjs ios "$device" "$suite" || failed=1
           done
+          exit "$failed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-station-board-ui
+          path: ${{ runner.temp }}/station-board.xcresult
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:

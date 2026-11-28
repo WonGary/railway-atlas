@@ -42,6 +42,7 @@ struct ContentView: View {
                                          cornerRadius: 24 * uiScale)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("map-open-sidebar")
                     .atlasPadding(.horizontal, 12)
                     .atlasPadding(.bottom, 8)
                 }
@@ -69,6 +70,16 @@ struct ContentView: View {
         .sheet(isPresented: $store.showAssistant) { AtlasAssistantView() }
         #endif
         .task {
+            #if targetEnvironment(simulator)
+            let launch = CommandLine.arguments
+            if launch.contains("--ui-smoke"), launch.contains("--station-board-ui"),
+               let station = NationalDirectoryPins.byName["广元"] {
+                store.mapMode = .offline
+                store.select(RailwayMapStore.item(station))
+                showPanel = true
+                return
+            }
+            #endif
             await store.start()
             let args = CommandLine.arguments
             if args.contains(JourneyInspectionValidation.flag),

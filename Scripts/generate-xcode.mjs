@@ -98,8 +98,19 @@ for (const platform of ["macOS", "iOS"]) {
   const target = object(prefix, `isa = PBXNativeTarget; name = ${quote(prefix)}; productName = ${quote(prefix)}; productType = "com.apple.product-type.application"; productReference = ${product}; buildConfigurationList = ${configList}; buildPhases = (${sourcesPhase}, ${frameworksPhase}, ${resourcesPhase}); buildRules = (); dependencies = (); packageProductDependencies = (${dependency});`);
   targets.push(target);
 }
+const testName = "StationBoardUITests";
+const testFile = object("board-ui-file", 'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Checks/iOSStationBoardUITests.swift; sourceTree = SOURCE_ROOT;');
+const testBuild = object("board-ui-build", `isa = PBXBuildFile; fileRef = ${testFile};`);
+const testSources = object("board-ui-sources", `isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (${testBuild}); runOnlyForDeploymentPostprocessing = 0;`);
+const testProduct = object("board-ui-product", `isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ${testName}.xctest; sourceTree = BUILT_PRODUCTS_DIR;`);
+const testConfigs = ["Debug", "Release"].map(name => object(`board-ui-${name}`, `isa = XCBuildConfiguration; name = ${name}; buildSettings = { PRODUCT_NAME = ${testName}; PRODUCT_BUNDLE_IDENTIFIER = app.railwayatlas.stationboardtests; GENERATE_INFOPLIST_FILE = YES; TARGETED_DEVICE_FAMILY = "1,2"; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.0; TEST_TARGET_NAME = "RailwayAtlas-iOS"; };`));
+const testConfigList = object("board-ui-configurations", `isa = XCConfigurationList; buildConfigurations = ${list(testConfigs)}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;`);
+const testProxy = object("board-ui-proxy", `isa = PBXContainerItemProxy; containerPortal = ${id("project")}; proxyType = 1; remoteGlobalIDString = ${id("RailwayAtlas-iOS")}; remoteInfo = "RailwayAtlas-iOS";`);
+const testDependency = object("board-ui-dependency", `isa = PBXTargetDependency; target = ${id("RailwayAtlas-iOS")}; targetProxy = ${testProxy};`);
+targets.push(object(testName, `isa = PBXNativeTarget; name = ${testName}; productName = ${testName}; productType = "com.apple.product-type.bundle.ui-testing"; productReference = ${testProduct}; buildConfigurationList = ${testConfigList}; buildPhases = (${testSources}); buildRules = (); dependencies = (${testDependency});`));
+products.push(testProduct);
 const productGroup = object("products", `isa = PBXGroup; name = Products; children = ${list(products)}; sourceTree = "<group>";`);
-const mainGroup = object("main-group", `isa = PBXGroup; children = ${list([...files, resources, ...iosResources, catalog, stationDirectory, stationLibrary, metroDirectory,...metroFiles, gamesScript, gamesPack, productGroup])}; sourceTree = "<group>";`);
+const mainGroup = object("main-group", `isa = PBXGroup; children = ${list([...files, testFile, resources, ...iosResources, catalog, stationDirectory, stationLibrary, metroDirectory,...metroFiles, gamesScript, gamesPack, productGroup])}; sourceTree = "<group>";`);
 const projectConfigs = ["Debug", "Release"].map((name) => object(`project-${name}`, `isa = XCBuildConfiguration; name = ${name}; buildSettings = { CLANG_ENABLE_MODULES = YES; };`));
 const projectConfigList = object("project-configs", `isa = XCConfigurationList; buildConfigurations = ${list(projectConfigs)}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;`);
 object("project", `isa = PBXProject; attributes = { LastUpgradeCheck = 1600; }; buildConfigurationList = ${projectConfigList}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; knownRegions = (en, zh_CN, Base); mainGroup = ${mainGroup}; productRefGroup = ${productGroup}; projectDirPath = ""; projectRoot = ""; targets = ${list(targets)}; packageReferences = (${id("package")});`);
@@ -112,10 +123,12 @@ fs.mkdirSync(schemes, { recursive: true });
 for (const platform of ["macOS", "iOS"]) {
   const name = `RailwayAtlas-${platform}`;
   const reference = `<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="${id(name)}" BuildableName="${name}.app" BlueprintName="${name}" ReferencedContainer="container:RailwayAtlas.xcodeproj"/>`;
+  const tests = platform === "iOS" ? `<TestAction buildConfiguration="Release" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB"><Testables><TestableReference skipped="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="${id(testName)}" BuildableName="${testName}.xctest" BlueprintName="${testName}" ReferencedContainer="container:RailwayAtlas.xcodeproj"/></TestableReference></Testables></TestAction>` : "";
   fs.writeFileSync(path.join(schemes, `${name}.xcscheme`),
     `<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="1600" version="1.3">
 <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">${reference}</BuildActionEntry></BuildActionEntries></BuildAction>
+${tests}
 <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES"><BuildableProductRunnable runnableDebuggingMode="0">${reference}</BuildableProductRunnable></LaunchAction>
 <ProfileAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES" savedToolIdentifier="" useCustomWorkingDirectory="NO" debugDocumentVersioning="YES"><BuildableProductRunnable runnableDebuggingMode="0">${reference}</BuildableProductRunnable></ProfileAction>
 <AnalyzeAction buildConfiguration="Debug"/><ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>

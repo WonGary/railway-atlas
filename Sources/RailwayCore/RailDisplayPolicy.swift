@@ -21,6 +21,20 @@ public enum RailDisplayPolicy {
     public static func zoom(longitudeSpan: Double, width: Double) -> Double {
         min(20, max(2, log2(max(320, width) * 360 / (256 * max(0.001, longitudeSpan)))))
     }
+    /// Distance from the drawn track, in screen points in either map renderer.
+    public static func trackHitTolerance(zoom: Double) -> Double {
+        switch zoom {
+        case ..<8: 3.5
+        case ..<11: 4.5
+        case ..<14: 6.5
+        case ..<17: 8.5
+        default: 11
+        }
+    }
+    /// Additional reach outside a station symbol, also in screen points.
+    public static func stationHitPadding(zoom: Double) -> Double {
+        zoom < 9 ? 4 : zoom < 13 ? 7 : 11
+    }
     public static func labelVisible(_ station: RailStation, zoom: Double) -> Bool {
         labelVisible(station.appearance().kind, zoom: zoom)
     }

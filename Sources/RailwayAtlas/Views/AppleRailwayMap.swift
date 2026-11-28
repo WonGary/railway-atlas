@@ -194,16 +194,23 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             coordinator.cameraRevision = store.cameraRevision
             coordinator.cameraUpdatePending = true
             let target = store.displayRegion, revision = store.cameraRevision
+            let fittedRect = store.fittedDisplayRect
             // MapKit forces an AppKit layout in setRegion. Calling it inside
             // updateNSView re-enters SwiftUI's layout graph on macOS.
             Task { @MainActor [weak map, weak coordinator] in
                 guard let map, let coordinator, coordinator.cameraRevision == revision else { return }
-                let nearby = abs(map.region.center.latitude - target.center.latitude) < 3 * target.span.latitudeDelta &&
-                    abs(map.region.center.longitude - target.center.longitude) < 3 * target.span.longitudeDelta
-                if !nearby { map.setCenter(target.center, animated: false) }
-                map.setRegion(target, animated: !firstCamera && nearby)
+                if let fittedRect {
+                    // A dock resize can interrupt an animated region change.
+                    // The line's projected rectangle already has the map's aspect ratio.
+                    map.setVisibleMapRect(fittedRect, animated: false)
+                } else {
+                    let nearby = abs(map.region.center.latitude - target.center.latitude) < 3 * target.span.latitudeDelta &&
+                        abs(map.region.center.longitude - target.center.longitude) < 3 * target.span.longitudeDelta
+                    if !nearby { map.setCenter(target.center, animated: false) }
+                    map.setRegion(target, animated: !firstCamera && nearby)
+                }
                 coordinator.cameraUpdatePending = false
-                if firstCamera { coordinator.updateViewport(map, final: true) }
+                if firstCamera || fittedRect != nil { coordinator.updateViewport(map, final: true) }
                 coordinator.scheduleStationLabels(map)
             }
         }
@@ -819,7 +826,8 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             if annotationIsNear(point, map: map) { return }
             let display = map.convert(point, toCoordinateFrom: map)
             let location = MKMapPoint(display)
-            let tolerance = map.visibleMapRect.width / max(1, map.bounds.width) * hitTolerancePixels(map)
+            let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
+            let tolerance = map.visibleMapRect.width / max(1, map.bounds.width) * RailDisplayPolicy.trackHitTolerance(zoom: zoom)
             var nearest: (RailLine, Double)?
             for line in store.visibleLines {
                 for part in geometry[line.id]?.2 ?? [] {
@@ -853,7 +861,7 @@ struct AppleRailwayMap: PlatformMapRepresentable {
         }
         private func annotationIsNear(_ point: CGPoint, map: MKMapView) -> Bool {
             let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
-            let radius = zoom < 9 ? 4.0 : zoom < 13 ? 7.0 : 11.0
+            let radius = RailDisplayPolicy.stationHitPadding(zoom: zoom)
             for annotation in map.annotations {
                 guard annotation is StationAnnotation
                     || annotation is PlatformNumberAnnotation
@@ -863,16 +871,6 @@ struct AppleRailwayMap: PlatformMapRepresentable {
                 if frame.contains(point) { return true }
             }
             return false
-        }
-        private func hitTolerancePixels(_ map: MKMapView) -> Double {
-            let zoom = RailDisplayPolicy.zoom(longitudeSpan: map.region.span.longitudeDelta, width: map.bounds.width)
-            switch zoom {
-            case ..<8: return 3.5
-            case ..<11: return 4.5
-            case ..<14: return 6.5
-            case ..<17: return 8.5
-            default: return 11
-            }
         }
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             guard let annotation = view.annotation as? StationAnnotation else { return }

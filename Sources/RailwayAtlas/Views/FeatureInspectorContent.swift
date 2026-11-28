@@ -18,6 +18,17 @@ struct FeatureInspectorContent: View {
     @State private var showsInformation = false
     #if !os(macOS)
     @State private var showsStationDirectory = false
+    @State private var returnToTrainMap = false
+    private var stationBoardInitialDate: Date {
+        #if os(iOS) && targetEnvironment(simulator)
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--station-board-ui"), arguments.contains("--ui-smoke"),
+           let date = ISO8601DateFormatter().date(from: "2026-11-26T12:00:00+08:00") {
+            return date
+        }
+        #endif
+        return .now
+    }
     #endif
     @State private var showsRawFields = false
     let item: RailwaySelection
@@ -47,7 +58,19 @@ struct FeatureInspectorContent: View {
                     Button("全线站点与本站车次", systemImage: "list.bullet.rectangle") {
                         showsStationDirectory = true
                     }
-                    .sheet(isPresented: $showsStationDirectory) { StationDirectoryView(name: name) }
+                    .accessibilityIdentifier("open-station-directory")
+                    .sheet(isPresented: $showsStationDirectory, onDismiss: {
+                        if returnToTrainMap {
+                            returnToTrainMap = false
+                            NotificationCenter.default.post(name: .railGameDidOpenMap, object: nil)
+                        }
+                    }) {
+                        StationTravelDirectory(name: name, initialDate: stationBoardInitialDate) { timetable, track in
+                            try store.journeyPlayer.start(timetable, route: track)
+                            returnToTrainMap = true
+                            showsStationDirectory = false
+                        }
+                    }
                     #endif
                 }
             }
