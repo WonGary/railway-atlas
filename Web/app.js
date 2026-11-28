@@ -2476,15 +2476,16 @@ async function importPassportFile(event) {
       note: String(item.note || ""),
       source: ["manual","import","journey"].includes(item.source) ? item.source : "import"
     }));
-    const known = new Set(state.journeys.map(item => `${item.date}|${item.train}|${item.from}|${item.to}`));
+    const known = new Set(state.journeys.map(JourneyKeepsakes.idFor));
     const additions = valid.filter(item => {
-      const key = `${item.date}|${item.train}|${item.from}|${item.to}`;
+      const key = JourneyKeepsakes.idFor(item);
       if (known.has(key)) return false;
       known.add(key);
       return true;
     });
-    state.journeys = [...additions, ...state.journeys];
-    writeStored(STORAGE.passport, state.journeys);
+    const journeys = [...additions, ...state.journeys];
+    if (!writeStored(STORAGE.passport, journeys)) return;
+    state.journeys = journeys;
     renderPassport();
     showToast(`已导入 ${additions.length} 条新记录。`);
   } catch {

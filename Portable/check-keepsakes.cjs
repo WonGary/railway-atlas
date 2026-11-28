@@ -80,9 +80,46 @@ async function check({browser,devices,url}, phone, folder) {
     console.log(`${phone?"手机":"桌面"}：D174 陇南至广元，护照记录、独立足迹、票面及分享接收通过。`);
   } finally { await context.close(); }
 }
+async function checkBackup({browser,url},folder) {
+  const ctx = await browser.newContext({acceptDownloads:true, serviceWorkers:"block"});
+  try {
+    const page = await ctx.newPage();
+    await page.goto(url,{waitUntil:"domcontentloaded"});
+    await page.waitForFunction(()=>typeof state!=="undefined" && state.map);
+    await page.evaluate(()=>{
+      const form = document.getElementById("journeyForm");
+      for (const departure of ["08:00","12:00"]) {
+        for (const [key,value] of Object.entries({train:"D174",date:"2026-11-26",from:"陇南",to:"广元",departure,note:"合成恢复测试"}))
+          form.elements.namedItem(key).value=value;
+        form.requestSubmit();
+      }
+    });
+    assert.equal(await page.evaluate(()=>state.journeys.length),2);
+    for(const [button,suffix] of [["exportPassport","json"],["exportPassportCSV","csv"]]) {
+      const target=path.join(folder,"restore-fixture."+suffix);
+      const download=page.waitForEvent("download");
+      await page.locator("#"+button).evaluate(el=>el.click());
+      await (await download).saveAs(target);
+      const restored=await browser.newContext({serviceWorkers:"block"});
+      try {
+        const view=await restored.newPage();
+        await view.goto(url,{waitUntil:"domcontentloaded"});
+        for(const added of [2,0]) {
+          await view.locator("#importPassport").setInputFiles(target);
+          await view.waitForFunction(n=>document.querySelector("#appToast")?.textContent.includes(`已导入 ${n} 条新记录`),added);
+        }
+        await view.reload({waitUntil:"domcontentloaded"});
+        await view.waitForFunction(()=>typeof state!=="undefined" && state.map);
+        assert.deepEqual(await view.evaluate(()=>state.journeys.map(j=>j.departure).sort()),["08:00","12:00"]);
+      } finally {await restored.close();}
+    }
+    console.log("JSON 和 CSV 均保留同日同车同区间的两次发车，重复恢复后仍为两条。");
+  } finally {await ctx.close();}
+}
 withBrowser(async options=>{
   const folder=process.env.ATLAS_CARD_QA || fs.mkdtempSync(path.join(os.tmpdir(),"atlas-card-output-"));
   console.log(folder);
   await check(options,false,folder);
   await check(options,true,folder);
+  await checkBackup(options,folder);
 }).catch(err=>{console.error(err);process.exitCode=1;});
