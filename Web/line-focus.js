@@ -292,11 +292,7 @@ const LineFocus = (() => {
     }
   }
   function endDirectory(title) { if(current?.directory && (!title || title===current.title)) clear(); }
-<<<<<<< HEAD
-  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,trackHitRadius,fitFullLine,fitSelection,
-=======
-  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,fitFullLine,
->>>>>>> 51dcbc3 (Select only visible railway targets within deliberate map taps)
+  return {setup,clear,set,station,metro,closestPart,directory,endDirectory,addTracks,addTile,fitFullLine,fitSelection,
     get active(){return current;},refresh:()=>{
       if (!current) return;
       paint();
