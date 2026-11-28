@@ -438,8 +438,9 @@ enum PanelLayoutValidation {
             let camera = RailProjection(region:store.region,size:frame.size)
             return points.map { p in let v=camera.screen(p); return CGPoint(x:frame.minX+v.x,y:frame.minY+v.y) }
         }
-        func measure(_ label: String, _ points: [Coordinate], _ mode: MapMode) async throws {
+        func measure(_ label: String, _ points: [Coordinate], _ mode: MapMode, expectedWidth: CGFloat? = nil) async throws {
             var last = label
+            var consecutive = 0
             for _ in 0..<18 {
                 try await settle(view,milliseconds:120)
                 let map = try currentMap(mode)
@@ -453,7 +454,10 @@ enum PanelLayoutValidation {
                 let offset = max(abs((xs.max()!+xs.min()!)/2-clear.midX),abs((ys.max()!+ys.min()!)/2-clear.midY))
                 let outside = pp.filter { !clear.contains($0) }.count
                 last = "\(mode) \(label) points=\(pp.count) map=\(map.integral) clear=\(clear.integral) span=\(String(format:"%.4f",span)) outside=\(outside) offset=\(String(format:"%.1f",offset))"
-                if outside == 0 && abs(span-0.8)<0.012 && offset<max(3,min(clear.width,clear.height)*0.02) { try record(last); return }
+                let fits = outside == 0 && abs(span-0.8)<0.012 && offset<max(3,min(clear.width,clear.height)*0.02)
+                let sized = expectedWidth.map { abs($0 - map.width) < 1 } ?? true
+                consecutive = fits && sized ? consecutive + 1 : 0
+                if consecutive >= (expectedWidth == nil ? 1 : 2) { try record(last); return }
             }
             let actual = nativeMaps(in:view).first?.visibleMapRect
             throw DataError.invalid(last + " target=\(String(describing:store.fittedDisplayRect)) actual=\(String(describing:actual))")
@@ -521,6 +525,22 @@ enum PanelLayoutValidation {
                 for (left,right) in combinations {
                     store.panelLayout=left; store.inspectorLayout=right
                     try await measure("\(line.name) \(left)/\(right)",expected,mode)
+                }
+                if mode == .apple {
+                    // Exercise successive native resizes before a camera update has settled.
+                    for round in 1...3 {
+                        for (left, right) in [(MapPanelLayout.docked, MapPanelLayout.floating), (.floating, .docked)] {
+                            for (l, r) in combinations {
+                                store.panelLayout = l
+                                store.inspectorLayout = r
+                                try await settle(view, milliseconds: 24)
+                            }
+                            store.panelLayout = left
+                            store.inspectorLayout = right
+                            let width = view.bounds.width - (left == .docked ? store.panelWidth : store.inspectorWidth)
+                            try await measure("\(line.name) rapid \(round) \(left)/\(right)", expected, mode, expectedWidth: width)
+                        }
+                    }
                 }
                 window.setContentSize(CGSize(width:960,height:700)); store.uiScale = 1.6
                 try await measure("\(line.name) narrow",expected,mode)

@@ -2,16 +2,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
+configuration=${1:-debug}
+case "$configuration" in debug|release) ;; *) exit 2 ;; esac
 mkdir -p .build/framing-{tmp,cache,config,security}
 export TMPDIR="$root/.build/framing-tmp/"
 export CLANG_MODULE_CACHE_PATH="$root/.build/framing-cache/clang"
 export SWIFT_MODULECACHE_PATH="$root/.build/framing-cache/swift"
 swift build --disable-sandbox --cache-path "$root/.build/framing-cache" --config-path "$root/.build/framing-config" \
-    --security-path "$root/.build/framing-security" --jobs 5 --product RailwayAtlas
+    --security-path "$root/.build/framing-security" -c "$configuration" --jobs 5 --product RailwayAtlas
 run=$(mktemp -d "$root/.build/framing-run.XXXXXX")
 app="$run/Line Framing.app/Contents"
 mkdir -p "$app/MacOS" "$app/Resources" "$run/receipt"
-cp .build/debug/RailwayAtlas "$app/MacOS/"
+cp ".build/$configuration/RailwayAtlas" "$app/MacOS/"
 cp Config/Info.plist "$app/"
 plutil -replace CFBundleIdentifier -string app.railwayatlas.check.line-framing "$app/Info.plist"
 plutil -remove CFBundleURLTypes "$app/Info.plist"

@@ -201,8 +201,12 @@ struct AppleRailwayMap: PlatformMapRepresentable {
             Task { @MainActor [weak map, weak coordinator] in
                 guard let map, let coordinator, coordinator.cameraRevision == revision else { return }
                 if let fittedRect {
-                    // A dock resize can interrupt an animated region change.
-                    // The line's projected rectangle already has the map's aspect ratio.
+                    #if os(macOS)
+                    // Commit the dock widths before MapKit converts the target rectangle to a camera distance.
+                    map.window?.contentView?.layoutSubtreeIfNeeded()
+                    guard coordinator.cameraRevision == revision, coordinator.store.cameraRevision == revision else { return }
+                    guard coordinator.store.isFramingLine else { coordinator.cameraUpdatePending = false; return }
+                    #endif
                     map.setVisibleMapRect(fittedRect, animated: false)
                 } else {
                     let nearby = abs(map.region.center.latitude - target.center.latitude) < 3 * target.span.latitudeDelta &&
