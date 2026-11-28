@@ -246,10 +246,12 @@ async function offline({browser,url}) {
     });
     await page.goto(url,{waitUntil:"domcontentloaded"});
     await page.waitForFunction(()=>navigator.serviceWorker.controller && document.querySelector("#offlineReady").textContent.includes("已可离线"),null,{timeout:35000});
-    const files=["index.html","styles.css","map-preferences.js","history-network.js"];
+    const files=["index.html","styles.css","map-preferences.js","history-network.js","map-hit.js"];
     const hashes=await page.evaluate(async files=>{
       const keys=await caches.keys();
-      const shell=await caches.open(keys.find(k=>/^railway-atlas-web-.*-r13$/.test(k)));
+      const installed=keys.filter(k=>k.startsWith("railway-atlas-web-"));
+      if (installed.length !== 1) throw Error("预期一个已启用的网页缓存，实际为 " + installed.join(", "));
+      const shell=await caches.open(installed[0]);
       const hashes={};
       for (const file of files) {
         const bytes=await (await shell.match(new URL(file,location.href))).arrayBuffer();
