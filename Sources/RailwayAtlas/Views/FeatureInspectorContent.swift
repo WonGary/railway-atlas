@@ -58,8 +58,12 @@ struct FeatureInspectorContent: View {
                     #if os(macOS)
                     StationInspectorBoard(name: name).id(item.id)
                     #else
-                    Button("全线站点与本站车次", systemImage: "list.bullet.rectangle") {
+                    Button {
                         showsStationDirectory = true
+                    } label: {
+                        Label("全线站点与本站车次", systemImage: "list.bullet.rectangle")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("open-station-directory")
                     .sheet(isPresented: $showsStationDirectory, onDismiss: {
@@ -100,7 +104,9 @@ struct FeatureInspectorContent: View {
         }
         .atlasPadding(10)
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        #if os(macOS)
         .accessibilityIdentifier("feature-inspector-content")
+        #endif
         .onChange(of: item.id) { _, _ in
             showsInformation = false
             showsRawFields = false

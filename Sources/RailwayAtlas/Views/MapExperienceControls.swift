@@ -17,7 +17,12 @@ struct MapExperienceControls: View {
                         .font(.system(.title3, design: .monospaced).weight(.medium))
                     Spacer()
                     if let onCollapse {
-                        Button(action: onCollapse) { Image(systemName: "chevron.down") }
+                        Button(action: onCollapse) {
+                            Image(systemName: "chevron.down")
+                                #if os(iOS)
+                                .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                                #endif
+                        }
                             .buttonStyle(.plain)
                             .help("收起播放栏")
                             .accessibilityLabel("收起播放栏")
@@ -61,7 +66,9 @@ struct MapExperienceControls: View {
             }
             .padding(16)
             .atlasMapControl(.playback, radius: 16)
+            #if os(macOS)
             .accessibilityIdentifier("main-map-experience-controls")
+            #endif
         }
     }
     private var playbackButton: some View {

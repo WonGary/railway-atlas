@@ -20,6 +20,8 @@ struct MapScreen: View {
     var desktopPanels: DesktopPanelLayout.Resolved?
     var onToggleDesktopPanel: ((DesktopPanelSide) -> Void)?
     var onActivateDesktopPanel: ((DesktopPanelSide) -> Void)?
+    #else
+    var openSettings: () -> Void
     #endif
     @Environment(\.atlasUIScale) private var uiScale
     @EnvironmentObject private var store: RailwayMapStore
@@ -64,8 +66,11 @@ struct MapScreen: View {
                             HStack(spacing: 4 * uiScale) {
                                 #if os(macOS)
                                 desktopPanelButton(.left)
-                                #endif
                                 mapButton("gearshape", title: "设置") { store.showSettings = true }
+                                #else
+                                mapButton("gearshape", title: "设置", action: openSettings)
+                                    .accessibilityIdentifier("map-toolbar-settings")
+                                #endif
                                 mapButton("sparkles", title: "询问地图") {
                                     if assistant.context.isEmpty {
                                         assistant.focus(map: store, scope: store.selection == nil ? .region : .feature)

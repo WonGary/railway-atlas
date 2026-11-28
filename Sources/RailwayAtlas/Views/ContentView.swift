@@ -25,7 +25,13 @@ struct ContentView: View {
             }
             .frame(minWidth: 960, minHeight: 650)
             #else
-            AtlasInterface(scale: store.uiScale) { MapScreen() }
+            AtlasInterface(scale: store.uiScale) {
+                MapScreen(openSettings: {
+                    // The map gear remains tappable above the half-height sidebar.
+                    if showPanel { showPanelSettings = true }
+                    else { store.showSettings = true }
+                })
+            }
                 .safeAreaInset(edge: .bottom) {
                     MobileMapLauncher(title: store.selection?.name ?? "探索铁道图鉴") { showPanel = true }
                         .environment(\.atlasUIScale, uiScale)
@@ -224,13 +230,25 @@ struct SidebarView: View {
                 } else {
                     Button { if let onSettings { onSettings() } else { store.showSettings = true } } label: {
                         Image(systemName: "gearshape").frame(minWidth: 44, minHeight: 44)
+                            #if os(iOS)
+                            .contentShape(Rectangle())
+                            #endif
                     }
                     .buttonStyle(.plain).accessibilityLabel("设置")
+                    #if os(iOS)
+                    .accessibilityIdentifier("sidebar-open-settings")
+                    #endif
                     if let onRequestClose {
                         Button(action: onRequestClose) {
                             Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44)
+                                #if os(iOS)
+                                .contentShape(Rectangle())
+                                #endif
                         }
                         .buttonStyle(.plain).accessibilityLabel("收起探索面板")
+                        #if os(iOS)
+                        .accessibilityIdentifier("sidebar-close")
+                        #endif
                     }
                 }
             }
@@ -311,7 +329,9 @@ struct SidebarView: View {
         }
         .atlasPadding(.horizontal, floating ? 14 : 18)
         .atlasPadding(.bottom, floating ? 10 : 0)
+        #if os(macOS)
         .accessibilityIdentifier("left-map-panel")
+        #endif
     }
 
     private func hidePanel() {
