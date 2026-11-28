@@ -9,6 +9,9 @@ import UIKit
 /// Drop-in content for the existing inspector's vertical ScrollView.
 /// The host owns panel sizing; this view also fits a 200pt panel with its padding.
 struct FeatureInspectorContent: View {
+    #if os(iOS)
+    @EnvironmentObject private var configuration: ConfigurationStore
+    #endif
     @Environment(\.atlasUIScale) private var uiScale
     @EnvironmentObject private var store: RailwayMapStore
     @EnvironmentObject private var assistant: AssistantStore
@@ -70,6 +73,8 @@ struct FeatureInspectorContent: View {
                             returnToTrainMap = true
                             showsStationDirectory = false
                         }
+                        .atlasMapSheet(mode: configuration.interfaceSettings.surfaceMode,
+                                      opacity: configuration.interfaceSettings.stationBoardOpacity)
                     }
                     #endif
                 }
@@ -264,7 +269,7 @@ struct FeatureInspectorContent: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .atlasPadding(7)
-                        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+                        .atlasPanelDecoration(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
                     }
                     .buttonStyle(.plain)
                     .help("定位此独立站点；关联依据见问号")

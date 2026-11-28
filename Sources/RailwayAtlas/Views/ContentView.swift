@@ -13,6 +13,9 @@ struct ContentView: View {
     @EnvironmentObject private var assistant: AssistantStore
     @EnvironmentObject private var configuration: ConfigurationStore
     @State private var showPanel = false
+    #if os(iOS)
+    @State private var showPanelSettings = false
+    #endif
 
     var body: some View {
         Group {
@@ -24,32 +27,18 @@ struct ContentView: View {
             #else
             AtlasInterface(scale: store.uiScale) { MapScreen() }
                 .safeAreaInset(edge: .bottom) {
-                    Button {
-                        showPanel = true
-                    } label: {
-                        HStack(spacing: 12 * uiScale) {
-                            RailwayAtlasMark(size: 42 * uiScale)
-                            VStack(alignment: .leading, spacing: 3 * uiScale) {
-                                Text(store.selection?.name ?? "探索铁道图鉴").atlasFont(.headline)
-                                Text("搜索 · 图层 · 离线地图").atlasFont(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.up")
-                        }
-                        .atlasPadding(12)
-                        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                         opacity: configuration.interfaceSettings.bottomCounterOpacity,
-                                         cornerRadius: 24 * uiScale)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("map-open-sidebar")
-                    .atlasPadding(.horizontal, 12)
-                    .atlasPadding(.bottom, 8)
+                    MobileMapLauncher(title: store.selection?.name ?? "探索铁道图鉴") { showPanel = true }
+                        .environment(\.atlasUIScale, uiScale)
                 }
                 .sheet(isPresented: $showPanel) {
-                    AtlasInterface(scale: store.uiScale) { SidebarView() }
+                    AtlasInterface(scale: store.uiScale) {
+                        SidebarView(onRequestClose: { showPanel = false }, onSettings: { showPanelSettings = true })
+                    }
+                        .atlasMapSheet(mode: configuration.interfaceSettings.surfaceMode, opacity: store.panelBackgroundOpacity)
                         .presentationDetents([.medium, .large])
                         .presentationDragIndicator(.visible)
+                        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                        .sheet(isPresented: $showPanelSettings) { AtlasSettingsView(initialPage: .interface) }
                 }
                 .onChange(of: store.selection?.id) { _, value in
                     if value != nil { showPanel = !store.isFramingLine }
@@ -70,7 +59,11 @@ struct ContentView: View {
         }
         #endif
         #if !os(macOS)
-        .sheet(isPresented: $store.showAssistant) { AtlasAssistantView() }
+        .sheet(isPresented: $store.showAssistant) {
+            AtlasAssistantView()
+                .atlasMapSheet(mode: configuration.interfaceSettings.surfaceMode, opacity: store.inspectorBackgroundOpacity)
+                .presentationDragIndicator(.visible)
+        }
         #endif
         .task {
             #if targetEnvironment(simulator)
@@ -149,8 +142,53 @@ struct ContentView: View {
     }
 }
 
+struct MobileMapLauncher: View {
+    let title: String
+    let open: () -> Void
+    @State private var collapsed = false
+    @Environment(\.atlasUIScale) private var scale
+
+    var body: some View {
+        HStack {
+            if collapsed {
+                Spacer()
+                Button { collapsed = false } label: {
+                    Image(systemName: "sidebar.left").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                }
+                .accessibilityLabel("恢复探索入口").atlasMapActionID("restore-map-launcher")
+                .atlasMapControl(.launcher, radius: 16 * scale)
+            } else {
+                HStack(spacing: 4) {
+                    Button(action: open) {
+                        HStack(spacing: 10 * scale) {
+                            RailwayAtlasMark(size: 36 * scale)
+                            VStack(alignment: .leading, spacing: 3 * scale) {
+                                Text(title).atlasFont(.headline).lineLimit(1)
+                                Text("搜索 · 图层 · 离线地图").atlasFont(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.up")
+                        }.contentShape(Rectangle())
+                    }
+                    .atlasMapActionID("map-open-sidebar")
+                    Button { collapsed = true } label: {
+                        Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("收起探索入口").atlasMapActionID("collapse-map-launcher")
+                }
+                .atlasPadding(.leading, 12).atlasPadding(.vertical, 5)
+                .atlasMapControl(.launcher, radius: 22 * scale)
+            }
+        }
+        .buttonStyle(.plain)
+        .atlasPadding(.horizontal, 12).atlasPadding(.bottom, 6)
+    }
+}
+
 struct SidebarView: View {
     var floating = false
+    var onRequestClose: (() -> Void)?
+    var onSettings: (() -> Void)?
     @Environment(\.atlasUIScale) private var uiScale
     @EnvironmentObject private var store: RailwayMapStore
     @FocusState private var searchFocused: Bool
@@ -173,19 +211,27 @@ struct SidebarView: View {
                             ForEach(MapPanelSize.allCases) { Text($0.title + "浮窗").tag($0) }
                         }
                         Divider()
-                        Button("隐藏左侧浮窗") { store.panelVisible = false }
+                        Button("隐藏左侧浮窗", action: hidePanel)
                     } label: {
                         Label(store.panelSize.title, systemImage: "rectangle.expand.vertical")
                             .atlasFont(.caption)
                     }.menuStyle(.borderlessButton).fixedSize()
                         .help("调整左侧浮窗大小")
                         .accessibilityIdentifier("left-panel-size")
-                    Button { store.panelVisible = false } label: { Image(systemName: "xmark") }
+                    Button(action: hidePanel) { Image(systemName: "xmark") }
                         .buttonStyle(.plain).atlasFont(.caption)
-                        .help("隐藏左侧浮窗").accessibilityLabel("隐藏左侧浮窗")
+                        .help("隐藏左侧浮窗").accessibilityLabel("隐藏左侧浮窗").atlasMapActionID("collapse-left-panel")
                 } else {
-                    Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
-                        .buttonStyle(.plain).help("界面与问答设置")
+                    Button { if let onSettings { onSettings() } else { store.showSettings = true } } label: {
+                        Image(systemName: "gearshape").frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain).accessibilityLabel("设置")
+                    if let onRequestClose {
+                        Button(action: onRequestClose) {
+                            Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44)
+                        }
+                        .buttonStyle(.plain).accessibilityLabel("收起探索面板")
+                    }
                 }
             }
             .atlasPadding(.top, floating ? 14 : 36)
@@ -208,7 +254,7 @@ struct SidebarView: View {
                 }
             }
             .atlasPadding(11)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 11 * uiScale))
+            .atlasPanelDecoration(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 11 * uiScale))
             .atlasPadding(.bottom, floating ? 10 : 16)
 
             Picker("面板", selection: $store.selectedTab) {
@@ -243,7 +289,7 @@ struct SidebarView: View {
                                 .buttonStyle(.plain).accessibilityLabel("关闭提示")
                         }
                         .atlasPadding(12)
-                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12 * uiScale))
+                        .atlasPanelDecoration(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12 * uiScale))
                     }
                 }
                 .atlasPadding(.vertical, 4)
@@ -266,6 +312,10 @@ struct SidebarView: View {
         .atlasPadding(.horizontal, floating ? 14 : 18)
         .atlasPadding(.bottom, floating ? 10 : 0)
         .accessibilityIdentifier("left-map-panel")
+    }
+
+    private func hidePanel() {
+        if let onRequestClose { onRequestClose() } else { store.panelVisible = false }
     }
 
     private var searchResults: some View {
@@ -321,7 +371,7 @@ private struct FeatureRow: View {
                 Image(systemName: item.isStation ? "tram" : "point.topleft.down.to.point.bottomright.curvepath")
                     .atlasFont(.system(size: 15)).foregroundStyle(Color.railwayAccent)
                     .atlasFrame(width: 34, height: 34)
-                    .background(Color.railwayAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10 * uiScale))
+                    .atlasPanelDecoration(Color.railwayAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10 * uiScale))
                 VStack(alignment: .leading, spacing: 3 * uiScale) {
                     Text(item.name).atlasFont(.system(size: 13, weight: .medium)).lineLimit(1)
                     Text(item.subtitle).atlasFont(.system(size: 10)).foregroundStyle(.secondary)
@@ -333,7 +383,7 @@ private struct FeatureRow: View {
                 Image(systemName: "chevron.right").atlasFont(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
             }
             .atlasPadding(.vertical, 7).atlasPadding(.horizontal, 4)
-            .background(store.selection?.id == item.id ? Color.railwayAccent.opacity(0.08) : .clear,
+            .atlasPanelDecoration(store.selection?.id == item.id ? Color.railwayAccent.opacity(0.08) : .clear,
                         in: RoundedRectangle(cornerRadius: 10 * uiScale))
             .contentShape(Rectangle())
         }

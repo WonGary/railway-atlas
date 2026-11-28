@@ -2,35 +2,23 @@
 import RailwayCore
 import SwiftUI
 
-/// A live, panel-sized backdrop; panel content stays in its existing SwiftUI tree.
-struct DesktopPanelGlassBackground: View {
+struct DesktopPanelSurface: ViewModifier {
     let cornerRadius: CGFloat
     let opacity: Double
-    var mode: AtlasSurfaceMode = .glass
+    let mode: AtlasSurfaceMode
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorSchemeContrast) private var contrast
 
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius)
-        switch mode {
-        case .glass:
-            if #available(macOS 26.0, *) {
-                // Let SwiftUI own the material's ordering and inherited
-                // appearance. A separate NSGlassEffectView only guarantees
-                // ordering for its own contentView.
-                Color.clear
-                    .glassEffect(.regular, in: shape)
-                    .opacity(clampedOpacity)
-            } else {
-                shape.fill(.regularMaterial).opacity(clampedOpacity)
+    func body(content: Content) -> some View {
+        content.atlasMapSurface(mode: mode, opacity: opacity, cornerRadius: cornerRadius)
+            .overlay {
+                if mode != .textOnly, opacity > 0, cornerRadius > 0 {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .strokeBorder(.primary.opacity((contrast == .increased ? 0.35 : 0.14) * opacity),
+                                      lineWidth: (contrast == .increased ? 2 : 1) / max(1, displayScale))
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
             }
-        case .translucent:
-            shape.fill(.thinMaterial).opacity(clampedOpacity)
-        case .textOnly:
-            Color.clear
         }
-    }
-
-    private var clampedOpacity: Double {
-        min(1, max(0, opacity))
-    }
 }
 #endif

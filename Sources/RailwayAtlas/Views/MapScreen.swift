@@ -30,6 +30,7 @@ struct MapScreen: View {
     @State private var controlFrames: [String: CGRect] = [:]
     @State private var statusContentHeight: CGFloat = 120
     @State private var startupCredit = true
+    @State private var visibility = MapControlVisibility()
     var body: some View {
       GeometryReader { geometry in
         #if os(macOS)
@@ -57,7 +58,7 @@ struct MapScreen: View {
             #endif
 
             VStack {
-                if configuration.interfaceSettings.topControlsVisible {
+                if isShowing(.toolbar) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 12 * uiScale) {
                             HStack(spacing: 4 * uiScale) {
@@ -79,18 +80,19 @@ struct MapScreen: View {
                                 #if os(macOS)
                                 desktopPanelButton(.right)
                                 #endif
+                                visibilityMenu
                                 mapButton("chevron.up", title: "收起顶部地图控件") {
-                                    configuration.interfaceSettings.topControlsVisible = false
-                                }
+                                    visibility.set(.toolbar, false)
+                                }.atlasMapActionID("collapse-map-top")
                             }
-                            .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                             opacity: configuration.interfaceSettings.topControlsOpacity,
-                                             cornerRadius: 12 * uiScale)
-                            if let focus = store.lineFocus {
+                            .atlasMapControl(.toolbar, radius: 12 * uiScale)
+                            if let focus = store.lineFocus, isShowing(.focus) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack(spacing: 8) {
                                         Text(focus.title).atlasFont(.caption.weight(.semibold)).lineLimit(2)
                                         Button("恢复全图") { store.clearLineFocus() }
+                                        Button { visibility.set(.focus, false) } label: { Image(systemName: "chevron.up") }
+                                            .buttonStyle(.plain).accessibilityLabel("收起全线站序卡")
                                     }
                                     #if !os(macOS)
                                     if let line = focus.inspectionDirectory {
@@ -103,23 +105,23 @@ struct MapScreen: View {
                                     #endif
                                 }
                                 .padding(7)
-                                .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                                 opacity: configuration.interfaceSettings.topControlsOpacity,
-                                                 cornerRadius: 8)
+                                .atlasMapControl(.focus, radius: 8)
+                            } else if store.lineFocus != nil {
+                                Button("显示全线站序卡") { visibility.set(.focus, true) }
+                                    .buttonStyle(.plain).padding(6).atlasMapControl(.focus, radius: 8)
                             }
                             #if !os(macOS)
-                            MapScaleView(width: geometry.size.width, height: geometry.size.height)
+                            if isShowing(.scale) { MapScaleView(width: geometry.size.width, height: geometry.size.height) }
                             #endif
-                            if store.activeBasemapNeedsNetwork && !connectivity.available {
+                            if isShowing(.notice), store.activeBasemapNeedsNetwork && !connectivity.available {
                                 Text(store.activeBasemapOfflineStatus).atlasFont(.caption).atlasPadding(8)
-                                    .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                                     opacity: configuration.interfaceSettings.cornerControlsOpacity,
-                                                     cornerRadius: 8 * uiScale)
+                                    .atlasMapControl(.notice, radius: 8 * uiScale).allowsHitTesting(false)
                             }
                         }
                         .background(measureControl("scale"))
                         Spacer(minLength: 8)
-                        VStack(spacing: 12 * uiScale) {
+                        AtlasGlassControls { VStack(spacing: 12 * uiScale) {
+                          if isShowing(.mode) {
                             Menu {
                                 ForEach(MapMode.allCases) { mode in
                                     Button { store.changeMode(mode) } label: {
@@ -134,51 +136,52 @@ struct MapScreen: View {
                                     }
                                 }
                                 Divider()
-                                Button(store.statusVisible ? "隐藏状态卡" : "显示状态卡") { store.statusVisible.toggle() }
-                                Button("状态卡回到右上角") { store.statusOffset = .zero; store.statusVisible = true }
+                                Button(isShowing(.status) ? "隐藏状态卡" : "显示状态卡") {
+                                    visibility.set(.status, !isShowing(.status))
+                                }
+                                Button("状态卡回到右上角") { store.statusOffset = .zero; visibility.set(.status, true) }
                             } label: { Image(systemName: "map").atlasFrame(width: 38, height: 38) }
                             .menuStyle(.borderlessButton)
                             .fixedSize()
-                            .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                             opacity: configuration.interfaceSettings.cornerControlsOpacity,
-                                             cornerRadius: 13 * uiScale)
+                            .atlasMapControl(.mode, radius: 13 * uiScale)
                             .accessibilityLabel("切换地图模式")
                             .help("全国在线 / 缓存 / 本地地图包")
 
-                            VStack(spacing: 0 * uiScale) {
+                          }
+                          if isShowing(.zoom) {
+                            VStack(spacing: 0) {
                                 mapButton("plus", title: "放大") { store.zoom(0.65) }
                                 Divider().atlasFrame(width: 22)
                                 mapButton("minus", title: "缩小") { store.zoom(1.55) }
                             }
-                            .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                             opacity: configuration.interfaceSettings.cornerControlsOpacity,
-                                             cornerRadius: 13 * uiScale)
+                            .atlasMapControl(.zoom, radius: 13 * uiScale)
+                          }
+                          if isShowing(.fit) {
                             mapButton("arrow.up.left.and.arrow.down.right", title: "显示全国 / 整个地图包") { store.fitDataset() }
-                                .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                                 opacity: configuration.interfaceSettings.cornerControlsOpacity,
-                                                 cornerRadius: 13 * uiScale)
-                        }
+                                .atlasMapControl(.fit, radius: 13 * uiScale)
+                          }
+                        } }
                         .foregroundStyle(Color.railwayAccent)
                         .background(measureControl("navigation"))
                     }
                 } else {
                     HStack {
                         mapButton("chevron.down", title: "显示顶部地图控件") {
-                            configuration.interfaceSettings.topControlsVisible = true
+                            visibility.set(.toolbar, true)
                         }
-                        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                         opacity: configuration.interfaceSettings.cornerControlsOpacity,
-                                         cornerRadius: 12 * uiScale)
+                        .atlasMapControl(.toolbar, radius: 12 * uiScale)
+                        .atlasMapActionID("restore-map-top")
                         Spacer()
                     }
                 }
                 Spacer()
-                if configuration.interfaceSettings.bottomControlsVisible {
+                if isShowing(.footer) {
                     HStack(alignment: .bottom) {
                         VStack(alignment: .leading, spacing: 9 * uiScale) {
                             #if os(macOS)
-                            MapScaleView(width: geometry.size.width, height: geometry.size.height)
+                            if isShowing(.scale) { MapScaleView(width: geometry.size.width, height: geometry.size.height) }
                             #endif
+                          if isShowing(.counter) {
                             HStack(spacing: 7 * uiScale) {
                                 Image(systemName: store.mapMode.icon)
                                 Text("\(store.visibleLines.count) 区段 · \(store.visibleStations.count) 车站")
@@ -186,23 +189,22 @@ struct MapScreen: View {
                             }
                             .atlasFont(.system(size: 11, weight: .medium))
                             .atlasPadding(.horizontal, 12).atlasPadding(.vertical, 9)
-                            .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                             opacity: configuration.interfaceSettings.bottomCounterOpacity,
-                                             cornerRadius: 20 * uiScale)
+                            .atlasMapControl(.counter, radius: 20 * uiScale).allowsHitTesting(false)
+                          }
                         }
                         Spacer()
                         mapButton("chevron.down", title: "收起底部地图控件") {
-                            configuration.interfaceSettings.bottomControlsVisible = false
+                            visibility.set(.footer, false)
                         }
-                        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                         opacity: configuration.interfaceSettings.bottomCounterOpacity,
-                                         cornerRadius: 12 * uiScale)
-                        if store.mapMode != .apple {
+                        .atlasMapControl(.footer, radius: 12 * uiScale)
+                        .atlasMapActionID("collapse-map-footer")
+                        if store.mapMode != .apple, isShowing(.legend) {
                             VStack(alignment: .trailing, spacing: 4 * uiScale) {
                                 Text("N ↑").atlasFont(.system(size: 12, weight: .semibold))
                                 Text(store.mapMode == .cached ? "缓存铁路 · 无街道底图" : "本地地图包 · 无街道底图").atlasFont(.system(size: 9))
                             }
                             .foregroundStyle(.secondary)
+                            .padding(3).atlasMapControl(.legend, radius: 6 * uiScale).allowsHitTesting(false)
                         }
                     }
                     .background(measureControl("footer"))
@@ -210,11 +212,10 @@ struct MapScreen: View {
                     HStack {
                         Spacer()
                         mapButton("chevron.up", title: "显示底部地图控件") {
-                            configuration.interfaceSettings.bottomControlsVisible = true
+                            visibility.set(.footer, true)
                         }
-                        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                         opacity: configuration.interfaceSettings.bottomCounterOpacity,
-                                         cornerRadius: 12 * uiScale)
+                        .atlasMapControl(.footer, radius: 12 * uiScale)
+                        .atlasMapActionID("restore-map-footer")
                     }
                 }
             }
@@ -225,7 +226,7 @@ struct MapScreen: View {
             if let panels = desktopPanels {
                 if !panels.leftFloatingFrame.isEmpty {
                     let frame = panels.leftFloatingFrame
-                    DesktopSidebarPanel()
+                    DesktopSidebarPanel(onRequestClose: { onToggleDesktopPanel?(.left) })
                         .frame(width: frame.width, height: frame.height)
                         .modifier(DesktopFloatingPanelSurface(
                             opacity: store.panelBackgroundOpacity,
@@ -256,34 +257,31 @@ struct MapScreen: View {
                 }
             }
             #endif
-            if store.statusVisible {
+            if isShowing(.status) {
                 let layout = statusLayout(size: geometry.size)
                 if layout.frame.height >= 68 * uiScale {
                     statusCard(height: layout.frame.height, viewport: geometry.size)
                         .frame(width: layout.frame.width, height: layout.frame.height)
-                        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                         opacity: configuration.interfaceSettings.statusBackgroundOpacity,
-                                         cornerRadius: 15 * uiScale)
+                        .atlasMapControl(.status, radius: 15 * uiScale)
                         .position(x: layout.frame.midX, y: layout.frame.midY)
                 }
             }
             VStack {
                 Spacer()
                 if store.journeyPlayer.mode != nil {
-                    if configuration.interfaceSettings.experienceControlsVisible {
-                        MapExperienceControls(player: store.journeyPlayer)
+                    if isShowing(.playback) {
+                        MapExperienceControls(player: store.journeyPlayer, onCollapse: { visibility.set(.playback, false) })
                             .frame(maxWidth: 630).padding(.horizontal, 20).padding(.bottom, 76)
                     } else {
                         Button {
-                            configuration.interfaceSettings.experienceControlsVisible = true
+                            visibility.set(.playback, true)
                         } label: {
                             Label("显示播放栏", systemImage: "chevron.up")
                                 .atlasPadding(.horizontal, 12).atlasPadding(.vertical, 8)
                         }
                         .buttonStyle(.plain)
-                        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                                         opacity: configuration.interfaceSettings.playbackOpacity,
-                                         cornerRadius: 12 * uiScale)
+                        .atlasMapControl(.playback, radius: 12 * uiScale)
+                        .atlasMapActionID("restore-map-player")
                         .padding(.bottom, 76)
                     }
                 }
@@ -316,10 +314,14 @@ struct MapScreen: View {
                     Spacer()
                 }
                 .font(.caption2).padding(.horizontal, 8).padding(.vertical, 2)
-                .background(.background).accessibilityIdentifier("basemap-credit-line")
+                .atlasMapControl(.credit, radius: 0).accessibilityIdentifier("basemap-credit-line")
             }
         }
         .simultaneousGesture(TapGesture().onEnded { startupCredit = false })
+        .onChange(of: configuration.interfaceSettings.topControlsVisible) { _, _ in visibility.set(.toolbar, nil) }
+        .onChange(of: configuration.interfaceSettings.bottomControlsVisible) { _, _ in visibility.set(.footer, nil) }
+        .onChange(of: configuration.interfaceSettings.experienceControlsVisible) { _, _ in visibility.set(.playback, nil) }
+        .onChange(of: store.statusVisible) { _, _ in visibility.set(.status, nil) }
         .simultaneousGesture(DragGesture(minimumDistance: 4).onChanged { _ in
             if startupCredit { startupCredit = false }
         })
@@ -327,6 +329,29 @@ struct MapScreen: View {
             try? await Task.sleep(for: .seconds(5))
             if !Task.isCancelled { startupCredit = false }
         }
+    }
+
+    private func isShowing(_ control: MapControl) -> Bool {
+        let defaults = configuration.interfaceSettings
+        let preferred = switch control {
+        case .toolbar: defaults.topControlsVisible
+        case .footer: defaults.bottomControlsVisible
+        case .playback: defaults.experienceControlsVisible
+        case .status: store.statusVisible
+        default: true
+        }
+        return visibility.shows(control, byDefault: preferred)
+    }
+
+    private var visibilityMenu: some View {
+        Menu {
+            ForEach([MapControl.mode, .zoom, .fit, .scale, .counter, .legend, .focus, .notice, .status]) { control in
+                Toggle(control.title, isOn: Binding(get: { isShowing(control) },
+                                                    set: { visibility.set(control, $0) }))
+            }
+        } label: { Image(systemName: "rectangle.3.group").atlasFrame(width: 32, height: 38) }
+        .menuStyle(.borderlessButton).fixedSize()
+        .accessibilityLabel("地图浮窗").help("暂时收起或恢复地图浮窗")
     }
 
     private func statusLayout(size: CGSize, drag: CGSize? = nil) -> MapStatusLayout {
@@ -356,7 +381,7 @@ struct MapScreen: View {
             else { store.inspectorVisible.toggle() }
         }
         .accessibilityValue(visible ? "已显示" : (requested ? "空间不足，暂时收起" : "已隐藏"))
-        .accessibilityIdentifier(side == .left ? "toggle-left-panel" : "toggle-right-panel")
+        .atlasMapActionID(side == .left ? "toggle-left-panel" : "toggle-right-panel")
     }
     #endif
 
@@ -372,8 +397,8 @@ struct MapScreen: View {
                 Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary)
                 Text(store.activeName).atlasFont(.subheadline.weight(.semibold)).lineLimit(1)
                 Spacer()
-                Button { store.statusVisible = false } label: { Image(systemName: "xmark").atlasFont(.caption2) }
-                    .buttonStyle(.plain).help("隐藏状态卡")
+                Button { visibility.set(.status, false) } label: { Image(systemName: "xmark").atlasFont(.caption2) }
+                    .buttonStyle(.plain).help("隐藏状态卡").accessibilityLabel("隐藏状态卡")
             }
             .frame(height: 24 * uiScale)
             .contentShape(Rectangle())
@@ -424,7 +449,7 @@ struct MapScreen: View {
     }
 
     private func mapButton(_ symbol: String, title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).atlasFrame(width: 38, height: 38) }
+        Button(action: action) { Image(systemName: symbol).atlasFrame(width: 38, height: 38).contentShape(Rectangle()) }
             .buttonStyle(.plain)
             .accessibilityLabel(title)
             .help(title)

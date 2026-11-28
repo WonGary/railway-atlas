@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MapExperienceControls: View {
     @ObservedObject var player: RailMapPlayback
-    @EnvironmentObject private var configuration: ConfigurationStore
+    var onCollapse: (() -> Void)?
 
     var body: some View {
         if let mode = player.mode {
@@ -16,14 +16,13 @@ struct MapExperienceControls: View {
                     Text(mode == .train ? RailTimetable.clock(player.seconds) : player.date)
                         .font(.system(.title3, design: .monospaced).weight(.medium))
                     Spacer()
-                    Button {
-                        configuration.interfaceSettings.experienceControlsVisible = false
-                    } label: {
-                        Image(systemName: "chevron.down")
+                    if let onCollapse {
+                        Button(action: onCollapse) { Image(systemName: "chevron.down") }
+                            .buttonStyle(.plain)
+                            .help("收起播放栏")
+                            .accessibilityLabel("收起播放栏")
+                            .atlasMapActionID("collapse-map-player")
                     }
-                    .buttonStyle(.plain)
-                    .help("收起播放栏")
-                    .accessibilityLabel("收起播放栏")
                     Button { player.stop() } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain).accessibilityLabel("退出地图漫游")
                 }
@@ -61,9 +60,7 @@ struct MapExperienceControls: View {
                 }
             }
             .padding(16)
-            .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                             opacity: configuration.interfaceSettings.playbackOpacity,
-                             cornerRadius: 16)
+            .atlasMapControl(.playback, radius: 16)
             .accessibilityIdentifier("main-map-experience-controls")
         }
     }

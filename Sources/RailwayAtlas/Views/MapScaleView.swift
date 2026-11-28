@@ -5,7 +5,6 @@ import SwiftUI
 struct MapScaleView: View {
     @Environment(\.atlasUIScale) private var uiScale
     @EnvironmentObject private var store: RailwayMapStore
-    @EnvironmentObject private var configuration: ConfigurationStore
     let width: Double
     let height: Double
     var body: some View {
@@ -26,9 +25,7 @@ struct MapScaleView: View {
             }.stroke(.primary.opacity(0.8), lineWidth: 1.5).frame(width: length, height: 6 * uiScale)
         }
         .atlasPadding(8)
-        .atlasMapSurface(mode: configuration.interfaceSettings.surfaceMode,
-                         opacity: configuration.interfaceSettings.cornerControlsOpacity,
-                         cornerRadius: 8 * uiScale)
+        .atlasMapControl(.scale, radius: 8 * uiScale)
             .allowsHitTesting(false)
             .accessibilityLabel("比例尺 \(Int(distance)) 米")
     }

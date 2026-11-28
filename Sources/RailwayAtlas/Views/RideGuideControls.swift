@@ -9,6 +9,7 @@ private enum RidePanel: String, Identifiable {
 struct RideGuideControls: View {
     @ObservedObject var player: RailMapPlayback
     @ObservedObject var guide: RideGuideStore
+    @EnvironmentObject private var configuration: ConfigurationStore
     @State private var panel: RidePanel?
     @State private var kinds = Set(RideGuideStore.kinds.map(\.0))
 
@@ -45,6 +46,9 @@ struct RideGuideControls: View {
             #if os(macOS)
             .frame(minWidth: 420, idealWidth: 470, minHeight: 390, idealHeight: 500)
             #endif
+            .atlasMapSheet(mode: configuration.interfaceSettings.surfaceMode,
+                          opacity: selection == .places ? configuration.interfaceSettings.placesOpacity :
+                            configuration.interfaceSettings.relayOpacity)
         }
     }
 }
@@ -77,8 +81,8 @@ private struct RidePlacesPanel: View {
                     Text("\(RideGuideStore.kinds.first { $0.0 == row.kind }?.1 ?? "") · 距列车 \(row.metres) m · 距轨道 \(row.track) m").font(.caption)
                     if !row.note.isEmpty { Text(row.note).foregroundStyle(.secondary).font(.caption) }
                     if let url = URL(string: row.url) { Link(row.source, destination: url).font(.caption) }
-                }
-            }
+                }.listRowBackground(Color.clear)
+            }.scrollContentBackground(.hidden)
             Button("刷新地点") { retry += 1 }.font(.caption)
         }
         .task(id: key) {

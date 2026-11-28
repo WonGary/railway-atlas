@@ -68,6 +68,7 @@ final class ConfigurationStore: ObservableObject {
 
     func snapshot() -> AtlasConfiguration {
         var value = AtlasConfiguration()
+        value.interface = interfaceSettings
         guard let map, let assistant else { return value }
         value.rendering = map.renderSettings
         value.assistant = assistant.settings
@@ -112,17 +113,6 @@ final class ConfigurationStore: ObservableObject {
         value.interface.inspectorTab = assistant.settings.presentation == .window ? "feature" : map.inspectorPane.rawValue
         value.interface.inspectorLayout = map.inspectorLayout
         value.interface.inspectorBackgroundOpacity = map.inspectorBackgroundOpacity
-        value.interface.surfaceMode = interfaceSettings.surfaceMode
-        value.interface.mapControlsOpacity = interfaceSettings.mapControlsOpacity
-        value.interface.topControlsOpacity = interfaceSettings.topControlsOpacity
-        value.interface.cornerControlsOpacity = interfaceSettings.cornerControlsOpacity
-        value.interface.bottomCounterOpacity = interfaceSettings.bottomCounterOpacity
-        value.interface.playbackOpacity = interfaceSettings.playbackOpacity
-        value.interface.statusBackgroundOpacity = interfaceSettings.statusBackgroundOpacity
-        value.interface.mapControlsVisible = interfaceSettings.mapControlsVisible
-        value.interface.topControlsVisible = interfaceSettings.topControlsVisible
-        value.interface.bottomControlsVisible = interfaceSettings.bottomControlsVisible
-        value.interface.experienceControlsVisible = interfaceSettings.experienceControlsVisible
         value.interface.statusVisible = map.statusVisible
         value.interface.statusX = map.statusOffset.width
         value.interface.statusY = map.statusOffset.height

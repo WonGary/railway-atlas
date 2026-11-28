@@ -23,16 +23,9 @@ struct DesktopMapWorkspace: View {
                 // change, keeping MapScreen and its MKMapView at the same identity.
                 ZStack {
                     if layout.leftDockWidth > 0 {
-                        DesktopSidebarPanel()
-                            .background {
-                                DesktopPanelGlassBackground(
-                                    cornerRadius: 0,
-                                    opacity: 1,
-                                    mode: configuration.interfaceSettings.surfaceMode)
-                            }
-                            .overlay(alignment: .trailing) {
-                                Rectangle().fill(.separator).frame(width: 1)
-                            }
+                        DesktopSidebarPanel(onRequestClose: { collapse(.left) })
+                            .modifier(DesktopPanelSurface(cornerRadius: 0, opacity: map.panelBackgroundOpacity,
+                                                          mode: configuration.interfaceSettings.surfaceMode))
                             .overlay(alignment: .trailing) {
                                 DesktopPanelResizeHandle(side: .left, displayedWidth: layout.leftWidth) {
                                     compactPriority = .left
@@ -49,15 +42,8 @@ struct DesktopMapWorkspace: View {
                 ZStack {
                     if layout.rightDockWidth > 0 {
                         AtlasInspectorView(onRequestClose: { collapse(.right) })
-                            .background {
-                                DesktopPanelGlassBackground(
-                                    cornerRadius: 0,
-                                    opacity: 1,
-                                    mode: configuration.interfaceSettings.surfaceMode)
-                            }
-                            .overlay(alignment: .leading) {
-                                Rectangle().fill(.separator).frame(width: 1)
-                            }
+                            .modifier(DesktopPanelSurface(cornerRadius: 0, opacity: map.inspectorBackgroundOpacity,
+                                                          mode: configuration.interfaceSettings.surfaceMode))
                             .overlay(alignment: .leading) {
                                 DesktopPanelResizeHandle(side: .right, displayedWidth: layout.rightWidth) {
                                     compactPriority = .right
@@ -69,12 +55,6 @@ struct DesktopMapWorkspace: View {
                 .clipped()
             }
             .coordinateSpace(name: "atlas-panel-workspace")
-        }
-        .background {
-            DesktopPanelGlassBackground(
-                cornerRadius: 0,
-                opacity: 1,
-                mode: configuration.interfaceSettings.surfaceMode)
         }
         // Published events also cover reselecting the same feature / reopening
         // GPT when the requested inspector is already true but space-suppressed.
@@ -132,16 +112,17 @@ struct DesktopMapWorkspace: View {
 
 /// Adds layout controls without changing SidebarView's existing size menu.
 struct DesktopSidebarPanel: View {
+    var onRequestClose: (() -> Void)?
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("左侧面板").atlasFont(.caption).foregroundStyle(.secondary)
                 Spacer()
-                DesktopPanelMenu(side: .left)
+                DesktopPanelMenu(side: .left, onRequestHide: onRequestClose)
             }
             .atlasPadding(.horizontal, 14).atlasPadding(.vertical, 6)
             Divider()
-            SidebarView(floating: true)
+            SidebarView(floating: true, onRequestClose: onRequestClose)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .modifier(PanelLayoutProbe(id: "left-map-panel"))
@@ -192,7 +173,7 @@ struct DesktopPanelMenu: View {
         .menuStyle(.borderlessButton).fixedSize()
         .help(side.title + "：布局、宽度与隐藏")
         .accessibilityLabel(side.title + "布局")
-        .accessibilityIdentifier(side == .left ? "left-panel-layout" : "right-panel-layout")
+        .atlasMapActionID(side == .left ? "left-panel-layout" : "right-panel-layout")
     }
 }
 
@@ -248,49 +229,9 @@ struct DesktopFloatingPanelSurface: ViewModifier {
     let opacity: Double
     var surfaceMode: AtlasSurfaceMode = .glass
     @Environment(\.atlasUIScale) private var scale
-    @Environment(\.displayScale) private var displayScale
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var contrast
-
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 18 * scale)
-        content
-            .clipShape(shape)
-            .background {
-                // Only the background branches; panel content keeps its identity,
-                // full opacity and native backing resolution.
-                surface(in: shape)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-            .overlay {
-                if surfaceMode != .textOnly {
-                    shape.strokeBorder(
-                        .primary.opacity(contrast == .increased ? 0.35 : 0.14),
-                        lineWidth: (contrast == .increased ? 2 : 1) / max(1, displayScale))
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
-    }
-
-    @ViewBuilder
-    private func surface(in shape: RoundedRectangle) -> some View {
-        if surfaceMode == .textOnly {
-            Color.clear
-        } else if reduceTransparency {
-            // Accessibility takes precedence over glass alpha without changing
-            // the saved opacity, so turning it off restores the user's setting.
-            shape.fill(Color(nsColor: .windowBackgroundColor))
-                .shadow(color: .black.opacity(0.13), radius: 16, y: 5)
-        } else if #available(macOS 26.0, *) {
-            DesktopPanelGlassBackground(
-                cornerRadius: 18 * scale, opacity: opacity, mode: surfaceMode)
-        } else {
-            shape.fill(.regularMaterial)
-                .opacity(min(1, max(0, opacity)))
-                .shadow(color: .black.opacity(0.13), radius: 16, y: 5)
-        }
+        content.clipShape(RoundedRectangle(cornerRadius: 18 * scale))
+            .modifier(DesktopPanelSurface(cornerRadius: 18 * scale, opacity: opacity, mode: surfaceMode))
     }
 }
 
